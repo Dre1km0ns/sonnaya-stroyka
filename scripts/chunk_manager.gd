@@ -17,8 +17,15 @@ var _loaded: Dictionary = {} # Vector2i -> Node3D
 var _player: Node3D = null
 var _seed: int = 1337
 var _tick: float = 0.0
-var _lake_rects: Dictionary = {} # Vector2i -> Rect2 (world XZ)
+var _lakes_by_chunk: Dictionary = {} # Vector2i -> Array[Vector2i] local cells
+var _lake_world_cells: Dictionary = {} # Vector2i world XZ -> true
 var _ruin_centers: Dictionary = {} # Vector2i -> Vector3
+
+const LAKE_DEPTH := 0.8
+const LAKE_SURFACE_Y := -0.12
+const FIELD_REAGENT_RATE := 0.2
+const RUIN_HASH_THRESHOLD := 0.95
+const RUIN_CLUSTER_TARGET := 14
 
 
 func _ready() -> void:
@@ -103,20 +110,16 @@ func chunk_has_lake(coord: Vector2i) -> bool:
 
 
 func chunk_has_ruin(coord: Vector2i) -> bool:
-	return maxi(absi(coord.x), absi(coord.y)) >= 1 and _chunk_hash(coord, 29) > 0.78
+	return maxi(absi(coord.x), absi(coord.y)) >= 1 and _chunk_hash(coord, 29) > RUIN_HASH_THRESHOLD
 
 
 func is_world_in_lake(pos: Vector3) -> bool:
-	var p := Vector2(pos.x, pos.z)
-	for key in _lake_rects.keys():
-		var r: Rect2 = _lake_rects[key]
-		if r.has_point(p):
-			return true
-	return false
+	var key := Vector2i(floori(pos.x), floori(pos.z))
+	return _lake_world_cells.has(key)
 
 
 func count_loaded_lakes() -> int:
-	return _lake_rects.size()
+	return _lakes_by_chunk.size()
 
 
 func count_loaded_ruins() -> int:
@@ -134,10 +137,42 @@ func count_loaded_reagents() -> int:
 
 
 func get_any_lake_sample_point() -> Vector3:
-	for key in _lake_rects.keys():
-		var r: Rect2 = _lake_rects[key]
-		return Vector3(r.position.x + r.size.x * 0.5, 1.0, r.position.y + r.size.y * 0.5)
+	for key in _lake_world_cells.keys():
+		var c: Vector2i = key
+		return Vector3(float(c.x) + 0.5, -0.4, float(c.y) + 0.5)
 	return Vector3.ZERO
+
+
+func count_reagents_in_chunk(coord: Vector2i) -> int:
+	if not _loaded.has(coord):
+		return 0
+	return _count_named_group(_loaded[coord], "reagent")
+
+
+func lake_cell_count(coord: Vector2i) -> int:
+	if not _lakes_by_chunk.has(coord):
+		return 0
+	var cells: Array = _lakes_by_chunk[coord]
+	return cells.size()
+
+
+func lake_bbox_area(coord: Vector2i) -> int:
+	if not _lakes_by_chunk.has(coord):
+		return 0
+	var cells: Array = _lakes_by_chunk[coord]
+	if cells.is_empty():
+		return 0
+	var min_x := 999
+	var max_x := -999
+	var min_z := 999
+	var max_z := -999
+	for raw in cells:
+		var c: Vector2i = raw
+		min_x = mini(min_x, c.x)
+		max_x = maxi(max_x, c.x)
+		min_z = mini(min_z, c.y)
+		max_z = maxi(max_z, c.y)
+	return (max_x - min_x + 1) * (max_z - min_z + 1)
 
 
 func ensure_chunk_loaded(coord: Vector2i) -> void:
@@ -157,7 +192,13 @@ func _unload_chunk(coord: Vector2i) -> void:
 		return
 	var node: Node = _loaded[coord]
 	_loaded.erase(coord)
-	_lake_rects.erase(coord)
+	if _lakes_by_chunk.has(coord):
+		for raw in _lakes_by_chunk[coord]:
+			var local: Vector2i = raw
+			var wx := coord.x * chunk_size + local.x
+			var wz := coord.y * chunk_size + local.y
+			_lake_world_cells.erase(Vector2i(wx, wz))
+		_lakes_by_chunk.erase(coord)
 	_ruin_centers.erase(coord)
 	if is_instance_valid(node):
 		node.queue_free()
@@ -169,33 +210,11 @@ func _load_chunk(coord: Vector2i) -> void:
 	root.position = chunk_origin(coord)
 	add_child(root)
 
-	# Базовая плита чанка (верх y=0), чтобы ходить вечно.
-	var floor_body := StaticBody3D.new()
-	floor_body.collision_layer = 1
-	floor_body.collision_mask = 0
-	floor_body.position = Vector3(chunk_size * 0.5, -0.5, chunk_size * 0.5)
-	var floor_mesh := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(chunk_size, 1.0, chunk_size)
-	floor_mesh.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.roughness = 0.95
-	mat.albedo_color = COLOR_DREAM if is_dream_layer else COLOR_WAKE
-	# Чуть варьируем оттенок по чанку
-	var tint := 0.04 * float((coord.x * 3 + coord.y * 7) % 5 - 2)
-	mat.albedo_color = mat.albedo_color.lightened(tint)
-	floor_mesh.material_override = mat
-	floor_body.add_child(floor_mesh)
-	var col := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(chunk_size, 1.0, chunk_size)
-	col.shape = shape
-	floor_body.add_child(col)
-	root.add_child(floor_body)
-
 	var occupied: Dictionary = {} # Vector2i local -> String tag
-	if chunk_has_lake(coord):
-		_add_lake(root, coord, occupied)
+	var lake_cells := _plan_lake(coord)
+	_build_terrain(root, coord, lake_cells)
+	if not lake_cells.is_empty():
+		_realize_lake(root, coord, lake_cells, occupied)
 	if chunk_has_ruin(coord):
 		_add_ruin(root, coord, occupied)
 	_add_reagents(root, coord, occupied)
@@ -266,51 +285,121 @@ func _chunk_hash(coord: Vector2i, salt: int = 0) -> float:
 	return _hash01(coord.x * 131 + salt, coord.y * 173 + salt * 7)
 
 
-func _add_lake(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
-	var ox := 2 + int(_hash01(coord.x, coord.y + 50) * 6.0)
-	var oz := 2 + int(_hash01(coord.x + 50, coord.y) * 6.0)
-	var w := 5 + int(_hash01(coord.x, 99) * 5.0)
-	var d := 5 + int(_hash01(77, coord.y) * 5.0)
-	w = mini(w, chunk_size - ox - 1)
-	d = mini(d, chunk_size - oz - 1)
-	if w < 4 or d < 4:
+func _plan_lake(coord: Vector2i) -> Dictionary:
+	var cells := {}
+	if not chunk_has_lake(coord):
+		return cells
+	var cx := 4 + int(_hash01(coord.x, coord.y + 50) * 8.0)
+	var cz := 4 + int(_hash01(coord.x + 50, coord.y) * 8.0)
+	var radius := 2.8 + _hash01(coord.x, 99) * 4.4
+	var stretch_x := 0.72 + _hash01(coord.x + 3, coord.y + 11) * 0.75
+	var stretch_z := 0.72 + _hash01(coord.x + 11, coord.y + 3) * 0.75
+	cx = clampi(cx, 3, chunk_size - 4)
+	cz = clampi(cz, 3, chunk_size - 4)
+	for lx in range(chunk_size):
+		for lz in range(chunk_size):
+			var dx := (float(lx) - float(cx)) / stretch_x
+			var dz := (float(lz) - float(cz)) / stretch_z
+			var dist := sqrt(dx * dx + dz * dz)
+			var n := _hash01(coord.x * 40 + lx, coord.y * 40 + lz)
+			var edge := radius * (0.58 + 0.62 * n)
+			if dist < edge:
+				cells[Vector2i(lx, lz)] = true
+	if cells.size() < 6:
+		for i in range(-1, 2):
+			for j in range(-1, 2):
+				cells[Vector2i(clampi(cx + i, 1, chunk_size - 2), clampi(cz + j, 1, chunk_size - 2))] = true
+	return cells
+
+
+func _build_terrain(root: Node3D, coord: Vector2i, lake_cells: Dictionary) -> void:
+	if lake_cells.is_empty():
+		_add_floor_slab(root, coord, 0, 0, chunk_size, chunk_size, 0.0)
 		return
-	for lx in range(ox, ox + w):
-		for lz in range(oz, oz + d):
-			occupied[Vector2i(lx, lz)] = "lake"
-	var world_x := float(coord.x * chunk_size + ox)
-	var world_z := float(coord.y * chunk_size + oz)
-	_lake_rects[coord] = Rect2(world_x, world_z, float(w), float(d))
+	for lz in range(chunk_size):
+		var x := 0
+		while x < chunk_size:
+			var is_lake := lake_cells.has(Vector2i(x, lz))
+			var x0 := x
+			while x < chunk_size and lake_cells.has(Vector2i(x, lz)) == is_lake:
+				x += 1
+			var width := x - x0
+			if is_lake:
+				_add_floor_slab(root, coord, x0, lz, width, 1, -LAKE_DEPTH)
+			else:
+				_add_floor_slab(root, coord, x0, lz, width, 1, 0.0)
 
-	var water := MeshInstance3D.new()
-	water.name = "Lake"
+
+func _add_floor_slab(root: Node3D, coord: Vector2i, lx: int, lz: int, w: int, d: int, top_y: float) -> void:
+	var floor_body := StaticBody3D.new()
+	floor_body.collision_layer = 1
+	floor_body.collision_mask = 0
+	floor_body.position = Vector3(float(lx) + float(w) * 0.5, top_y - 0.5, float(lz) + float(d) * 0.5)
+	var floor_mesh := MeshInstance3D.new()
 	var box := BoxMesh.new()
-	box.size = Vector3(float(w), 0.22, float(d))
-	water.mesh = box
-	water.position = Vector3(float(ox) + float(w) * 0.5, 0.12, float(oz) + float(d) * 0.5)
+	box.size = Vector3(float(w), 1.0, float(d))
+	floor_mesh.mesh = box
 	var mat := StandardMaterial3D.new()
-	if is_dream_layer:
-		mat.albedo_color = Color(0.22, 0.18, 0.48, 0.55)
-	else:
-		mat.albedo_color = Color(0.20, 0.42, 0.66, 0.55)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.roughness = 0.12
-	mat.metallic = 0.18
-	water.material_override = mat
-	root.add_child(water)
+	mat.roughness = 0.95
+	var colr := COLOR_DREAM if is_dream_layer else COLOR_WAKE
+	if top_y < -0.01:
+		colr = colr.darkened(0.18)
+	var tint := 0.04 * float((coord.x * 3 + coord.y * 7) % 5 - 2)
+	mat.albedo_color = colr.lightened(tint)
+	floor_mesh.material_override = mat
+	floor_body.add_child(floor_mesh)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(float(w), 1.0, float(d))
+	col.shape = shape
+	floor_body.add_child(col)
+	root.add_child(floor_body)
 
+
+func _realize_lake(root: Node3D, coord: Vector2i, lake_cells: Dictionary, occupied: Dictionary) -> void:
+	var locals: Array[Vector2i] = []
+	for key in lake_cells.keys():
+		var cell: Vector2i = key
+		occupied[cell] = "lake"
+		locals.append(cell)
+		var wx := coord.x * chunk_size + cell.x
+		var wz := coord.y * chunk_size + cell.y
+		_lake_world_cells[Vector2i(wx, wz)] = true
+	_lakes_by_chunk[coord] = locals
+	var water_h := LAKE_SURFACE_Y - (-LAKE_DEPTH)
+	# Вода по рядам — форма остаётся неровной, без общего квадрата.
+	for lz in range(chunk_size):
+		var x := 0
+		while x < chunk_size:
+			if not lake_cells.has(Vector2i(x, lz)):
+				x += 1
+				continue
+			var x0 := x
+			while x < chunk_size and lake_cells.has(Vector2i(x, lz)):
+				x += 1
+			var width := x - x0
+			var water := MeshInstance3D.new()
+			water.name = "LakeWater"
+			var box := BoxMesh.new()
+			box.size = Vector3(float(width), water_h, 1.0)
+			water.mesh = box
+			water.position = Vector3(float(x0) + float(width) * 0.5, -LAKE_DEPTH + water_h * 0.5, float(lz) + 0.5)
+			var mat := StandardMaterial3D.new()
+			if is_dream_layer:
+				mat.albedo_color = Color(0.22, 0.18, 0.48, 0.55)
+			else:
+				mat.albedo_color = Color(0.20, 0.42, 0.66, 0.55)
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.roughness = 0.12
+			mat.metallic = 0.18
+			water.material_override = mat
+			root.add_child(water)
 	var area := Area3D.new()
 	area.name = "LakeArea"
 	area.add_to_group("lake")
 	area.collision_layer = 0
 	area.collision_mask = 2
 	area.monitoring = true
-	area.position = water.position + Vector3(0.0, 0.25, 0.0)
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(float(w), 1.5, float(d))
-	cs.shape = shape
-	area.add_child(cs)
 	root.add_child(area)
 
 
@@ -370,42 +459,52 @@ func _add_reagents(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
 	if is_dream_layer:
 		return
 	var has_ruin := _ruin_centers.has(coord)
-	var far := maxi(absi(coord.x), absi(coord.y)) >= 1
-	if not far and not has_ruin:
-		return
-	var attempts := 10 if has_ruin else 6
-	var max_spawn := 4 if has_ruin else 2
-	var spawned := 0
-	# Руины — хотя бы один реагент рядом с домом.
 	if has_ruin:
-		var center: Vector3 = _ruin_centers[coord]
-		var local := center - chunk_origin(coord)
-		var lx0 := clampi(int(local.x), 1, chunk_size - 2)
-		var lz0 := clampi(int(local.z) + 3, 1, chunk_size - 2)
-		if _try_spawn_reagent_at(root, coord, occupied, lx0, lz0, 1):
-			spawned += 1
+		_add_ruin_reagent_cluster(root, coord, occupied)
+		return
+	var far := maxi(absi(coord.x), absi(coord.y)) >= 1
+	if not far:
+		return
+	# Поле: 20% от прежней частоты, без гарантированного спавна.
+	var attempts := 6
+	var max_spawn := 1
+	var spawned := 0
+	var threshold := 0.42 * FIELD_REAGENT_RATE
 	for i in range(attempts):
 		if spawned >= max_spawn:
 			break
 		var lx := clampi(int(_hash01(coord.x * 13 + i * 17, coord.y * 19 + i * 23) * float(chunk_size)), 1, chunk_size - 2)
 		var lz := clampi(int(_hash01(coord.x * 29 + i * 7, coord.y * 31 + i * 11) * float(chunk_size)), 1, chunk_size - 2)
-		var threshold := 0.22 if has_ruin else 0.42
-		if has_ruin:
-			var center2: Vector3 = _ruin_centers[coord]
-			var wp := chunk_origin(coord) + Vector3(float(lx) + 0.5, 0.0, float(lz) + 0.5)
-			var dist := Vector2(wp.x - center2.x, wp.z - center2.z).length()
-			if dist < 8.0:
-				threshold = 0.12
 		var chance := _hash01(coord.x + i * 3, coord.y - i * 5)
 		if chance < threshold:
 			continue
 		if _try_spawn_reagent_at(root, coord, occupied, lx, lz, i + 2):
 			spawned += 1
-	# Дальние чанки без руин — гарантируем один реагент, чтобы мир не был пустым.
-	if spawned == 0 and far:
-		var fx := clampi(4 + int(_hash01(coord.x + 8, coord.y) * 8.0), 1, chunk_size - 2)
-		var fz := clampi(4 + int(_hash01(coord.x, coord.y + 8) * 8.0), 1, chunk_size - 2)
-		_try_spawn_reagent_at(root, coord, occupied, fx, fz, 99)
+
+
+func _add_ruin_reagent_cluster(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
+	var center: Vector3 = _ruin_centers[coord]
+	var spawned := 0
+	var locals: Array[Vector2i] = []
+	for lx in range(chunk_size):
+		for lz in range(chunk_size):
+			var wp := chunk_origin(coord) + Vector3(float(lx) + 0.5, 0.0, float(lz) + 0.5)
+			var dist := Vector2(wp.x - center.x, wp.z - center.z).length()
+			if dist <= 5.2:
+				locals.append(Vector2i(lx, lz))
+	# Детерминированный порядок, ближние клетки первыми.
+	locals.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var pa := chunk_origin(coord) + Vector3(float(a.x), 0.0, float(a.y))
+		var pb := chunk_origin(coord) + Vector3(float(b.x), 0.0, float(b.y))
+		return pa.distance_to(center) < pb.distance_to(center)
+	)
+	var salt := 1
+	for cell in locals:
+		if spawned >= RUIN_CLUSTER_TARGET:
+			break
+		if _try_spawn_reagent_at(root, coord, occupied, cell.x, cell.y, salt):
+			spawned += 1
+		salt += 1
 
 
 func _try_spawn_reagent_at(root: Node3D, coord: Vector2i, occupied: Dictionary, lx: int, lz: int, salt: int) -> bool:

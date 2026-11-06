@@ -1,5 +1,5 @@
 extends Node3D
-## Главная сцена v0.4: реагенты, инвентарь, призраки, руины/озёра.
+## Главная сцена v0.4.1: реагенты, инвентарь, призраки, руины/озёра.
 
 @onready var player: CharacterBody3D = $Player
 @onready var wake_world: Node3D = $WakeWorld
@@ -30,7 +30,7 @@ func _ready() -> void:
 	if saver.has_save():
 		saver.load_game()
 		GameState.set_hint("Продолжение с диска (F5 сейв / F9 лоад).")
-	print("Сонная стройка v0.4 ready (reagents+ghosts+inventory). Path OK.")
+	print("Сонная стройка v0.4.1 ready. Path OK.")
 
 
 func apply_world_visibility(is_dream: bool) -> void:

@@ -1,9 +1,10 @@
 extends CharacterBody3D
+const _Nav := preload("res://scripts/enemy_navigation.gd")
 ## «Шовник» — враг Яви. elite = тяжелее, крадёт больше осыпи.
 ## В Сне заморожен.
 
-const SPEED_NORMAL := 2.15
-const SPEED_ELITE := 2.85
+const SPEED_NORMAL := 2.15 * 0.6
+const SPEED_ELITE := 2.85 * 0.6
 const SEEK_RANGE := 28.0
 const CONTACT_RANGE := 1.7
 const HINT_RANGE := 12.0
@@ -39,8 +40,7 @@ func _ready() -> void:
 		add_to_group("seam_elite")
 	home = global_position
 	_pick_wander()
-	collision_layer = 0
-	collision_mask = 1
+	_Nav.setup_body(self)
 	GameState.world_changed.connect(_on_world)
 	_apply_dream_state(GameState.is_dream())
 	_build_mesh()
@@ -139,14 +139,7 @@ func _physics_process(delta: float) -> void:
 			_pick_wander()
 		desired = (_wander_target - global_position).normalized()
 
-	if not is_on_floor():
-		velocity.y -= _gravity * delta
-	else:
-		velocity.y = 0.0
-
-	velocity.x = desired.x * speed
-	velocity.z = desired.z * speed
-	move_and_slide()
+	_Nav.apply_movement(self, desired, speed, delta)
 
 	if dist <= CONTACT_RANGE and _steal_cd <= 0.0:
 		_hit_player(player, to_player)

@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.4: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
+## Headless smoke v0.4.1: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -29,9 +29,28 @@ func _run() -> void:
 	var result: Dictionary = gs.resolve_wake()
 	assert(not gs.is_dream())
 	assert(int(result["transferred"]) == 1)
-	assert(int(result["dust"]) == 9)
-	assert(gs.dust == before_dust + 9)
+	assert(int(result["dust"]) == 0)
+	assert(gs.dust == before_dust)
 	assert(gs.wake_blocks.has(Vector3i(1, 1, 1)))
+	# Сон не сбрасывается — можно достраивать.
+	assert(gs.dream_blocks.size() == 10)
+	assert(gs.dream_blocks.has(Vector3i(0, 0, 0)))
+	assert(gs.dream_blocks.has(Vector3i(1, 1, 1)))
+	gs.enter_dream()
+	assert(gs.dream_blocks.size() == 10)
+	gs.resolve_wake()
+	assert(gs.dream_blocks.size() == 10)
+	# Высота ячейки в яви совпадает со сном.
+	assert(gs.wake_blocks.has(Vector3i(1, 1, 1)))
+	var vw_script: GDScript = load("res://scripts/voxel_world.gd")
+	var dv: Node3D = vw_script.new()
+	dv.is_dream_layer = true
+	var wv: Node3D = vw_script.new()
+	wv.is_dream_layer = false
+	var height_cell := Vector3i(1, 1, 1)
+	assert(dv.cell_to_world(height_cell).is_equal_approx(wv.cell_to_world(height_cell)))
+	assert(is_equal_approx(dv.cell_to_world(Vector3i(2, 0, 4)).y, 0.5))
+	gs.dust = 9
 	assert(gs.craft_nail_from_dust())
 
 	# Клин из осыпи
@@ -118,6 +137,8 @@ func _run() -> void:
 	# Руины / озёра / реагенты в генерации
 	var found_lake := false
 	var found_ruin := false
+	var ruin_candidates := 0
+	var max_ruin_reagents := 0
 	for x in range(-8, 9):
 		for z in range(-8, 9):
 			var c := Vector2i(x, z)
@@ -125,17 +146,37 @@ func _run() -> void:
 				cm.ensure_chunk_loaded(c)
 				found_lake = true
 			if cm.chunk_has_ruin(c):
+				ruin_candidates += 1
 				cm.ensure_chunk_loaded(c)
 				found_ruin = true
+				max_ruin_reagents = maxi(max_ruin_reagents, cm.count_reagents_in_chunk(c))
 	assert(found_lake)
 	assert(found_ruin)
+	assert(ruin_candidates <= 24)
 	assert(cm.count_loaded_lakes() >= 1)
 	assert(cm.count_loaded_ruins() >= 1)
-	assert(cm.count_loaded_reagents() >= 1)
+	assert(max_ruin_reagents >= 8)
 	var lake_p: Vector3 = cm.get_any_lake_sample_point()
 	assert(lake_p != Vector3.ZERO)
 	assert(cm.is_world_in_lake(lake_p))
 	assert(not cm.is_world_in_lake(Vector3(0, 1, 0)))
+	# Озеро неровное: клеток меньше, чем у описанного прямоугольника.
+	var irregular_ok := false
+	for x2 in range(-8, 9):
+		for z2 in range(-8, 9):
+			var lc := Vector2i(x2, z2)
+			if not cm.chunk_has_lake(lc):
+				continue
+			cm.ensure_chunk_loaded(lc)
+			var ncells: int = cm.lake_cell_count(lc)
+			var bbox: int = cm.lake_bbox_area(lc)
+			if ncells > 0 and ncells < bbox:
+				irregular_ok = true
+				break
+		if irregular_ok:
+			break
+	assert(irregular_ok)
+	assert(is_equal_approx(cm.LAKE_DEPTH, 0.8))
 
 	# Враг (Шовник)
 	var enemy_script: GDScript = load("res://scripts/seam_creature.gd")
@@ -151,6 +192,11 @@ func _run() -> void:
 	assert(enemy.frozen)
 	enemy._apply_dream_state(false)
 	assert(not enemy.frozen)
+	assert(is_equal_approx(enemy.SPEED_NORMAL, 2.15 * 0.6))
+	assert(is_equal_approx(enemy.SPEED_ELITE, 2.85 * 0.6))
+	assert(enemy.collision_layer == 16)
+	assert(enemy.collision_mask & 16 != 0)
+	assert(enemy.collision_mask & 1 != 0)
 
 	# Четыре типа призраков / цели Pac-Man
 	var ghost_script: GDScript = load("res://scripts/enemy_ghost.gd")
@@ -189,6 +235,11 @@ func _run() -> void:
 	assert(scatter_t.is_equal_approx(Vector3(10, 1, 10)))
 	g1._apply_dream_state(true)
 	assert(g1.frozen)
+	assert(is_equal_approx(g1.SPEED, 2.45 * 0.6))
+	assert(g1.collision_layer == 16)
+	assert(g1.collision_mask & 16 != 0)
+
+	var persist_count: int = gs.dream_blocks.size()
 
 	# Save round-trip через GameState сериализацию + файл user://
 	gs.dust = 11
@@ -234,9 +285,9 @@ func _run() -> void:
 	for n2 in get_nodes_in_group("enemy_ghost"):
 		ghost_count += 1
 
-	print("SMOKE: OK transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d save=1 exits=%d" % [
+	print("SMOKE: OK v0.4.1 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
-		cm.count_loaded_reagents(), gs_m.dream_exit_count
+		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count
 	])
 	quit(0)

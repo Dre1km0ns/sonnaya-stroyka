@@ -1,4 +1,5 @@
 extends CharacterBody3D
+const _Nav := preload("res://scripts/enemy_navigation.gd")
 ## Четыре «призрака» в духе Pac-Man: враг1..враг4 (Blinky / Pinky / Inky / Clyde).
 ## Scatter/Chase задаёт ThreatDirector.
 
@@ -11,7 +12,7 @@ const KIND_COLORS: Array[Color] = [
 	Color(0.18, 0.78, 0.86),
 	Color(1.00, 0.55, 0.12),
 ]
-const SPEED := 2.45
+const SPEED := 2.45 * 0.6
 const SEEK_RANGE := 42.0
 const CONTACT_RANGE := 1.7
 const HINT_RANGE := 12.0
@@ -50,8 +51,7 @@ func _ready() -> void:
 		home = global_position
 	if corner == Vector3.ZERO:
 		corner = _default_corner()
-	collision_layer = 0
-	collision_mask = 1
+	_Nav.setup_body(self)
 	GameState.world_changed.connect(_on_world)
 	_apply_dream_state(GameState.is_dream())
 	_build_mesh()
@@ -185,14 +185,7 @@ func _physics_process(delta: float) -> void:
 	if to_target.length() > 0.15 and dist < SEEK_RANGE + 12.0:
 		desired = to_target.normalized()
 
-	if not is_on_floor():
-		velocity.y -= _gravity * delta
-	else:
-		velocity.y = 0.0
-
-	velocity.x = desired.x * SPEED
-	velocity.z = desired.z * SPEED
-	move_and_slide()
+	_Nav.apply_movement(self, desired, SPEED, delta)
 
 	if dist <= CONTACT_RANGE and _steal_cd <= 0.0:
 		_hit_player(player, to_player)

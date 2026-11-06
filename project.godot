@@ -1,9 +1,9 @@
 ; Engine configuration file.
-; Godot 4.7 — Сонная стройка (Dream Building) v0.4 reagents+inventory+ghosts
+; Godot 4.7 — Сонная стройка (Dream Building) v0.4.1 lakes/dream persist/enemy nav
 config_version=5
 
 [application]
-config/name="Сонная стройка v0.4"
+config/name="Сонная стройка v0.4.1"
 config/description="Dual-world sandbox: build in Dream, anchor what survives into Wake."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
@@ -94,6 +94,7 @@ craft_nail={
 3d_physics/layer_2="player"
 3d_physics/layer_3="blocks"
 3d_physics/layer_4="interactable"
+3d_physics/layer_5="enemies"
 
 [rendering]
 anti_aliasing/quality/msaa_3d=1

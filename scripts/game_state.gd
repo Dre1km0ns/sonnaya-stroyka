@@ -360,35 +360,35 @@ func enter_dream() -> void:
 
 
 func resolve_wake() -> Dictionary:
-	## Переносит заякоренные блоки в явь, остальное → осыпь.
+	## Переносит новые якоря в явь с тем же Vector3i (высота совпадает).
+	## Незаякоренные блоки сна остаются — стройку можно продолжать в следующих сессиях.
 	var transferred := 0
 	var dust_gained := 0
 	var mutations := 0
-	var anchored_set: Dictionary = {}
+	var newly: Dictionary = {}
 
 	for a in pending_anchors:
 		for c in a["cells"]:
-			anchored_set[c] = true
+			newly[c] = true
 
-	var keys := dream_blocks.keys()
-	for key in keys:
+	for key in newly.keys():
 		var cell: Vector3i = key
+		if not dream_blocks.has(cell):
+			continue
+		if wake_blocks.has(cell):
+			continue
 		var data: Dictionary = dream_blocks[cell]
-		if anchored_set.has(cell) or data.get("anchored", false):
-			var mutant := false
-			if randf() < MUTATION_CHANCE:
-				mutant = true
-				mutations += 1
-			wake_blocks[cell] = {
-				"kind": "mouth" if mutant else data.get("kind", "drift"),
-				"mutant": mutant,
-			}
-			transferred += 1
-		else:
-			dust_gained += DUST_PER_BLOCK
+		var mutant := false
+		if randf() < MUTATION_CHANCE:
+			mutant = true
+			mutations += 1
+		wake_blocks[cell] = {
+			"kind": "mouth" if mutant else data.get("kind", "drift"),
+			"mutant": mutant,
+		}
+		transferred += 1
 
 	dust += dust_gained
-	dream_blocks.clear()
 	pending_anchors.clear()
 	current_world = World.WAKE
 	dream_exit_count += 1
@@ -397,7 +397,7 @@ func resolve_wake() -> Dictionary:
 	inventory_changed.emit()
 	world_changed.emit(false)
 	wake_resolved.emit(transferred, dust_gained, mutations)
-	var msg := "Пробуждение: +%d блоков в явь, +%d осыпи" % [transferred, dust_gained]
+	var msg := "Пробуждение: +%d блоков в явь (сон сохранён)" % transferred
 	if mutations > 0:
 		msg += ", мутаций: %d (блок «рот»)" % mutations
 	set_hint(msg)
