@@ -139,11 +139,12 @@ func _set_process_recursive(root: Node, enabled: bool) -> void:
 	for child in root.get_children():
 		_set_process_recursive(child, enabled)
 	if root is CollisionObject3D:
-		# Отключаем столкновения «чужого» мира через слой 0 / восстановление meta
+		# Не сохраняем 0 — иначе новый чанк невидимого мира «запомнит» пустой слой.
 		var co := root as CollisionObject3D
-		if not co.has_meta("_saved_layer"):
+		if co.collision_layer != 0:
 			co.set_meta("_saved_layer", co.collision_layer)
 		if enabled:
-			co.collision_layer = int(co.get_meta("_saved_layer"))
+			if co.has_meta("_saved_layer") and int(co.get_meta("_saved_layer")) != 0:
+				co.collision_layer = int(co.get_meta("_saved_layer"))
 		else:
 			co.collision_layer = 0

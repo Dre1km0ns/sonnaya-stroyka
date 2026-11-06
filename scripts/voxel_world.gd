@@ -96,7 +96,10 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	var kind: String = str(data.get("kind", "drift"))
 	var anchored: bool = bool(data.get("anchored", false))
 	var mutant: bool = bool(data.get("mutant", false)) or kind == "mouth"
-	if kind == "workbench":
+	if kind == "torch":
+		mat.albedo_color = Color(0.42, 0.26, 0.12)
+		box.size = Vector3(0.12, 0.72, 0.12)
+	elif kind == "workbench":
 		mat.albedo_color = Color(0.46, 0.30, 0.18)
 		mat.emission_enabled = true
 		mat.emission = Color(0.6, 0.35, 0.15) * 0.25
@@ -116,6 +119,29 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	mi.position = cell_to_world(cell)
 	add_child(mi)
 	_meshes[cell] = mi
+	if kind == "torch":
+		var flame := MeshInstance3D.new()
+		var fs := SphereMesh.new()
+		fs.radius = 0.14
+		fs.height = 0.28
+		flame.mesh = fs
+		var fmat := StandardMaterial3D.new()
+		fmat.albedo_color = Color(1.0, 0.62, 0.2)
+		fmat.emission_enabled = true
+		fmat.emission = Color(1.0, 0.45, 0.1)
+		fmat.emission_energy_multiplier = 1.4
+		flame.material_override = fmat
+		flame.position = mi.position + Vector3(0, 0.42, 0)
+		add_child(flame)
+		var light := OmniLight3D.new()
+		light.name = "TorchLight"
+		light.light_color = Color(1.0, 0.72, 0.38)
+		light.light_energy = 1.55
+		light.omni_range = 8.0
+		light.omni_attenuation = 1.2
+		light.shadow_enabled = false
+		light.position = mi.position + Vector3(0, 0.45, 0)
+		add_child(light)
 	if kind == "workbench":
 		var top := MeshInstance3D.new()
 		var top_box := BoxMesh.new()
@@ -141,5 +167,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	body.set_meta("kind", kind)
 	if kind == "workbench":
 		body.add_to_group("workbench")
+	if kind == "torch":
+		body.add_to_group("torch")
 	add_child(body)
 	_bodies[cell] = body

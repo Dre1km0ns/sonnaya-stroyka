@@ -11,13 +11,13 @@ var _fill: OmniLight3D = null
 var _env: Environment = null
 
 const DAY_BG := Color(0.55, 0.62, 0.7)
-const NIGHT_BG := Color(0.07, 0.08, 0.16)
+const NIGHT_BG := Color(0.02, 0.02, 0.05)
 const DAY_AMBIENT := Color(0.7, 0.68, 0.62)
-const NIGHT_AMBIENT := Color(0.18, 0.22, 0.38)
+const NIGHT_AMBIENT := Color(0.05, 0.06, 0.10)
 const DAY_FOG := Color(0.7, 0.65, 0.55)
-const NIGHT_FOG := Color(0.08, 0.1, 0.18)
+const NIGHT_FOG := Color(0.03, 0.03, 0.06)
 const DAY_SUN := Color(1.0, 0.95, 0.85)
-const NIGHT_SUN := Color(0.35, 0.42, 0.7)
+const NIGHT_SUN := Color(0.15, 0.18, 0.32)
 
 
 func setup(sun: DirectionalLight3D, env: Environment, fill: OmniLight3D = null) -> void:
@@ -62,6 +62,8 @@ func _process(delta: float) -> void:
 	time_of_day += delta
 	if GameState:
 		GameState.day_time = time_of_day
+		if GameState.has_method("notify_night_from_time"):
+			GameState.notify_night_from_time()
 		if GameState.is_dream():
 			return
 	apply_lighting()
@@ -72,14 +74,14 @@ func apply_lighting() -> void:
 	if _env:
 		_env.background_color = DAY_BG.lerp(NIGHT_BG, k)
 		_env.ambient_light_color = DAY_AMBIENT.lerp(NIGHT_AMBIENT, k)
-		_env.ambient_light_energy = lerpf(0.55, 0.28, k)
+		_env.ambient_light_energy = lerpf(0.55, 0.07, k)
 		_env.fog_light_color = DAY_FOG.lerp(NIGHT_FOG, k)
-		_env.fog_density = lerpf(0.002, 0.012, k)
+		_env.fog_density = lerpf(0.002, 0.038, k)
 		_env.glow_intensity = lerpf(0.25, 0.4, k)
 	if _sun:
 		_sun.light_color = DAY_SUN.lerp(NIGHT_SUN, k)
-		_sun.light_energy = lerpf(1.1, 0.22, k)
+		_sun.light_energy = lerpf(1.1, 0.04, k)
 		_sun.rotation_degrees = Vector3(-48.0 + k * 70.0, -35.0, 0.0)
 	if _fill:
-		_fill.light_energy = lerpf(0.4, 0.12, k)
+		_fill.light_energy = lerpf(0.4, 0.03, k)
 		_fill.light_color = Color(1.0, 0.85, 0.65).lerp(Color(0.35, 0.45, 0.7), k)

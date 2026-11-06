@@ -34,6 +34,9 @@ func _ready() -> void:
 		queue_free()
 		return
 	_apply_visual()
+	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night):
+		GameState.night_changed.connect(_on_night)
+	_on_night(GameState.is_night() if GameState.has_method("is_night") else false)
 
 
 func _apply_visual() -> void:
@@ -96,3 +99,22 @@ func collect() -> void:
 	visible = false
 	collision_layer = 0
 	queue_free()
+
+
+func _on_night(night: bool) -> void:
+	var mesh_i := get_node_or_null("Mesh") as MeshInstance3D
+	if mesh_i == null or mesh_i.material_override == null:
+		return
+	var mat := mesh_i.material_override as StandardMaterial3D
+	if mat == null:
+		return
+	if night:
+		mat.emission_enabled = false
+		mat.emission_energy_multiplier = 0.0
+	else:
+		mat.emission_enabled = true
+		mat.emission = TYPE_COLORS[clampi(reagent_type, 1, 3) - 1]
+		mat.emission_energy_multiplier = 0.65
+	var tag := get_node_or_null("Tag") as Label3D
+	if tag:
+		tag.modulate.a = 0.25 if night else 1.0

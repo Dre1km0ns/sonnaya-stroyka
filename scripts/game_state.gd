@@ -1,11 +1,12 @@
 extends Node
-## Глобальное состояние «Сонная стройка» v0.4.2: крафт, якорь3, верстак, день/ночь.
+## Глобальное состояние «Сонная стройка» v0.4.3: крафт, якорь3, верстак, день/ночь.
 
 signal world_changed(is_dream: bool)
 signal inventory_changed
 signal clarity_changed(value: float, max_value: float)
 signal hint_changed(text: String)
 signal wake_resolved(transferred: int, dust_gained: int, mutations: int)
+signal night_changed(is_night: bool)
 
 enum World { WAKE, DREAM }
 enum AnchorType { NAIL, WEDGE, ANCHOR3 }
@@ -57,6 +58,9 @@ var last_hint: String = ""
 var awake_time: float = 0.0
 var day_time: float = 0.0
 var craft_menu_open: bool = false
+var _night_flag: bool = false
+const DAY_LENGTH := 300.0
+const NIGHT_LENGTH := 300.0
 var world_seed_wake: int = 1337
 var world_seed_dream: int = 9001
 
@@ -258,6 +262,7 @@ func recipe_defs() -> Array:
 		{"id": "anchor3", "name": "Якорь3", "where": "anywhere", "dust": ANCHOR3_CRAFT_DUST, "gives": "anchors3"},
 		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 10, "item": "workbench", "item_name": "Верстак"},
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent2": 2, "reagent3": 3, "item": "pickaxe", "item_name": "Кирка"},
+		{"id": "torch", "name": "Факел", "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
 	]
 
 
@@ -303,7 +308,21 @@ func can_afford_recipe(rec: Dictionary) -> bool:
 	return true
 
 
+func recipe_cost_text(rec: Dictionary) -> String:
+	var parts: Array[String] = []
+	if int(rec.get("dust", 0)) > 0:
+		parts.append("%d осыпи" % int(rec.get("dust", 0)))
+	if int(rec.get("reagent1", 0)) > 0:
+		parts.append("%d %s" % [int(rec.get("reagent1", 0)), reagent_type_name(1)])
+	if int(rec.get("reagent2", 0)) > 0:
+		parts.append("%d %s" % [int(rec.get("reagent2", 0)), reagent_type_name(2)])
+	if int(rec.get("reagent3", 0)) > 0:
+		parts.append("%d %s" % [int(rec.get("reagent3", 0)), reagent_type_name(3)])
+	return ", ".join(parts) if not parts.is_empty() else "бесплатно"
+
+
 func recipe_label(rec: Dictionary) -> String:
+
 	var parts: Array[String] = []
 	if int(rec.get("dust", 0)) > 0:
 		parts.append("%d осыпи" % int(rec.get("dust", 0)))
@@ -410,6 +429,34 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 			return false
 	inventory_changed.emit()
 	set_hint("Скрафчено: %s." % str(rec.get("name", rid)))
+	return true
+
+
+
+func is_night() -> bool:
+	var cycle := DAY_LENGTH + NIGHT_LENGTH
+	if cycle <= 0.0:
+		return false
+	var t := fmod(day_time, cycle)
+	if t < 0.0:
+		t += cycle
+	return t >= DAY_LENGTH
+
+
+func notify_night_from_time() -> void:
+	var n := is_night()
+	if n != _night_flag:
+		_night_flag = n
+		night_changed.emit(n)
+
+
+func place_wake_block(cell: Vector3i, kind: String) -> bool:
+	if is_dream():
+		return false
+	if wake_blocks.has(cell):
+		return false
+	wake_blocks[cell] = {"kind": kind, "mutant": false}
+	inventory_changed.emit()
 	return true
 
 
@@ -572,7 +619,7 @@ func resolve_wake() -> Dictionary:
 		var data: Dictionary = dream_blocks[cell]
 		var kind := str(data.get("kind", "drift"))
 		var mutant := false
-		if kind != "workbench" and randf() < MUTATION_CHANCE:
+		if kind != "workbench" and kind != "torch" and randf() < MUTATION_CHANCE:
 			mutant = true
 			mutations += 1
 			kind = "mouth"

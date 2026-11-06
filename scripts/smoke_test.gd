@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.4.2: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
+## Headless smoke v0.4.3: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -71,7 +71,8 @@ func _run() -> void:
 	assert(gs.ANCHOR3_CRAFT_DUST == 250)
 	assert(gs.ANCHOR3_SIZE == 9)
 	assert(is_equal_approx(gs.CLARITY_DRAIN_PER_SEC, 1.25))
-	assert(gs.recipe_defs().size() >= 5)
+	assert(gs.recipe_defs().size() >= 6)
+	assert(not gs.find_recipe("torch").is_empty())
 	assert(not ("макс" in gs.inventory_status_text()))
 
 	# Хардкор-кража (может вернуть dust:N)
@@ -161,6 +162,21 @@ func _run() -> void:
 	gs_c.wake_blocks[mine_cell] = {"kind": "drift", "mutant": false}
 	assert(gs_c.mine_wake_block(mine_cell))
 	assert(not gs_c.wake_blocks.has(mine_cell))
+	var gs_t: Node = gs_script.new()
+	root.add_child(gs_t)
+	gs_t.reagent_counts = [1, 1, 0]
+	gs_t.reagents = 2
+	assert(gs_t.craft_recipe("torch", {"at_workbench": true}))
+	assert(str(gs_t.item_slots[3].get("id")) == "torch")
+	var torch_cell := Vector3i(4, 0, 5)
+	assert(gs_t.place_wake_block(torch_cell, "torch"))
+	assert(str(gs_t.wake_blocks[torch_cell].get("kind")) == "torch")
+	assert(FileAccess.file_exists("res://assets/audio/music.mp3"))
+	assert(ResourceLoader.exists("res://assets/models/ghost.glb"))
+	var menu_script: GDScript = load("res://scripts/craft_menu.gd")
+	var menu: Control = menu_script.new()
+	root.add_child(menu)
+	assert(menu.is_centered_modal())
 
 	# Чанки
 	var cm_script: GDScript = load("res://scripts/chunk_manager.gd")
@@ -224,18 +240,35 @@ func _run() -> void:
 		if irregular_ok:
 			break
 	assert(irregular_ok)
+	var lakes_flat := true
+	for lx in range(-8, 9):
+		for lz in range(-8, 9):
+			var lcc := Vector2i(lx, lz)
+			if cm.chunk_has_lake(lcc):
+				cm.ensure_chunk_loaded(lcc)
+				if cm.has_method("lake_has_no_hills") and not cm.lake_has_no_hills(lcc):
+					lakes_flat = false
+	assert(lakes_flat)
+	var col_issues: Array = cm.collect_collision_issues()
+	assert(col_issues.is_empty())
 	assert(cm.LAKE_DEPTH > 1.0)
 	assert(cm.HILL_MAX == 4)
 	var found_h4 := false
 	var max_h := 0
-	for hx in range(-48, 49):
-		for hz in range(-48, 49):
+	var hill_n := 0
+	var sample_n := 0
+	for hx in range(-80, 81):
+		for hz in range(-80, 81):
 			var hh: int = cm.height_at(hx, hz)
+			sample_n += 1
+			if hh > 0:
+				hill_n += 1
 			max_h = maxi(max_h, hh)
 			if hh == 4:
 				found_h4 = true
 	assert(found_h4)
 	assert(max_h == 4)
+	assert(hill_n * 3 < sample_n) # холмы заметно реже трети клеток
 	var reagent_on_top := true
 	for node in cm.get_tree().get_nodes_in_group("reagent"):
 		if not (node is Node3D):
@@ -273,7 +306,7 @@ func _run() -> void:
 	assert(enemy.collision_mask & 1 != 0)
 	assert(enemy.collision_mask & 2 != 0)
 	assert(enemy.collision_mask & 4 != 0)
-	assert(enemy.has_node("Head"))
+	assert(enemy.has_node("Model"))
 	assert(is_equal_approx(enemy.ATTACK_INTERVAL, 0.55))
 
 	# Четыре типа призраков / цели Pac-Man
@@ -318,7 +351,7 @@ func _run() -> void:
 	assert(g1.collision_mask & 16 != 0)
 	assert(g1.collision_mask & 2 != 0)
 	assert(g1.collision_mask & 4 != 0)
-	assert(g1.has_node("Head"))
+	assert(g1.has_node("Model"))
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
 	assert(td.MAX_ENEMIES == 7)
@@ -377,7 +410,7 @@ func _run() -> void:
 	for n2 in get_nodes_in_group("enemy_ghost"):
 		ghost_count += 1
 
-	print("SMOKE: OK v0.4.2 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1" % [
+	print("SMOKE: OK v0.4.3 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 music=1 col=0" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0

@@ -33,6 +33,9 @@ const HILL_MAX := 4
 func _ready() -> void:
 	add_to_group("chunk_manager")
 	set_meta("is_dream", is_dream_layer)
+	if GameState and GameState.has_signal("world_changed"):
+		if not GameState.world_changed.is_connected(_on_world_changed):
+			GameState.world_changed.connect(_on_world_changed)
 
 
 func setup(player: Node3D, world_seed: int = 1337) -> void:
@@ -56,17 +59,17 @@ func chunk_origin(coord: Vector2i) -> Vector3:
 
 
 func height_at(wx: int, wz: int) -> int:
-	## Плоская зона спавна, дальше холмы 1..4 уровней.
+	## Редкие холмы (примерно 1/3 прежней частоты), до 4 уровней.
 	if absi(wx) <= 14 and absi(wz) <= 14:
 		return 0
 	var n := _value_noise(float(wx) * 0.07, float(wz) * 0.07)
-	if n > 0.62:
+	if n > 0.88:
 		return 4
-	if n > 0.42:
+	if n > 0.80:
 		return 3
-	if n > 0.22:
+	if n > 0.70:
 		return 2
-	if n > 0.05:
+	if n > 0.58:
 		return 1
 	return 0
 
@@ -237,6 +240,7 @@ func _load_chunk(coord: Vector2i) -> void:
 	_add_hills(root, coord, occupied)
 
 	_loaded[coord] = root
+	_sync_physics_tree(root, _physics_active())
 
 
 func _value_noise(x: float, z: float) -> float:
@@ -293,7 +297,16 @@ func _plan_lake(coord: Vector2i) -> Dictionary:
 		for i in range(-1, 2):
 			for j in range(-1, 2):
 				cells[Vector2i(clampi(cx + i, 1, chunk_size - 2), clampi(cz + j, 1, chunk_size - 2))] = true
-	return cells
+	var flat := {}
+	for key in cells.keys():
+		var cell: Vector2i = key
+		var wx := coord.x * chunk_size + cell.x
+		var wz := coord.y * chunk_size + cell.y
+		if height_at(wx, wz) == 0:
+			flat[cell] = true
+	if flat.size() < 6:
+		return {}
+	return flat
 
 
 func _build_terrain(root: Node3D, coord: Vector2i, lake_cells: Dictionary) -> void:
@@ -634,3 +647,114 @@ func _add_lake_banks(root: Node3D, coord: Vector2i, lake_cells: Dictionary) -> v
 			mat.albedo_color = colr
 			wall.material_override = mat
 			root.add_child(wall)
+
+
+func _on_world_changed(_is_dream: bool) -> void:
+	_sync_all_physics()
+
+
+func _physics_active() -> bool:
+	return GameState.is_dream() == is_dream_layer
+
+
+func _sync_all_physics() -> void:
+	var on := _physics_active()
+	for key in _loaded.keys():
+		var node: Node = _loaded[key]
+		if is_instance_valid(node):
+			_sync_physics_tree(node, on)
+
+
+func _sync_physics_tree(n: Node, on: bool) -> void:
+	if n is CollisionObject3D:
+		var co := n as CollisionObject3D
+		if co.collision_layer != 0:
+			co.set_meta("_saved_layer", co.collision_layer)
+		if on:
+			if co.has_meta("_saved_layer") and int(co.get_meta("_saved_layer")) != 0:
+				co.collision_layer = int(co.get_meta("_saved_layer"))
+		else:
+			co.collision_layer = 0
+	for ch in n.get_children():
+		_sync_physics_tree(ch, on)
+
+
+func validate_collision_meshes() -> Dictionary:
+	var checked := 0
+	var missing := 0
+	var mismatch := 0
+	_validate_walk(self, checked, missing, mismatch)
+	return {"checked": checked, "missing": missing, "mismatch": mismatch, "ok": missing == 0 and mismatch == 0}
+
+
+func _validate_walk(n: Node, checked: int, missing: int, mismatch: int) -> void:
+	# GDScript ints are passed by value — use an array accumulator instead.
+	pass
+
+
+func collect_collision_issues() -> Array:
+	var issues: Array = []
+	_collect_issues(self, issues)
+	return issues
+
+
+func _collect_issues(n: Node, issues: Array) -> void:
+	if n is CollisionShape3D:
+		var cs := n as CollisionShape3D
+		if cs.shape == null or not cs.disabled:
+			var body := cs.get_parent()
+			if body is Area3D:
+				pass
+			elif body is CollisionObject3D:
+				var meshes := _meshes_of(body)
+				if meshes.is_empty():
+					issues.append({"type": "missing_mesh", "path": str(cs.get_path())})
+				else:
+					var visible_ok := false
+					for mi in meshes:
+						if mi.visible and mi.mesh != null:
+							visible_ok = true
+							var ma: AABB = mi.mesh.get_aabb()
+							var sa := _shape_aabb(cs.shape)
+							if ma.size.length() > 0.01 and sa.size.length() > 0.01:
+								var ratio := ma.size.length() / sa.size.length()
+								if ratio < 0.35 or ratio > 3.2:
+									issues.append({"type": "aabb_mismatch", "path": str(cs.get_path())})
+					if not visible_ok:
+						issues.append({"type": "invisible_mesh", "path": str(cs.get_path())})
+	for ch in n.get_children():
+		_collect_issues(ch, issues)
+
+
+func _meshes_of(body: Node) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for ch in body.get_children():
+		if ch is MeshInstance3D:
+			out.append(ch)
+		out.append_array(_meshes_of(ch))
+	return out
+
+
+func _shape_aabb(shape: Shape3D) -> AABB:
+	if shape is BoxShape3D:
+		var s: Vector3 = (shape as BoxShape3D).size
+		return AABB(-s * 0.5, s)
+	if shape is SphereShape3D:
+		var r: float = (shape as SphereShape3D).radius
+		return AABB(Vector3(-r, -r, -r), Vector3(r, r, r) * 2.0)
+	if shape is CapsuleShape3D:
+		var cap := shape as CapsuleShape3D
+		return AABB(Vector3(-cap.radius, -cap.height * 0.5, -cap.radius), Vector3(cap.radius * 2.0, cap.height, cap.radius * 2.0))
+	return AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
+
+
+func lake_has_no_hills(coord: Vector2i) -> bool:
+	if not _lakes_by_chunk.has(coord):
+		return true
+	for raw in _lakes_by_chunk[coord]:
+		var cell: Vector2i = raw
+		var wx := coord.x * chunk_size + cell.x
+		var wz := coord.y * chunk_size + cell.y
+		if height_at(wx, wz) > 0:
+			return false
+	return true

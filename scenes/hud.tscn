@@ -52,6 +52,7 @@ theme_override_font_sizes/font_size = 16
 text = "Осыпь: 0   Гвозди: 3   Клинья: 1"
 
 [node name="HintLabel" type="Label" parent="Root"]
+visible = false
 layout_mode = 0
 anchors_preset = 12
 anchor_top = 1.0

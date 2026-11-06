@@ -36,7 +36,14 @@ func _process(delta: float) -> void:
 		return
 	if not GameState.is_dream():
 		ghost.visible = false
-		if _place_cooldown <= 0.0 and (Input.is_action_just_pressed("place_block") or Input.is_action_just_pressed("remove_block")):
+		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
+			if GameState.selected_is("torch"):
+				_try_place_torch()
+				_place_cooldown = 0.16
+			elif GameState.selected_is("pickaxe"):
+				_try_mine_wake()
+				_place_cooldown = 0.16
+		elif _place_cooldown <= 0.0 and Input.is_action_just_pressed("remove_block"):
 			if GameState.selected_is("pickaxe"):
 				_try_mine_wake()
 				_place_cooldown = 0.16
@@ -134,3 +141,34 @@ func _try_mine_wake() -> void:
 		for vox in get_tree().get_nodes_in_group("voxel_world"):
 			if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
 				vox.remove_block(cell)
+
+
+func _wake_voxels() -> Node3D:
+	for vox in get_tree().get_nodes_in_group("voxel_world"):
+		if not bool(vox.get("is_dream_layer")):
+			return vox
+	return null
+
+
+func _try_place_torch() -> void:
+	var vox := _wake_voxels()
+	if vox == null:
+		return
+	var cell := Vector3i.ZERO
+	var aim := _aim()
+	if aim.get("hit", false):
+		var hit_pos: Vector3 = aim["position"]
+		var normal: Vector3 = aim["normal"]
+		cell = vox.world_to_cell(hit_pos + normal * 0.51)
+	else:
+		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
+		var forward := -cam.global_transform.basis.z
+		cell = vox.world_to_cell(cam.global_position + forward * 3.0)
+	if cell.y < 0:
+		cell.y = 0
+	if not GameState.consume_item("torch", 1):
+		return
+	if GameState.place_wake_block(cell, "torch"):
+		vox.add_block(cell, GameState.wake_blocks[cell])
+	else:
+		GameState.add_item("torch", "Факел", 1)

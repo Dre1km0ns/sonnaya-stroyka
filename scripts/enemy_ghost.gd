@@ -62,6 +62,9 @@ func _ready() -> void:
 	GameState.world_changed.connect(_on_world)
 	_apply_dream_state(GameState.is_dream())
 	_build_mesh()
+	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night_look):
+		GameState.night_changed.connect(_on_night_look)
+	_on_night_look(GameState.is_night() if GameState.has_method("is_night") else false)
 
 
 func _default_corner() -> Vector3:
@@ -214,3 +217,9 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 		GameState.set_hint("%s сорвал реагент!" % kind_name())
 	else:
 		GameState.set_hint("%s толкает — карман пуст." % kind_name())
+
+
+func _on_night_look(night: bool) -> void:
+	var model := get_node_or_null("Model")
+	if model:
+		_Vis.apply_night(model, night)

@@ -1,5 +1,5 @@
 extends CanvasLayer
-## HUD v0.4.2: хотбар, крафт-меню, без «макс.100».
+## HUD v0.4.3: хотбар, крафт-меню, без «макс.100».
 
 @onready var world_label: Label = $Root/WorldLabel
 @onready var clarity_bar: ProgressBar = $Root/ClarityBar
@@ -23,7 +23,9 @@ func _ready() -> void:
 	_on_world(GameState.is_dream())
 	_refresh_inv()
 	_on_clarity(GameState.clarity, GameState.CLARITY_MAX)
-	_on_hint(GameState.last_hint)
+	if hint_label:
+		hint_label.visible = false
+		hint_label.text = ""
 
 
 func _build_hotbar() -> void:
@@ -90,5 +92,7 @@ func _refresh_inv() -> void:
 		_hotbar_labels[i].text = "[%s] %s\nx%d" % [key_hint, title, count]
 
 
-func _on_hint(text: String) -> void:
-	hint_label.text = text
+func _on_hint(_text: String) -> void:
+	if hint_label:
+		hint_label.visible = false
+		hint_label.text = ""

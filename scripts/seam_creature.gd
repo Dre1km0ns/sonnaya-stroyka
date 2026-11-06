@@ -51,6 +51,9 @@ func _ready() -> void:
 	GameState.world_changed.connect(_on_world)
 	_apply_dream_state(GameState.is_dream())
 	_build_mesh()
+	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night_look):
+		GameState.night_changed.connect(_on_night_look)
+	_on_night_look(GameState.is_night() if GameState.has_method("is_night") else false)
 
 
 func _build_mesh() -> void:
@@ -188,3 +191,9 @@ func _tick_block_attack(_delta: float) -> bool:
 			vox.remove_block(ripped)
 	_atk_cell = null
 	return true
+
+
+func _on_night_look(night: bool) -> void:
+	var model := get_node_or_null("Model")
+	if model:
+		_Vis.apply_night(model, night)
