@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.4.4: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
+## Headless smoke v0.4.5: добыча холмов/руин киркой + сейв террейна + модели инструментов.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -197,6 +197,8 @@ func _run() -> void:
 	assert(ResourceLoader.exists("res://assets/models/reagent_crystal.glb"))
 	assert(ResourceLoader.exists("res://assets/models/reagent_herb.glb"))
 	assert(ResourceLoader.exists("res://assets/models/reagent_ore.glb"))
+	assert(FileAccess.file_exists("res://assets/models/pickaxe.glb"))
+	assert(FileAccess.file_exists("res://assets/models/sword.glb"))
 	var gs_s: Node = gs_script.new()
 	root.add_child(gs_s)
 	gs_s.reagent_counts = [5, 2, 0]
@@ -310,6 +312,82 @@ func _run() -> void:
 	assert(found_h4)
 	assert(max_h == 4)
 	assert(hill_n * 3 < sample_n) # холмы заметно реже трети клеток
+	# Добыча процедурного террейна: луч по холму и стене руин, reload чанка и save/load.
+	var hill_cell := Vector3i(0, -999, 0)
+	for hx2 in range(16, 120):
+		for hz2 in range(16, 120):
+			var hht: int = cm.height_at(hx2, hz2)
+			if hht <= 0:
+				continue
+			var cand := Vector3i(hx2, hht - 1, hz2)
+			cm.ensure_chunk_loaded(cm.world_to_chunk(Vector3(hx2, 0, hz2)))
+			if cm.has_terrain_visual(cand):
+				hill_cell = cand
+				break
+		if hill_cell.y != -999:
+			break
+	assert(hill_cell.y != -999)
+	assert(cm.has_terrain_visual(hill_cell))
+	await process_frame
+	await physics_frame
+	await physics_frame
+	var hfrom := Vector3(float(hill_cell.x) + 0.5, float(hill_cell.y) + 3.0, float(hill_cell.z) + 0.5)
+	var hto := Vector3(float(hill_cell.x) + 0.5, float(hill_cell.y) + 0.4, float(hill_cell.z) + 0.5)
+	var hhit: Dictionary = cm.ray_query_terrain(hfrom, hto)
+	assert(not hhit.is_empty())
+	assert(hhit.collider != null)
+	assert(hhit.collider.has_meta("terrain_cell"))
+	assert(str(hhit.collider.get_meta("terrain_kind")) == "hill")
+	var hmined: Vector3i = hhit.collider.get_meta("terrain_cell")
+	assert(cm.mine_terrain_at(hmined, "hill"))
+	assert(not cm.has_terrain_visual(hmined))
+	cm.rebuild_chunk(cm.world_to_chunk(Vector3(hmined.x, 0, hmined.z)))
+	assert(not cm.has_terrain_visual(hmined))
+	var ruin_cell: Vector3i = cm.find_first_terrain("ruin")
+	if ruin_cell.y == -999:
+		for rx in range(-8, 9):
+			for rz in range(-8, 9):
+				if cm.chunk_has_ruin(Vector2i(rx, rz)):
+					cm.ensure_chunk_loaded(Vector2i(rx, rz))
+		ruin_cell = cm.find_first_terrain("ruin")
+	assert(ruin_cell.y != -999)
+	assert(cm.has_terrain_visual(ruin_cell))
+	await process_frame
+	await physics_frame
+	var rfrom := Vector3(float(ruin_cell.x) + 0.5, float(ruin_cell.y) + 3.0, float(ruin_cell.z) + 0.5)
+	var rto := Vector3(float(ruin_cell.x) + 0.5, float(ruin_cell.y) + 0.4, float(ruin_cell.z) + 0.5)
+	var rhit: Dictionary = cm.ray_query_terrain(rfrom, rto)
+	assert(not rhit.is_empty())
+	assert(rhit.collider != null)
+	assert(rhit.collider.has_meta("terrain_cell"))
+	assert(str(rhit.collider.get_meta("terrain_kind")) == "ruin")
+	var rmined: Vector3i = rhit.collider.get_meta("terrain_cell")
+	assert(cm.mine_terrain_at(rmined, "ruin"))
+	assert(not cm.has_terrain_visual(rmined))
+	cm.rebuild_chunk(cm.world_to_chunk(Vector3(rmined.x, 0, rmined.z)))
+	assert(not cm.has_terrain_visual(rmined))
+	var gs_r: Node = gs_script.new()
+	root.add_child(gs_r)
+	assert(gs_r.remove_terrain_cell(hmined, "hill"))
+	assert(gs_r.remove_terrain_cell(rmined, "ruin"))
+	assert(gs_r.is_terrain_removed(hmined))
+	assert(gs_r.is_terrain_removed(rmined))
+	var terrain_blob: Dictionary = gs_r.to_save_dict()
+	assert(terrain_blob.has("removed_terrain"))
+	var gs_r2: Node = gs_script.new()
+	root.add_child(gs_r2)
+	gs_r2.apply_save_dict(terrain_blob)
+	assert(gs_r2.is_terrain_removed(hmined))
+	assert(gs_r2.is_terrain_removed(rmined))
+	assert(str(gs_r2.terrain_removed_kind(hmined)) == "hill")
+	assert(str(gs_r2.terrain_removed_kind(rmined)) == "ruin")
+	var hud_packed = load("res://scenes/hud.tscn")
+	if hud_packed:
+		var hud_n: Node = hud_packed.instantiate()
+		root.add_child(hud_n)
+		await process_frame
+		if hud_n.has_method("boss_bar_fill_is_red"):
+			assert(hud_n.boss_bar_fill_is_red())
 	var reagent_on_top := true
 	for node in cm.get_tree().get_nodes_in_group("reagent"):
 		if not (node is Node3D):
@@ -443,12 +521,15 @@ func _run() -> void:
 	gs.wake_blocks[Vector3i(3, 1, 4)] = {"kind": "drift", "mutant": false}
 	gs.dream_blocks.clear()
 	gs.place_dream_block(Vector3i(2, 2, 2), "drift")
+	assert(gs.remove_terrain_cell(Vector3i(9, 2, 9), "hill"))
+	assert(gs.remove_terrain_cell(Vector3i(11, 1, 7), "ruin"))
 	var blob: Dictionary = gs.to_save_dict()
 	assert(blob.has("wake_blocks"))
 	assert(blob.has("dust"))
 	assert(blob.has("dream_exit_count"))
 	assert(blob.has("reagent_counts"))
 	assert(blob.has("item_slots"))
+	assert(blob.has("removed_terrain"))
 	assert(int(blob["dream_exit_count"]) >= 1)
 	var path := "user://sonnaya_smoke_save.json"
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -465,6 +546,8 @@ func _run() -> void:
 	assert(gs2.wedges == 2)
 	assert(gs2.wake_blocks.has(Vector3i(3, 1, 4)))
 	assert(gs2.dream_blocks.has(Vector3i(2, 2, 2)))
+	assert(gs2.is_terrain_removed(Vector3i(9, 2, 9)))
+	assert(gs2.is_terrain_removed(Vector3i(11, 1, 7)))
 	assert(gs2.dream_exit_count == gs.dream_exit_count)
 	assert(gs2.get_reagent_count(2) == gs.get_reagent_count(2))
 	assert(gs2.get_reagent_count(3) == gs.get_reagent_count(3))
@@ -479,7 +562,7 @@ func _run() -> void:
 	for n2 in get_nodes_in_group("enemy_ghost"):
 		ghost_count += 1
 
-	print("SMOKE: OK v0.4.4 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0" % [
+	print("SMOKE: OK v0.4.5 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0

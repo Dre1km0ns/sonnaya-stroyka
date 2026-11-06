@@ -5,12 +5,16 @@ var player: CharacterBody3D
 var dream_voxels: Node3D
 var ghost: MeshInstance3D
 var _place_cooldown := 0.0
+var _hand_root: Node3D = null
+var _pickaxe_view: Node3D = null
+var _sword_view: Node3D = null
 
 
 func setup(p: CharacterBody3D, dream_layer: Node3D) -> void:
 	player = p
 	dream_voxels = dream_layer
 	_make_ghost()
+	_ensure_hand_tools()
 
 
 func _make_ghost() -> void:
@@ -29,6 +33,7 @@ func _make_ghost() -> void:
 
 func _process(delta: float) -> void:
 	_place_cooldown = maxf(0.0, _place_cooldown - delta)
+	_update_hand_tools()
 	if player == null or dream_voxels == null:
 		return
 	if GameState.craft_menu_open:
@@ -134,25 +139,64 @@ func _try_remove() -> void:
 
 
 func _try_mine_wake() -> void:
+	_play_tool_swing()
 	var aim := _aim()
 	if not aim.get("hit", false):
 		return
 	var collider = aim["collider"]
-	if collider == null or not collider.has_meta("voxel_cell"):
+	if collider == null:
 		return
-	if bool(collider.get_meta("is_dream")):
+	if collider.has_meta("voxel_cell"):
+		if bool(collider.get_meta("is_dream")):
+			return
+		var cell: Vector3i = collider.get_meta("voxel_cell")
+		if GameState.mine_wake_block(cell):
+			var kind := str(GameState.last_mined_kind)
+			for vox in get_tree().get_nodes_in_group("voxel_world"):
+				if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
+					vox.remove_block(cell)
+			_finish_mine(cell, kind)
 		return
-	var cell: Vector3i = collider.get_meta("voxel_cell")
-	if GameState.mine_wake_block(cell):
-		var kind := str(GameState.last_mined_kind)
-		for vox in get_tree().get_nodes_in_group("voxel_world"):
-			if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
-				vox.remove_block(cell)
-		_spawn_block_pickup(cell, kind)
-		var host := _wake_world()
-		if host:
-			var boss_script: GDScript = load("res://scripts/block_mother.gd")
-			boss_script.try_spawn_from_mine(host, cell)
+	if collider.has_meta("terrain_cell"):
+		var tcell: Vector3i = collider.get_meta("terrain_cell")
+		var tkind := str(collider.get_meta("terrain_kind")) if collider.has_meta("terrain_kind") else "hill"
+		_mine_terrain_cell(tcell, tkind)
+		return
+	var hit_pos: Vector3 = aim.get("position", Vector3.ZERO)
+	var normal: Vector3 = aim.get("normal", Vector3.UP)
+	var inside: Vector3 = hit_pos - normal * 0.05
+	var gcell := Vector3i(floori(inside.x), floori(inside.y), floori(inside.z))
+	if gcell.y != -1:
+		return
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if bool(cm.get("is_dream_layer")):
+			continue
+		if cm.has_method("is_world_in_lake") and cm.is_world_in_lake(Vector3(float(gcell.x) + 0.5, 0.0, float(gcell.z) + 0.5)):
+			return
+	_mine_terrain_cell(gcell, "ground")
+
+
+func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
+	if GameState.is_dream():
+		return
+	if not GameState.selected_is("pickaxe"):
+		return
+	if not GameState.remove_terrain_cell(cell, kind):
+		return
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if bool(cm.get("is_dream_layer")):
+			continue
+		if cm.has_method("rebuild_chunk_at_world"):
+			cm.rebuild_chunk_at_world(cell.x, cell.z)
+	_finish_mine(cell, kind)
+
+
+func _finish_mine(cell: Vector3i, kind: String) -> void:
+	_spawn_block_pickup(cell, kind)
+	var host := _wake_world()
+	if host:
+		var boss_script: GDScript = load("res://scripts/block_mother.gd")
+		boss_script.try_spawn_from_mine(host, cell)
 
 
 func _wake_voxels() -> Node3D:
@@ -200,7 +244,7 @@ func _spawn_block_pickup(cell: Vector3i, kind: String) -> void:
 	var drop: StaticBody3D = script.new()
 	if drop.has_method("configure"):
 		drop.configure(kind)
-	drop.position = Vector3(float(cell.x) + 0.5, float(cell.y) + 0.55, float(cell.z) + 0.5)
+	drop.position = Vector3(float(cell.x) + 0.5, maxf(float(cell.y) + 0.55, 0.55), float(cell.z) + 0.5)
 	host.add_child(drop)
 
 
@@ -269,25 +313,72 @@ func _try_sword() -> void:
 
 
 func _play_sword_swing() -> void:
-	if player == null or not player.has_node("CameraPivot"):
+	_play_tool_swing()
+
+
+func _ensure_hand_tools() -> void:
+	if player == null or not player.has_node("CameraPivot/Camera3D"):
 		return
-	var pivot: Node3D = player.get_node("CameraPivot")
-	var blade: MeshInstance3D = pivot.get_node_or_null("SwordMesh") as MeshInstance3D
-	if blade == null:
-		blade = MeshInstance3D.new()
-		blade.name = "SwordMesh"
-		var box := BoxMesh.new()
-		box.size = Vector3(0.08, 0.08, 0.85)
-		blade.mesh = box
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.75, 0.78, 0.82)
-		mat.metallic = 0.65
-		mat.roughness = 0.28
-		blade.material_override = mat
-		blade.position = Vector3(0.28, -0.12, -0.55)
-		pivot.add_child(blade)
-	blade.visible = true
-	blade.rotation_degrees = Vector3(70, 0, -25)
+	if _hand_root != null and is_instance_valid(_hand_root):
+		return
+	var cam: Node3D = player.get_node("CameraPivot/Camera3D")
+	_hand_root = Node3D.new()
+	_hand_root.name = "HandRoot"
+	_hand_root.position = Vector3(0.32, -0.26, -0.48)
+	_hand_root.rotation_degrees = Vector3(8, 0, -6)
+	cam.add_child(_hand_root)
+	_pickaxe_view = _instance_tool("res://assets/models/pickaxe.glb", "PickaxeView")
+	if _pickaxe_view:
+		# Модель ~1.7 м по Y (рукоять), голова на +Y; слегка наклоняем, чтобы голова была в кадре.
+		_pickaxe_view.position = Vector3(0.02, -0.12, 0.0)
+		_pickaxe_view.rotation_degrees = Vector3(-18, 5, 10)
+		_pickaxe_view.scale = Vector3.ONE * 0.28
+		_hand_root.add_child(_pickaxe_view)
+	_sword_view = _instance_tool("res://assets/models/sword.glb", "SwordView")
+	if _sword_view:
+		# Импорт уже крутит клинок на +Y и даёт ~5.5 м; уменьшаем и кладём по диагонали кадра.
+		_sword_view.position = Vector3(0.02, -0.04, 0.06)
+		_sword_view.rotation_degrees = Vector3(28, 25, -40)
+		_sword_view.scale = Vector3.ONE * 0.11
+		_hand_root.add_child(_sword_view)
+	_update_hand_tools()
+
+
+func _instance_tool(path: String, node_name: String) -> Node3D:
+	if not ResourceLoader.exists(path) and not FileAccess.file_exists(path):
+		return null
+	var res = load(path)
+	if res == null:
+		return null
+	var node: Node3D = null
+	if res is PackedScene:
+		node = (res as PackedScene).instantiate() as Node3D
+	if node == null:
+		return null
+	node.name = node_name
+	node.visible = false
+	return node
+
+
+func _update_hand_tools() -> void:
+	_ensure_hand_tools()
+	if _hand_root == null:
+		return
+	var show_pick := GameState.selected_is("pickaxe")
+	var show_sword := GameState.selected_is("sword")
+	if _pickaxe_view:
+		_pickaxe_view.visible = show_pick
+	if _sword_view:
+		_sword_view.visible = show_sword
+	_hand_root.visible = show_pick or show_sword
+
+
+func _play_tool_swing() -> void:
+	_ensure_hand_tools()
+	if _hand_root == null or player == null:
+		return
+	_update_hand_tools()
+	_hand_root.rotation_degrees = Vector3(62, 6, -22)
 	var tw := player.create_tween()
-	tw.tween_property(blade, "rotation_degrees", Vector3(-35, 15, 10), 0.18)
-	tw.tween_property(blade, "rotation_degrees", Vector3(20, 0, -8), 0.14)
+	tw.tween_property(_hand_root, "rotation_degrees", Vector3(-48, 18, 14), 0.14)
+	tw.tween_property(_hand_root, "rotation_degrees", Vector3(12, 0, -8), 0.12)

@@ -1,5 +1,5 @@
 extends Node3D
-## Главная сцена v0.4.4: реагенты, инвентарь, призраки, руины/озёра.
+## Главная сцена v0.4.5: кирка ломает холмы/руины, модели инструментов.
 
 @onready var player: CharacterBody3D = $Player
 @onready var wake_world: Node3D = $WakeWorld
@@ -41,7 +41,7 @@ func _ready() -> void:
 	elif saver.has_save():
 		saver.load_game()
 		GameState.set_hint("Продолжение с диска (F5 сейв / F9 лоад).")
-	print("Сонная стройка v0.4.4 ready. Path OK.")
+	print("Сонная стройка v0.4.5 ready. Path OK.")
 
 
 func apply_world_visibility(is_dream: bool) -> void:
@@ -182,6 +182,95 @@ func _capture_shots() -> void:
 	if player.has_node("CameraPivot"):
 		player.get_node("CameraPivot").rotation_degrees = Vector3(-12, 0, 0)
 	await _save_shot("boss.png")
+	# Кирка: холм до/после добычи. Берём крайний верхний куб, камера близко 3/4.
+	var hill_cell := Vector3i(0, -999, 0)
+	var hill_eye_off := Vector3(1.9, 1.05, 1.55)
+	if wake_chunks and wake_chunks.has_method("height_at"):
+		for wx in range(16, 140):
+			for wz in range(16, 140):
+				var hh: int = int(wake_chunks.height_at(wx, wz))
+				if hh < 2:
+					continue
+				var exposed := false
+				var off := Vector3(1.9, 1.05, 1.55)
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					if int(wake_chunks.height_at(wx + d.x, wz + d.y)) < hh:
+						exposed = true
+						off = Vector3(float(d.x) * 2.15, 1.05, float(d.y) * 2.15)
+						if d.x != 0:
+							off.z += 1.25
+						else:
+							off.x += 1.25
+						break
+				if not exposed:
+					continue
+				var cand := Vector3i(wx, hh - 1, wz)
+				wake_chunks.ensure_chunk_loaded(wake_chunks.world_to_chunk(Vector3(wx, 0, wz)))
+				if wake_chunks.has_method("has_terrain_visual") and wake_chunks.has_terrain_visual(cand):
+					hill_cell = cand
+					hill_eye_off = off
+					break
+			if hill_cell.y != -999:
+				break
+	if hill_cell.y != -999:
+		var target := Vector3(float(hill_cell.x) + 0.5, float(hill_cell.y) + 0.5, float(hill_cell.z) + 0.5)
+		var eye: Vector3 = target + hill_eye_off
+		player.global_position = eye - Vector3(0, 1.4, 0)
+		var to_h: Vector3 = target - eye
+		player.rotation.y = atan2(-to_h.x, -to_h.z)
+		if player.has_node("CameraPivot"):
+			var horiz := Vector2(to_h.x, to_h.z).length()
+			player.get_node("CameraPivot").rotation.x = atan2(to_h.y, horiz)
+		GameState.add_item("pickaxe", "Кирка", 1)
+		for pi in range(GameState.ITEM_SLOT_COUNT):
+			if str(GameState.item_slots[pi].get("id", "")) == "pickaxe":
+				GameState.select_item_slot(pi)
+				break
+		if build.has_method("_ensure_hand_tools"):
+			build._ensure_hand_tools()
+		await get_tree().create_timer(0.35).timeout
+		await _save_shot("hill_before_mine.png")
+		if GameState.has_method("remove_terrain_cell"):
+			GameState.remove_terrain_cell(hill_cell, "hill")
+		if wake_chunks.has_method("rebuild_chunk_at_world"):
+			wake_chunks.rebuild_chunk_at_world(hill_cell.x, hill_cell.z)
+		await get_tree().create_timer(0.3).timeout
+		await _save_shot("hill_after_mine.png")
+	# Кирка и меч в руке от первого лица.
+	player.global_position = Vector3(6.0, 1.55, 8.5)
+	player.rotation_degrees = Vector3(0, 0, 0)
+	if player.has_node("CameraPivot"):
+		player.get_node("CameraPivot").rotation_degrees = Vector3(-8, 0, 0)
+	GameState.add_item("pickaxe", "Кирка", 1)
+	for pi2 in range(GameState.ITEM_SLOT_COUNT):
+		if str(GameState.item_slots[pi2].get("id", "")) == "pickaxe":
+			GameState.select_item_slot(pi2)
+			break
+	if build.has_method("_ensure_hand_tools"):
+		build._ensure_hand_tools()
+	if build.has_method("_update_hand_tools"):
+		build._update_hand_tools()
+	await get_tree().create_timer(0.25).timeout
+	await _save_shot("pickaxe_hand.png")
+	GameState.add_item("sword", "Меч", 1)
+	for si2 in range(GameState.ITEM_SLOT_COUNT):
+		if str(GameState.item_slots[si2].get("id", "")) == "sword":
+			GameState.select_item_slot(si2)
+			break
+	if build.has_method("_update_hand_tools"):
+		build._update_hand_tools()
+	await get_tree().create_timer(0.25).timeout
+	await _save_shot("sword_hand.png")
+	# Красная полоска босса: частичное HP, чтобы был виден красный fill и тёмный фон.
+	if boss:
+		if "hp" in boss:
+			boss.hp = 620
+		player.global_position = look2 + Vector3(0.2, 2.3, 6.4)
+		player.rotation_degrees = Vector3(0, 0, 0)
+		if player.has_node("CameraPivot"):
+			player.get_node("CameraPivot").rotation_degrees = Vector3(-12, 0, 0)
+		await get_tree().create_timer(0.35).timeout
+		await _save_shot("boss_bar.png")
 	var report := []
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
 		if cm.has_method("collect_collision_issues"):

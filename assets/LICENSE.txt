@@ -21,6 +21,17 @@ https://creativecommons.org/publicdomain/zero/1.0/
 - reagent_herb.glb    — Mushroom 1, Quaternius Nature Crops Pack (январь 2020), CC0
 - reagent_ore.glb     — Mineral, Quaternius Ultimate RPG Items (август 2019), CC0
 
+Модели инструментов (кирка и меч)
+---------------------------------
+- pickaxe.glb — «Pickaxe Wood» by Quaternius, via Poly Pizza
+  https://poly.pizza/m/Ip2iXOq381
+  https://quaternius.com
+  Лицензия: CC0 1.0 Universal
+- sword.glb — «Sword» from Medieval Weapons Pack by Quaternius
+  https://quaternius.com/packs/medievalweapons.html
+  https://gamedev.trebeljahr.com/quaternius/medieval-weapons-pack-by-quaternius/sword
+  Лицензия: CC0 1.0 Universal
+
 Автор разрешает любое использование, в том числе коммерческое;
 указание авторства необязательно, но желательно: «Quaternius».
 

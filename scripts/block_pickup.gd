@@ -33,6 +33,12 @@ func _apply_visual() -> void:
 			mat.albedo_color = Color(0.42, 0.26, 0.12)
 		"mouth":
 			mat.albedo_color = Color(0.75, 0.25, 0.35)
+		"hill":
+			mat.albedo_color = Color(0.48, 0.55, 0.40)
+		"ruin":
+			mat.albedo_color = Color(0.46, 0.38, 0.31)
+		"ground":
+			mat.albedo_color = Color(0.55, 0.62, 0.48)
 		_:
 			mat.albedo_color = Color(0.72, 0.58, 0.42)
 	mesh_i.material_override = mat

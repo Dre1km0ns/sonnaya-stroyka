@@ -74,6 +74,107 @@ func height_at(wx: int, wz: int) -> int:
 	return 0
 
 
+func walk_height_at(wx: int, wz: int) -> int:
+	## Высота для навигации: генерируемый холм минус снятые клетки сверху.
+	var h := height_at(wx, wz)
+	while h > 0 and is_cell_removed(wx, h - 1, wz):
+		h -= 1
+	return h
+
+
+func is_cell_removed(wx: int, y: int, wz: int) -> bool:
+	if is_dream_layer:
+		return false
+	if GameState and GameState.has_method("is_terrain_removed"):
+		return bool(GameState.is_terrain_removed(Vector3i(wx, y, wz)))
+	return false
+
+
+func rebuild_chunk(coord: Vector2i) -> void:
+	if _loaded.has(coord):
+		_unload_chunk(coord)
+	_load_chunk(coord)
+
+
+func rebuild_chunk_at_world(wx: int, wz: int) -> void:
+	rebuild_chunk(world_to_chunk(Vector3(float(wx), 0.0, float(wz))))
+
+
+func has_terrain_visual(cell: Vector3i) -> bool:
+	return _find_terrain_body(cell) != null
+
+
+func _find_terrain_body(cell: Vector3i) -> Node:
+	var coord := world_to_chunk(Vector3(cell.x, 0, cell.z))
+	if not _loaded.has(coord):
+		return null
+	return _find_terrain_in(_loaded[coord], cell)
+
+
+func _find_terrain_in(n: Node, cell: Vector3i) -> Node:
+	if n is CollisionObject3D and n.has_meta("terrain_cell"):
+		if n.get_meta("terrain_cell") == cell:
+			return n
+	for ch in n.get_children():
+		var found := _find_terrain_in(ch, cell)
+		if found != null:
+			return found
+	return null
+
+
+func find_first_terrain(kind: String) -> Vector3i:
+	for key in _loaded.keys():
+		var found := _search_terrain_kind(_loaded[key], kind)
+		if found.y != -999:
+			return found
+	return Vector3i(0, -999, 0)
+
+
+func _search_terrain_kind(n: Node, kind: String) -> Vector3i:
+	if n is CollisionObject3D and n.has_meta("terrain_cell") and n.has_meta("terrain_kind"):
+		if str(n.get_meta("terrain_kind")) == kind:
+			return n.get_meta("terrain_cell")
+	for ch in n.get_children():
+		var found := _search_terrain_kind(ch, kind)
+		if found.y != -999:
+			return found
+	return Vector3i(0, -999, 0)
+
+
+func mine_terrain_at(cell: Vector3i, kind: String = "") -> bool:
+	var k := kind
+	if k == "":
+		var body := _find_terrain_body(cell)
+		if body != null and body.has_meta("terrain_kind"):
+			k = str(body.get_meta("terrain_kind"))
+		elif cell.y < 0:
+			k = "ground"
+		elif height_at(cell.x, cell.z) > cell.y:
+			k = "hill"
+		else:
+			k = "ruin"
+	if GameState and GameState.has_method("remove_terrain_cell"):
+		if not GameState.remove_terrain_cell(cell, k):
+			return false
+	else:
+		return false
+	rebuild_chunk_at_world(cell.x, cell.z)
+	return true
+
+
+func ray_query_terrain(from: Vector3, to: Vector3) -> Dictionary:
+	var world := get_world_3d()
+	if world == null:
+		return {}
+	var space := world.direct_space_state
+	if space == null:
+		return {}
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 1
+	var hit := space.intersect_ray(q)
+	return hit if hit != null else {}
+
+
 func is_world_wall(wx: int, wz: int) -> bool:
 	return _wall_world_cells.has(Vector2i(wx, wz))
 
@@ -309,20 +410,29 @@ func _plan_lake(coord: Vector2i) -> Dictionary:
 	return flat
 
 
+func _ground_tag(coord: Vector2i, lx: int, lz: int, lake_cells: Dictionary) -> String:
+	if lake_cells.has(Vector2i(lx, lz)):
+		return "lake"
+	var wx := coord.x * chunk_size + lx
+	var wz := coord.y * chunk_size + lz
+	if is_cell_removed(wx, -1, wz):
+		return "pit"
+	return "ground"
+
+
 func _build_terrain(root: Node3D, coord: Vector2i, lake_cells: Dictionary) -> void:
-	if lake_cells.is_empty():
-		_add_floor_slab(root, coord, 0, 0, chunk_size, chunk_size, 0.0)
-		return
 	for lz in range(chunk_size):
 		var x := 0
 		while x < chunk_size:
-			var is_lake := lake_cells.has(Vector2i(x, lz))
+			var tag := _ground_tag(coord, x, lz, lake_cells)
 			var x0 := x
-			while x < chunk_size and lake_cells.has(Vector2i(x, lz)) == is_lake:
+			while x < chunk_size and _ground_tag(coord, x, lz, lake_cells) == tag:
 				x += 1
 			var width := x - x0
-			if is_lake:
+			if tag == "lake":
 				_add_floor_slab(root, coord, x0, lz, width, 1, -LAKE_DEPTH)
+			elif tag == "pit":
+				_add_floor_slab(root, coord, x0, lz, width, 1, -1.0)
 			else:
 				_add_floor_slab(root, coord, x0, lz, width, 1, 0.0)
 
@@ -450,15 +560,24 @@ func _add_ruin(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
 			if occupied.has(Vector2i(lx, lz)) and str(occupied[Vector2i(lx, lz)]) == "lake":
 				continue
 			occupied[Vector2i(lx, lz)] = "wall"
-			_wall_world_cells[Vector2i(coord.x * chunk_size + lx, coord.y * chunk_size + lz)] = true
 			var height := 2 if decay > 0.35 else 3
+			var wx := coord.x * chunk_size + lx
+			var wz := coord.y * chunk_size + lz
+			var any_left := false
 			for y in range(height):
+				if is_cell_removed(wx, y, wz):
+					continue
+				any_left = true
 				_place_box(
 					root,
 					Vector3(float(lx) + 0.5, float(y) + 0.5, float(lz) + 0.5),
 					Vector3(0.95, 1.0, 0.95),
-					wall_color
+					wall_color,
+					Vector3i(wx, y, wz),
+					"ruin"
 				)
+			if any_left:
+				_wall_world_cells[Vector2i(wx, wz)] = true
 
 
 func _add_reagents(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
@@ -547,11 +666,16 @@ func _try_spawn_reagent_at(root: Node3D, coord: Vector2i, occupied: Dictionary, 
 	return true
 
 
-func _place_box(root: Node3D, local_pos: Vector3, size: Vector3, color: Color) -> void:
+func _place_box(root: Node3D, local_pos: Vector3, size: Vector3, color: Color, terrain_cell: Variant = null, kind: String = "") -> void:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
 	body.position = local_pos
+	if terrain_cell != null:
+		body.set_meta("terrain_cell", terrain_cell)
+		body.set_meta("terrain_kind", kind if kind != "" else "ruin")
+		body.name = "RuinWall" if kind == "ruin" else "Terrain"
+		body.add_to_group("terrain_block")
 	var mi := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = size
@@ -583,28 +707,34 @@ func _add_hills(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
 			if h <= 0:
 				continue
 			occupied[cell] = occupied.get(cell, "hill")
-			var bump := StaticBody3D.new()
-			bump.name = "Hill"
-			bump.collision_layer = 1
-			bump.collision_mask = 0
-			bump.position = Vector3(float(lx) + 0.5, float(h) * 0.5, float(lz) + 0.5)
-			var bmi := MeshInstance3D.new()
-			var bbox := BoxMesh.new()
-			bbox.size = Vector3(0.98, float(h), 0.98)
-			bmi.mesh = bbox
-			var bmat := StandardMaterial3D.new()
-			bmat.roughness = 0.9
-			bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			var base := COLOR_DREAM_BUMP if is_dream_layer else COLOR_WAKE_BUMP
-			bmat.albedo_color = base.darkened(0.06 * float(h - 1))
-			bmi.material_override = bmat
-			bump.add_child(bmi)
-			var bcol := CollisionShape3D.new()
-			var bshape := BoxShape3D.new()
-			bshape.size = Vector3(1.0, float(h), 1.0)
-			bcol.shape = bshape
-			bump.add_child(bcol)
-			root.add_child(bump)
+			for y in range(h):
+				if is_cell_removed(wx, y, wz):
+					continue
+				var bump := StaticBody3D.new()
+				bump.name = "Hill"
+				bump.collision_layer = 1
+				bump.collision_mask = 0
+				bump.position = Vector3(float(lx) + 0.5, float(y) + 0.5, float(lz) + 0.5)
+				bump.set_meta("terrain_cell", Vector3i(wx, y, wz))
+				bump.set_meta("terrain_kind", "hill")
+				bump.add_to_group("terrain_block")
+				var bmi := MeshInstance3D.new()
+				var bbox := BoxMesh.new()
+				bbox.size = Vector3(0.98, 0.98, 0.98)
+				bmi.mesh = bbox
+				var bmat := StandardMaterial3D.new()
+				bmat.roughness = 0.9
+				bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+				bmat.albedo_color = base.darkened(0.06 * float(y))
+				bmi.material_override = bmat
+				bump.add_child(bmi)
+				var bcol := CollisionShape3D.new()
+				var bshape := BoxShape3D.new()
+				bshape.size = Vector3(1.0, 1.0, 1.0)
+				bcol.shape = bshape
+				bump.add_child(bcol)
+				root.add_child(bump)
 
 
 func _world_is_lake_cell(wx: int, wz: int) -> bool:

@@ -103,6 +103,12 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		mat.albedo_color = Color(0.46, 0.30, 0.18)
 		mat.emission_enabled = true
 		mat.emission = Color(0.6, 0.35, 0.15) * 0.25
+	elif kind == "hill":
+		mat.albedo_color = Color(0.48, 0.55, 0.40)
+	elif kind == "ruin":
+		mat.albedo_color = Color(0.46, 0.38, 0.31)
+	elif kind == "ground":
+		mat.albedo_color = Color(0.55, 0.62, 0.48)
 	elif is_dream_layer:
 		if anchored:
 			mat.albedo_color = COLOR_DREAM_ANCHORED

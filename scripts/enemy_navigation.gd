@@ -56,6 +56,8 @@ static func cell_height(query: Node, wx: int, wz: int) -> int:
 	var cm := query if query != null and query.has_method("height_at") else _chunk_manager(query)
 	if cm != null and cm.has_method("is_world_in_lake") and cm.is_world_in_lake(Vector3(float(wx) + 0.5, 0.0, float(wz) + 0.5)):
 		return -1
+	if cm != null and cm.has_method("walk_height_at"):
+		return int(cm.walk_height_at(wx, wz))
 	if cm != null and cm.has_method("height_at"):
 		return int(cm.height_at(wx, wz))
 	return 0

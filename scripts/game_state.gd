@@ -1,5 +1,5 @@
 extends Node
-## Глобальное состояние «Сонная стройка» v0.4.4: меч, босс, дроп блоков, музыка.
+## Глобальное состояние «Сонная стройка» v0.4.5: копание холмов/руин, модели кирки и меча.
 
 signal world_changed(is_dream: bool)
 signal inventory_changed
@@ -27,7 +27,7 @@ const ANCHOR3_CRAFT_DUST := 250
 const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 30.0
 const MUTATION_CHANCE := 0.25
-const SAVE_FORMAT := 3
+const SAVE_FORMAT := 4
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
@@ -68,6 +68,8 @@ const DAY_LENGTH := 300.0
 const NIGHT_LENGTH := 300.0
 var world_seed_wake: int = 1337
 var world_seed_dream: int = 9001
+## Снятые клетки процедурного террейна яви: Vector3i -> kind ("hill"/"ruin"/"ground").
+var removed_terrain: Dictionary = {}
 
 
 func _init() -> void:
@@ -417,6 +419,25 @@ func mine_wake_block(cell: Vector3i) -> bool:
 	return true
 
 
+func is_terrain_removed(cell: Vector3i) -> bool:
+	return removed_terrain.has(cell)
+
+
+func terrain_removed_kind(cell: Vector3i) -> String:
+	return str(removed_terrain.get(cell, ""))
+
+
+func remove_terrain_cell(cell: Vector3i, kind: String) -> bool:
+	if removed_terrain.has(cell):
+		return false
+	var k := kind if kind != "" else "hill"
+	removed_terrain[cell] = k
+	last_mined_kind = k
+	last_mined_cell = cell
+	set_hint("Кирка: выпал блок «%s»." % block_display_name(k))
+	return true
+
+
 func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 	var rec := find_recipe(rid)
 	if rec.is_empty():
@@ -489,12 +510,18 @@ func block_display_name(kind: String) -> String:
 			return "Меч"
 		"pickaxe":
 			return "Кирка"
+		"hill":
+			return "Холм"
+		"ruin":
+			return "Руинный блок"
+		"ground":
+			return "Грунт"
 		_:
 			return "Блок"
 
 
 func is_placeable_block(id: String) -> bool:
-	return id == "drift" or id == "mouth" or id == "workbench"
+	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
@@ -777,6 +804,7 @@ func to_save_dict() -> Dictionary:
 		"wake_blocks": _blocks_to_json(wake_blocks),
 		"dream_blocks": _blocks_to_json(dream_blocks),
 		"pending_anchors": _anchors_to_json(pending_anchors),
+		"removed_terrain": _cells_kind_to_json(removed_terrain),
 	}
 
 
@@ -828,6 +856,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	wake_blocks = _blocks_from_json(data.get("wake_blocks", {}))
 	dream_blocks = _blocks_from_json(data.get("dream_blocks", {}))
 	pending_anchors = _anchors_from_json(data.get("pending_anchors", []))
+	removed_terrain = _cells_kind_from_json(data.get("removed_terrain", {}))
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
 	clarity_changed.emit(clarity, CLARITY_MAX)
@@ -912,3 +941,23 @@ func _anchors_from_json(src: Variant) -> Array:
 		var origin := Vector3i(int(o[0]), int(o[1]), int(o[2])) if o.size() >= 3 else Vector3i.ZERO
 		out.append({"type": int(a.get("type", 0)), "origin": origin, "cells": cells})
 	return out
+
+func _cells_kind_to_json(src: Dictionary) -> Dictionary:
+	var out := {}
+	for k in src.keys():
+		var c: Vector3i = k
+		out["%d,%d,%d" % [c.x, c.y, c.z]] = str(src[k])
+	return out
+
+
+func _cells_kind_from_json(src: Variant) -> Dictionary:
+	var out := {}
+	if typeof(src) != TYPE_DICTIONARY:
+		return out
+	for key in src.keys():
+		var parts: PackedStringArray = str(key).split(",")
+		if parts.size() < 3:
+			continue
+		out[Vector3i(int(parts[0]), int(parts[1]), int(parts[2]))] = str(src[key])
+	return out
+
