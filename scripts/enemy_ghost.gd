@@ -1,5 +1,6 @@
 extends CharacterBody3D
 const _Nav := preload("res://scripts/enemy_navigation.gd")
+const _Vis := preload("res://scripts/enemy_visuals.gd")
 ## Четыре «призрака» в духе Pac-Man: враг1..враг4 (Blinky / Pinky / Inky / Clyde).
 ## Scatter/Chase задаёт ThreatDirector.
 
@@ -15,7 +16,8 @@ const KIND_COLORS: Array[Color] = [
 const SPEED := 2.45 * 0.6
 const SEEK_RANGE := 42.0
 const CONTACT_RANGE := 1.7
-const HINT_RANGE := 12.0
+const ATTACK_INTERVAL := 0.55
+const ATTACK_HITS := 2
 const STEAL_COOLDOWN := 1.6
 const PINKY_AHEAD := 6.0
 const CLYDE_FLEE_DIST := 10.0
@@ -28,6 +30,11 @@ var corner: Vector3 = Vector3.ZERO
 var frozen: bool = false
 var _steal_cd: float = 0.0
 var _hint_pulse: float = 0.0
+var _path_cache: Dictionary = {}
+var _atk_cd: float = 0.0
+var _atk_hits: int = 0
+var _atk_cell: Variant = null
+var _punch: float = 0.0
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _mesh_built: bool = false
 
@@ -71,47 +78,21 @@ func _default_corner() -> Vector3:
 
 func _build_mesh() -> void:
 	var colr: Color = KIND_COLORS[clampi(kind, 0, 3)]
-	var mi := MeshInstance3D.new()
-	mi.name = "Body"
-	var box := BoxMesh.new()
-	box.size = Vector3(0.95, 1.35, 0.95)
-	mi.mesh = box
-	mi.position = Vector3(0, 0.68, 0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = colr
-	mat.emission_enabled = true
-	mat.emission = colr * 0.55
-	mat.roughness = 0.55
-	mi.material_override = mat
-	add_child(mi)
-
-	var cap := MeshInstance3D.new()
-	cap.name = "Cap"
-	var cbox := BoxMesh.new()
-	cbox.size = Vector3(0.7, 0.22, 0.7)
-	cap.mesh = cbox
-	cap.position = Vector3(0, 1.42, 0)
-	var cmat := StandardMaterial3D.new()
-	cmat.albedo_color = colr.lightened(0.25)
-	cmat.emission_enabled = true
-	cmat.emission = colr * 0.35
-	cap.material_override = cmat
-	add_child(cap)
-
+	_Vis.build_ghost(self, kind, colr)
 	var tag := Label3D.new()
 	tag.name = "Tag"
 	tag.text = kind_name()
-	tag.font_size = 36
-	tag.position = Vector3(0, 1.85, 0)
+	tag.font_size = 32
+	tag.position = Vector3(0, 1.95, 0)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.modulate = colr.lightened(0.35)
 	add_child(tag)
-
 	var col := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(0.95, 1.35, 0.95)
+	var shape := CapsuleShape3D.new()
+	shape.radius = 0.4
+	shape.height = 1.45
 	col.shape = shape
-	col.position = Vector3(0, 0.68, 0)
+	col.position = Vector3(0, 0.72, 0)
 	add_child(col)
 	_mesh_built = true
 
@@ -162,7 +143,11 @@ func _physics_process(delta: float) -> void:
 	if frozen:
 		return
 	_steal_cd = maxf(0.0, _steal_cd - delta)
-	_hint_pulse = maxf(0.0, _hint_pulse - delta)
+	_atk_cd = maxf(0.0, _atk_cd - delta)
+	_punch = maxf(0.0, _punch - delta)
+	var bod := get_node_or_null("Body") as Node3D
+	if bod and _punch <= 0.0:
+		bod.position.z = 0.0
 
 	var player := get_tree().get_first_node_in_group("player") as CharacterBody3D
 	if player == null:
@@ -170,26 +155,51 @@ func _physics_process(delta: float) -> void:
 
 	var to_player := player.global_position - global_position
 	var dist := to_player.length()
-	if dist <= HINT_RANGE and _hint_pulse <= 0.0:
-		GameState.set_hint("%s рядом!" % kind_name())
-		_hint_pulse = 2.5
 
 	var forward := -player.global_transform.basis.z
 	forward.y = 0.0
 	if forward.length() < 0.01:
 		forward = Vector3(0, 0, -1)
 	var target := compute_target(player.global_position, forward, _find_blinky_pos(), is_scatter_mode())
-	var to_target := target - global_position
-	to_target.y = 0.0
-	var desired := Vector3.ZERO
-	if to_target.length() > 0.15 and dist < SEEK_RANGE + 12.0:
-		desired = to_target.normalized()
-
-	_Nav.apply_movement(self, desired, SPEED, delta)
+	var attacking := _tick_block_attack()
+	if not attacking and dist < SEEK_RANGE + 12.0:
+		_Nav.follow_target(self, target, SPEED, delta, _path_cache)
+	elif attacking:
+		_Nav.apply_movement(self, Vector3.ZERO, 0.0, delta)
 
 	if dist <= CONTACT_RANGE and _steal_cd <= 0.0:
 		_hit_player(player, to_player)
 		_steal_cd = STEAL_COOLDOWN
+
+
+func _tick_block_attack() -> bool:
+	var cell: Variant = _Nav.nearest_adjacent_block(self)
+	if cell == null:
+		_atk_cell = null
+		_atk_hits = 0
+		return false
+	var ripped: Vector3i = cell
+	if _atk_cell != ripped:
+		_atk_cell = ripped
+		_atk_hits = 0
+	if _atk_cd > 0.0:
+		return true
+	_atk_cd = ATTACK_INTERVAL
+	_punch = 0.18
+	_atk_hits += 1
+	var body := get_node_or_null("Body") as Node3D
+	if body:
+		body.position.z = 0.12
+	if _atk_hits < ATTACK_HITS:
+		return true
+	_atk_hits = 0
+	GameState.wake_blocks.erase(ripped)
+	GameState.inventory_changed.emit()
+	for vox in get_tree().get_nodes_in_group("voxel_world"):
+		if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
+			vox.remove_block(ripped)
+	_atk_cell = null
+	return true
 
 
 func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:

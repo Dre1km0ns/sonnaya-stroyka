@@ -58,6 +58,15 @@ func _try_interact() -> void:
 		return
 	if target.is_in_group("reagent") and target.has_method("collect"):
 		target.collect()
+		return
+	if collider.has_meta("voxel_cell") and not GameState.is_dream():
+		var cell: Vector3i = collider.get_meta("voxel_cell")
+		var data: Dictionary = GameState.wake_blocks.get(cell, {})
+		if str(data.get("kind", "")) == "workbench" or collider.is_in_group("workbench"):
+			for menu in get_tree().get_nodes_in_group("craft_menu"):
+				if menu.has_method("open_workbench"):
+					menu.open_workbench()
+			return
 
 
 func enter_dream() -> void:
@@ -106,6 +115,10 @@ func _tint_dream(is_dream: bool) -> void:
 		_env.fog_density = 0.008
 		_env.glow_intensity = 0.45
 	else:
+		for dc in get_tree().get_nodes_in_group("day_cycle"):
+			if dc.has_method("apply_lighting"):
+				dc.apply_lighting()
+				return
 		_env.background_color = Color(0.55, 0.62, 0.7)
 		_env.ambient_light_color = Color(0.7, 0.68, 0.62)
 		_env.fog_light_color = Color(0.7, 0.65, 0.55)

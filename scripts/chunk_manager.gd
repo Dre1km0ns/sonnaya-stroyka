@@ -20,12 +20,14 @@ var _tick: float = 0.0
 var _lakes_by_chunk: Dictionary = {} # Vector2i -> Array[Vector2i] local cells
 var _lake_world_cells: Dictionary = {} # Vector2i world XZ -> true
 var _ruin_centers: Dictionary = {} # Vector2i -> Vector3
+var _wall_world_cells: Dictionary = {} # Vector2i world XZ -> true
 
-const LAKE_DEPTH := 0.8
-const LAKE_SURFACE_Y := -0.12
+const LAKE_DEPTH := 1.25
+const LAKE_SURFACE_Y := -0.08
 const FIELD_REAGENT_RATE := 0.2
 const RUIN_HASH_THRESHOLD := 0.95
-const RUIN_CLUSTER_TARGET := 14
+const RUIN_CLUSTER_TARGET := 3
+const HILL_MAX := 4
 
 
 func _ready() -> void:
@@ -54,13 +56,23 @@ func chunk_origin(coord: Vector2i) -> Vector3:
 
 
 func height_at(wx: int, wz: int) -> int:
-	## Плоская зона спавна, дальше лёгкий шум 0/1.
+	## Плоская зона спавна, дальше холмы 1..4 уровней.
 	if absi(wx) <= 14 and absi(wz) <= 14:
 		return 0
-	var n := _value_noise(float(wx) * 0.09, float(wz) * 0.09)
-	if n > 0.52:
+	var n := _value_noise(float(wx) * 0.07, float(wz) * 0.07)
+	if n > 0.62:
+		return 4
+	if n > 0.42:
+		return 3
+	if n > 0.22:
+		return 2
+	if n > 0.05:
 		return 1
 	return 0
+
+
+func is_world_wall(wx: int, wz: int) -> bool:
+	return _wall_world_cells.has(Vector2i(wx, wz))
 
 
 func _process(delta: float) -> void:
@@ -139,7 +151,7 @@ func count_loaded_reagents() -> int:
 func get_any_lake_sample_point() -> Vector3:
 	for key in _lake_world_cells.keys():
 		var c: Vector2i = key
-		return Vector3(float(c.x) + 0.5, -0.4, float(c.y) + 0.5)
+		return Vector3(float(c.x) + 0.5, -LAKE_DEPTH * 0.5, float(c.y) + 0.5)
 	return Vector3.ZERO
 
 
@@ -199,6 +211,9 @@ func _unload_chunk(coord: Vector2i) -> void:
 			var wz := coord.y * chunk_size + local.y
 			_lake_world_cells.erase(Vector2i(wx, wz))
 		_lakes_by_chunk.erase(coord)
+	for lx in range(chunk_size):
+		for lz in range(chunk_size):
+			_wall_world_cells.erase(Vector2i(coord.x * chunk_size + lx, coord.y * chunk_size + lz))
 	_ruin_centers.erase(coord)
 	if is_instance_valid(node):
 		node.queue_free()
@@ -219,38 +234,7 @@ func _load_chunk(coord: Vector2i) -> void:
 		_add_ruin(root, coord, occupied)
 	_add_reagents(root, coord, occupied)
 
-	# Редкие «бугры» softclay по шуму (визуал + коллизия).
-	for lx in range(chunk_size):
-		for lz in range(chunk_size):
-			var wx := coord.x * chunk_size + lx
-			var wz := coord.y * chunk_size + lz
-			var cell := Vector2i(lx, lz)
-			if occupied.has(cell):
-				var tag := str(occupied[cell])
-				if tag == "lake" or tag == "wall":
-					continue
-			var h := height_at(wx, wz)
-			if h <= 0:
-				continue
-			var bump := StaticBody3D.new()
-			bump.collision_layer = 1
-			bump.collision_mask = 0
-			bump.position = Vector3(float(lx) + 0.5, 0.5, float(lz) + 0.5)
-			var bmi := MeshInstance3D.new()
-			var bbox := BoxMesh.new()
-			bbox.size = Vector3(0.98, 1.0, 0.98)
-			bmi.mesh = bbox
-			var bmat := StandardMaterial3D.new()
-			bmat.roughness = 0.9
-			bmat.albedo_color = COLOR_DREAM_BUMP if is_dream_layer else COLOR_WAKE_BUMP
-			bmi.material_override = bmat
-			bump.add_child(bmi)
-			var bcol := CollisionShape3D.new()
-			var bshape := BoxShape3D.new()
-			bshape.size = Vector3(1, 1, 1)
-			bcol.shape = bshape
-			bump.add_child(bcol)
-			root.add_child(bump)
+	_add_hills(root, coord, occupied)
 
 	_loaded[coord] = root
 
@@ -331,16 +315,18 @@ func _build_terrain(root: Node3D, coord: Vector2i, lake_cells: Dictionary) -> vo
 
 
 func _add_floor_slab(root: Node3D, coord: Vector2i, lx: int, lz: int, w: int, d: int, top_y: float) -> void:
+	var thickness := 1.0 if top_y < -0.01 else (LAKE_DEPTH + 1.0)
 	var floor_body := StaticBody3D.new()
 	floor_body.collision_layer = 1
 	floor_body.collision_mask = 0
-	floor_body.position = Vector3(float(lx) + float(w) * 0.5, top_y - 0.5, float(lz) + float(d) * 0.5)
+	floor_body.position = Vector3(float(lx) + float(w) * 0.5, top_y - thickness * 0.5, float(lz) + float(d) * 0.5)
 	var floor_mesh := MeshInstance3D.new()
 	var box := BoxMesh.new()
-	box.size = Vector3(float(w), 1.0, float(d))
+	box.size = Vector3(float(w), thickness, float(d))
 	floor_mesh.mesh = box
 	var mat := StandardMaterial3D.new()
 	mat.roughness = 0.95
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var colr := COLOR_DREAM if is_dream_layer else COLOR_WAKE
 	if top_y < -0.01:
 		colr = colr.darkened(0.18)
@@ -350,7 +336,7 @@ func _add_floor_slab(root: Node3D, coord: Vector2i, lx: int, lz: int, w: int, d:
 	floor_body.add_child(floor_mesh)
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(float(w), 1.0, float(d))
+	shape.size = Vector3(float(w), thickness, float(d))
 	col.shape = shape
 	floor_body.add_child(col)
 	root.add_child(floor_body)
@@ -366,8 +352,8 @@ func _realize_lake(root: Node3D, coord: Vector2i, lake_cells: Dictionary, occupi
 		var wz := coord.y * chunk_size + cell.y
 		_lake_world_cells[Vector2i(wx, wz)] = true
 	_lakes_by_chunk[coord] = locals
-	var water_h := LAKE_SURFACE_Y - (-LAKE_DEPTH)
-	# Вода по рядам — форма остаётся неровной, без общего квадрата.
+	# Тонкая поверхность воды (без боковых «стенок» объёма) + берега со всех сторон.
+	var water_h := 0.07
 	for lz in range(chunk_size):
 		var x := 0
 		while x < chunk_size:
@@ -383,17 +369,19 @@ func _realize_lake(root: Node3D, coord: Vector2i, lake_cells: Dictionary, occupi
 			var box := BoxMesh.new()
 			box.size = Vector3(float(width), water_h, 1.0)
 			water.mesh = box
-			water.position = Vector3(float(x0) + float(width) * 0.5, -LAKE_DEPTH + water_h * 0.5, float(lz) + 0.5)
+			water.position = Vector3(float(x0) + float(width) * 0.5, LAKE_SURFACE_Y - water_h * 0.5, float(lz) + 0.5)
 			var mat := StandardMaterial3D.new()
 			if is_dream_layer:
-				mat.albedo_color = Color(0.22, 0.18, 0.48, 0.55)
+				mat.albedo_color = Color(0.22, 0.18, 0.48, 0.52)
 			else:
-				mat.albedo_color = Color(0.20, 0.42, 0.66, 0.55)
+				mat.albedo_color = Color(0.20, 0.42, 0.66, 0.52)
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			mat.roughness = 0.12
 			mat.metallic = 0.18
 			water.material_override = mat
 			root.add_child(water)
+	_add_lake_banks(root, coord, lake_cells)
 	var area := Area3D.new()
 	area.name = "LakeArea"
 	area.add_to_group("lake")
@@ -445,6 +433,7 @@ func _add_ruin(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
 			if occupied.has(Vector2i(lx, lz)) and str(occupied[Vector2i(lx, lz)]) == "lake":
 				continue
 			occupied[Vector2i(lx, lz)] = "wall"
+			_wall_world_cells[Vector2i(coord.x * chunk_size + lx, coord.y * chunk_size + lz)] = true
 			var height := 2 if decay > 0.35 else 3
 			for y in range(height):
 				_place_box(
@@ -488,11 +477,12 @@ func _add_ruin_reagent_cluster(root: Node3D, coord: Vector2i, occupied: Dictiona
 	var locals: Array[Vector2i] = []
 	for lx in range(chunk_size):
 		for lz in range(chunk_size):
+			var key := Vector2i(lx, lz)
+			var tag := str(occupied.get(key, ""))
 			var wp := chunk_origin(coord) + Vector3(float(lx) + 0.5, 0.0, float(lz) + 0.5)
 			var dist := Vector2(wp.x - center.x, wp.z - center.z).length()
-			if dist <= 5.2:
-				locals.append(Vector2i(lx, lz))
-	# Детерминированный порядок, ближние клетки первыми.
+			if tag == "ruin_floor" or tag == "door" or tag == "gap" or (dist <= 2.4 and tag != "wall" and tag != "lake"):
+				locals.append(key)
 	locals.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		var pa := chunk_origin(coord) + Vector3(float(a.x), 0.0, float(a.y))
 		var pb := chunk_origin(coord) + Vector3(float(b.x), 0.0, float(b.y))
@@ -502,6 +492,10 @@ func _add_ruin_reagent_cluster(root: Node3D, coord: Vector2i, occupied: Dictiona
 	for cell in locals:
 		if spawned >= RUIN_CLUSTER_TARGET:
 			break
+		var pick := _hash01(coord.x * 17 + cell.x + salt, coord.y * 13 + cell.y)
+		if pick < 0.35 and spawned > 0:
+			salt += 1
+			continue
 		if _try_spawn_reagent_at(root, coord, occupied, cell.x, cell.y, salt):
 			spawned += 1
 		salt += 1
@@ -517,7 +511,8 @@ func _try_spawn_reagent_at(root: Node3D, coord: Vector2i, occupied: Dictionary, 
 	var wz := coord.y * chunk_size + lz
 	if absi(wx) <= 14 and absi(wz) <= 14:
 		return false
-	var rid := "%d,0,%d" % [wx, wz]
+	var h := height_at(wx, wz)
+	var rid := "%d,%d,%d" % [wx, h, wz]
 	if GameState.has_method("is_reagent_collected") and GameState.is_reagent_collected(rid):
 		return false
 	var type_id := 1 + int(_hash01(coord.x + lx * 3 + salt, coord.y + lz * 5) * 3.0)
@@ -525,7 +520,7 @@ func _try_spawn_reagent_at(root: Node3D, coord: Vector2i, occupied: Dictionary, 
 	occupied[key] = "reagent"
 	var node_script: GDScript = load("res://scripts/reagent_node.gd")
 	var node: StaticBody3D = node_script.new()
-	node.position = Vector3(float(lx) + 0.5, 0.35, float(lz) + 0.5)
+	node.position = Vector3(float(lx) + 0.5, float(h) + 0.35, float(lz) + 0.5)
 	if node.has_method("configure"):
 		node.configure(type_id, rid, 1)
 	else:
@@ -555,3 +550,87 @@ func _place_box(root: Node3D, local_pos: Vector3, size: Vector3, color: Color) -
 	col.shape = shape
 	body.add_child(col)
 	root.add_child(body)
+
+
+func _add_hills(root: Node3D, coord: Vector2i, occupied: Dictionary) -> void:
+	for lx in range(chunk_size):
+		for lz in range(chunk_size):
+			var wx := coord.x * chunk_size + lx
+			var wz := coord.y * chunk_size + lz
+			var cell := Vector2i(lx, lz)
+			if occupied.has(cell):
+				var tag := str(occupied[cell])
+				if tag == "lake" or tag == "wall" or tag == "ruin_floor" or tag == "door" or tag == "gap":
+					continue
+			var h := height_at(wx, wz)
+			if h <= 0:
+				continue
+			occupied[cell] = occupied.get(cell, "hill")
+			var bump := StaticBody3D.new()
+			bump.name = "Hill"
+			bump.collision_layer = 1
+			bump.collision_mask = 0
+			bump.position = Vector3(float(lx) + 0.5, float(h) * 0.5, float(lz) + 0.5)
+			var bmi := MeshInstance3D.new()
+			var bbox := BoxMesh.new()
+			bbox.size = Vector3(0.98, float(h), 0.98)
+			bmi.mesh = bbox
+			var bmat := StandardMaterial3D.new()
+			bmat.roughness = 0.9
+			bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			var base := COLOR_DREAM_BUMP if is_dream_layer else COLOR_WAKE_BUMP
+			bmat.albedo_color = base.darkened(0.06 * float(h - 1))
+			bmi.material_override = bmat
+			bump.add_child(bmi)
+			var bcol := CollisionShape3D.new()
+			var bshape := BoxShape3D.new()
+			bshape.size = Vector3(1.0, float(h), 1.0)
+			bcol.shape = bshape
+			bump.add_child(bcol)
+			root.add_child(bump)
+
+
+func _world_is_lake_cell(wx: int, wz: int) -> bool:
+	var c := Vector2i(floori(float(wx) / float(chunk_size)), floori(float(wz) / float(chunk_size)))
+	if not chunk_has_lake(c):
+		return false
+	var planned := _plan_lake(c)
+	var lx := wx - c.x * chunk_size
+	var lz := wz - c.y * chunk_size
+	return planned.has(Vector2i(lx, lz))
+
+
+func _add_lake_banks(root: Node3D, coord: Vector2i, lake_cells: Dictionary) -> void:
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	var bank_h := LAKE_DEPTH
+	var colr := (COLOR_DREAM if is_dream_layer else COLOR_WAKE).darkened(0.12)
+	for key in lake_cells.keys():
+		var cell: Vector2i = key
+		var wx := coord.x * chunk_size + cell.x
+		var wz := coord.y * chunk_size + cell.y
+		for d in dirs:
+			var n := cell + d
+			var n_is_lake := lake_cells.has(n)
+			if not n_is_lake:
+				var nwx := wx + d.x
+				var nwz := wz + d.y
+				if _world_is_lake_cell(nwx, nwz):
+					continue
+			else:
+				continue
+			var wall := MeshInstance3D.new()
+			wall.name = "LakeBank"
+			var box := BoxMesh.new()
+			if d.x != 0:
+				box.size = Vector3(0.12, bank_h, 1.0)
+			else:
+				box.size = Vector3(1.0, bank_h, 0.12)
+			wall.mesh = box
+			var mid := Vector3(float(cell.x) + 0.5 + float(d.x) * 0.44, -bank_h * 0.5, float(cell.y) + 0.5 + float(d.y) * 0.44)
+			wall.position = mid
+			var mat := StandardMaterial3D.new()
+			mat.roughness = 0.95
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.albedo_color = colr
+			wall.material_override = mat
+			root.add_child(wall)

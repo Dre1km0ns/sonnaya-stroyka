@@ -96,7 +96,11 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	var kind: String = str(data.get("kind", "drift"))
 	var anchored: bool = bool(data.get("anchored", false))
 	var mutant: bool = bool(data.get("mutant", false)) or kind == "mouth"
-	if is_dream_layer:
+	if kind == "workbench":
+		mat.albedo_color = Color(0.46, 0.30, 0.18)
+		mat.emission_enabled = true
+		mat.emission = Color(0.6, 0.35, 0.15) * 0.25
+	elif is_dream_layer:
 		if anchored:
 			mat.albedo_color = COLOR_DREAM_ANCHORED
 			mat.emission_enabled = true
@@ -112,6 +116,16 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	mi.position = cell_to_world(cell)
 	add_child(mi)
 	_meshes[cell] = mi
+	if kind == "workbench":
+		var top := MeshInstance3D.new()
+		var top_box := BoxMesh.new()
+		top_box.size = Vector3(1.05, 0.12, 1.05)
+		top.mesh = top_box
+		var tmat := StandardMaterial3D.new()
+		tmat.albedo_color = Color(0.58, 0.38, 0.22)
+		top.material_override = tmat
+		top.position = mi.position + Vector3(0, 0.48, 0)
+		add_child(top)
 
 	var body := StaticBody3D.new()
 	body.collision_layer = 4 # blocks
@@ -124,5 +138,8 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	body.add_child(col)
 	body.set_meta("voxel_cell", cell)
 	body.set_meta("is_dream", is_dream_layer)
+	body.set_meta("kind", kind)
+	if kind == "workbench":
+		body.add_to_group("workbench")
 	add_child(body)
 	_bodies[cell] = body

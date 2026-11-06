@@ -1,5 +1,5 @@
 extends Node
-## Глобальное состояние «Сонная стройка» v0.4: типы реагентов, инвентарь, wake-count.
+## Глобальное состояние «Сонная стройка» v0.4.2: крафт, якорь3, верстак, день/ночь.
 
 signal world_changed(is_dream: bool)
 signal inventory_changed
@@ -8,20 +8,24 @@ signal hint_changed(text: String)
 signal wake_resolved(transferred: int, dust_gained: int, mutations: int)
 
 enum World { WAKE, DREAM }
-enum AnchorType { NAIL, WEDGE }
+enum AnchorType { NAIL, WEDGE, ANCHOR3 }
 
 const CLARITY_MAX := 100.0
-const CLARITY_DRAIN_PER_SEC := 2.5
+const CLARITY_DRAIN_PER_SEC := 1.25
 const NAIL_COST_REAGENTS := 1
 const NAIL_COST_CLARITY := 5.0
 const WEDGE_COST_REAGENTS := 3
 const WEDGE_COST_CLARITY := 20.0
 const WEDGE_SIZE := 5
+const ANCHOR3_SIZE := 9
 const DUST_PER_BLOCK := 1
-const NAIL_CRAFT_DUST := 5
-const WEDGE_CRAFT_DUST := 15
+const NAIL_CRAFT_DUST := 10
+const WEDGE_CRAFT_DUST := 100
+const ANCHOR3_CRAFT_DUST := 250
+const ANCHOR3_COST_REAGENTS := 5
+const ANCHOR3_COST_CLARITY := 30.0
 const MUTATION_CHANCE := 0.25
-const SAVE_FORMAT := 2
+const SAVE_FORMAT := 3
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
@@ -35,6 +39,7 @@ var reagent_counts: Array = [0, 0, 0]
 var dust: int = 0
 var nails: int = 3
 var wedges: int = 1
+var anchors3: int = 0
 var item_slots: Array = []
 var selected_slot: int = 0
 var dream_exit_count: int = 0
@@ -50,6 +55,8 @@ var pending_anchors: Array = []
 var selected_anchor: AnchorType = AnchorType.NAIL
 var last_hint: String = ""
 var awake_time: float = 0.0
+var day_time: float = 0.0
+var craft_menu_open: bool = false
 var world_seed_wake: int = 1337
 var world_seed_dream: int = 9001
 
@@ -67,7 +74,7 @@ func _init_default_slots() -> void:
 	item_slots = [
 		{"id": "nail", "name": "Гвоздь", "count": nails},
 		{"id": "wedge", "name": "Клин", "count": wedges},
-		{"id": "", "name": "", "count": 0},
+		{"id": "anchor3", "name": "Якорь3", "count": anchors3},
 		{"id": "", "name": "", "count": 0},
 		{"id": "", "name": "", "count": 0},
 	]
@@ -183,6 +190,9 @@ func select_item_slot(index: int) -> void:
 	elif id == "wedge":
 		selected_anchor = AnchorType.WEDGE
 		set_hint("Слот %d: Клин (x%d). Q — заякорить." % [selected_slot + 1, wedges])
+	elif id == "anchor3":
+		selected_anchor = AnchorType.ANCHOR3
+		set_hint("Слот %d: Якорь3 (x%d). Q — заякорить большую зону." % [selected_slot + 1, anchors3])
 	elif id == "":
 		set_hint("Слот %d: пусто." % (selected_slot + 1))
 	else:
@@ -226,7 +236,181 @@ func slot_display_count(index: int) -> int:
 		return nails
 	if id == "wedge":
 		return wedges
+	if id == "anchor3":
+		return anchors3
 	return int(item_slots[index].get("count", 0))
+
+
+
+func inventory_status_text() -> String:
+	return "Осыпь: %d   Гвозди: %d   Клинья: %d   Якорь3: %d\n%s: %d   %s: %d   %s: %d" % [
+		dust, nails, wedges, anchors3,
+		reagent_type_name(1), get_reagent_count(1),
+		reagent_type_name(2), get_reagent_count(2),
+		reagent_type_name(3), get_reagent_count(3),
+	]
+
+
+func recipe_defs() -> Array:
+	return [
+		{"id": "nail", "name": "Гвоздь", "where": "anywhere", "dust": NAIL_CRAFT_DUST, "gives": "nails"},
+		{"id": "wedge", "name": "Клин", "where": "anywhere", "dust": WEDGE_CRAFT_DUST, "gives": "wedges"},
+		{"id": "anchor3", "name": "Якорь3", "where": "anywhere", "dust": ANCHOR3_CRAFT_DUST, "gives": "anchors3"},
+		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 10, "item": "workbench", "item_name": "Верстак"},
+		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent2": 2, "reagent3": 3, "item": "pickaxe", "item_name": "Кирка"},
+	]
+
+
+func find_recipe(rid: String) -> Dictionary:
+	for rec in recipe_defs():
+		if str(rec.get("id", "")) == rid:
+			return rec
+	return {}
+
+
+func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
+	if rec.is_empty():
+		return false
+	var where := str(rec.get("where", "anywhere"))
+	var dreaming := bool(ctx.get("is_dream", is_dream()))
+	var bench := bool(ctx.get("at_workbench", false))
+	if where == "dream" and not dreaming:
+		return false
+	if where == "workbench" and not bench:
+		return false
+	return true
+
+
+func get_visible_recipes(ctx: Dictionary = {}) -> Array:
+	var out: Array = []
+	for rec in recipe_defs():
+		if recipe_available(rec, ctx):
+			out.append(rec)
+	return out
+
+
+func can_afford_recipe(rec: Dictionary) -> bool:
+	if rec.is_empty():
+		return false
+	if dust < int(rec.get("dust", 0)):
+		return false
+	if get_reagent_count(1) < int(rec.get("reagent1", 0)):
+		return false
+	if get_reagent_count(2) < int(rec.get("reagent2", 0)):
+		return false
+	if get_reagent_count(3) < int(rec.get("reagent3", 0)):
+		return false
+	return true
+
+
+func recipe_label(rec: Dictionary) -> String:
+	var parts: Array[String] = []
+	if int(rec.get("dust", 0)) > 0:
+		parts.append("%d осыпи" % int(rec.get("dust", 0)))
+	if int(rec.get("reagent1", 0)) > 0:
+		parts.append("%d %s" % [int(rec.get("reagent1", 0)), reagent_type_name(1)])
+	if int(rec.get("reagent2", 0)) > 0:
+		parts.append("%d %s" % [int(rec.get("reagent2", 0)), reagent_type_name(2)])
+	if int(rec.get("reagent3", 0)) > 0:
+		parts.append("%d %s" % [int(rec.get("reagent3", 0)), reagent_type_name(3)])
+	var cost := ", ".join(parts) if not parts.is_empty() else "бесплатно"
+	return "%s  (%s)" % [str(rec.get("name", rec.get("id", "?"))), cost]
+
+
+func spend_typed_reagent(type_id: int, amount: int) -> bool:
+	if amount <= 0:
+		return true
+	if get_reagent_count(type_id) < amount:
+		return false
+	var i := type_id - 1
+	reagent_counts[i] = int(reagent_counts[i]) - amount
+	_sync_reagent_total()
+	inventory_changed.emit()
+	return true
+
+
+func consume_item(id: String, amount: int = 1) -> bool:
+	_ensure_inventory()
+	if id == "nail":
+		if nails < amount:
+			return false
+		nails -= amount
+		inventory_changed.emit()
+		return true
+	if id == "wedge":
+		if wedges < amount:
+			return false
+		wedges -= amount
+		inventory_changed.emit()
+		return true
+	if id == "anchor3":
+		if anchors3 < amount:
+			return false
+		anchors3 -= amount
+		inventory_changed.emit()
+		return true
+	for i in range(ITEM_SLOT_COUNT):
+		if str(item_slots[i].get("id", "")) == id and int(item_slots[i].get("count", 0)) >= amount:
+			item_slots[i]["count"] = int(item_slots[i]["count"]) - amount
+			if int(item_slots[i]["count"]) <= 0:
+				item_slots[i] = {"id": "", "name": "", "count": 0}
+			inventory_changed.emit()
+			return true
+	return false
+
+
+func selected_is(id: String) -> bool:
+	return str(get_selected_item().get("id", "")) == id
+
+
+func mine_wake_block(cell: Vector3i) -> bool:
+	if is_dream():
+		set_hint("Киркой пользуются в яви.")
+		return false
+	if not selected_is("pickaxe"):
+		set_hint("Чтобы ломать блоки яви, возьми кирку.")
+		return false
+	if not wake_blocks.has(cell):
+		return false
+	wake_blocks.erase(cell)
+	dust += 1
+	inventory_changed.emit()
+	set_hint("Кирка: блок [%d,%d,%d] → +1 осыпь" % [cell.x, cell.y, cell.z])
+	return true
+
+
+func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
+	var rec := find_recipe(rid)
+	if rec.is_empty():
+		return false
+	if not recipe_available(rec, ctx):
+		set_hint("Этот рецепт здесь недоступен.")
+		return false
+	if not can_afford_recipe(rec):
+		set_hint("Не хватает ресурсов для «%s»." % str(rec.get("name", rid)))
+		return false
+	dust -= int(rec.get("dust", 0))
+	if int(rec.get("reagent1", 0)) > 0:
+		spend_typed_reagent(1, int(rec.get("reagent1", 0)))
+	if int(rec.get("reagent2", 0)) > 0:
+		spend_typed_reagent(2, int(rec.get("reagent2", 0)))
+	if int(rec.get("reagent3", 0)) > 0:
+		spend_typed_reagent(3, int(rec.get("reagent3", 0)))
+	var gives := str(rec.get("gives", ""))
+	if gives == "nails":
+		nails += 1
+	elif gives == "wedges":
+		wedges += 1
+	elif gives == "anchors3":
+		anchors3 += 1
+	var item_id := str(rec.get("item", ""))
+	if item_id != "":
+		if add_item(item_id, str(rec.get("item_name", item_id)), 1) < 0:
+			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
+			return false
+	inventory_changed.emit()
+	set_hint("Скрафчено: %s." % str(rec.get("name", rid)))
+	return true
 
 
 func is_dream() -> bool:
@@ -260,30 +444,22 @@ func drain_clarity(delta: float) -> void:
 
 
 func craft_nail_from_dust() -> bool:
-	if dust < NAIL_CRAFT_DUST:
-		set_hint("Нужно %d осыпи для Гвоздя." % NAIL_CRAFT_DUST)
-		return false
-	dust -= NAIL_CRAFT_DUST
-	nails += 1
-	inventory_changed.emit()
-	set_hint("Скрафчен Гвоздь из осыпи (+1).")
-	return true
+	return craft_recipe("nail")
 
 
 func craft_wedge_from_dust() -> bool:
-	if dust < WEDGE_CRAFT_DUST:
-		set_hint("Нужно %d осыпи для Клины (дефицит!)." % WEDGE_CRAFT_DUST)
-		return false
-	dust -= WEDGE_CRAFT_DUST
-	wedges += 1
-	inventory_changed.emit()
-	set_hint("Скрафчен Клин из осыпи (+1). Дорого — береги.")
-	return true
+	return craft_recipe("wedge")
+
+
+func craft_anchor3_from_dust() -> bool:
+	return craft_recipe("anchor3")
 
 
 func craft_selected_from_dust() -> bool:
 	if selected_anchor == AnchorType.WEDGE:
 		return craft_wedge_from_dust()
+	if selected_anchor == AnchorType.ANCHOR3:
+		return craft_anchor3_from_dust()
 	return craft_nail_from_dust()
 
 
@@ -291,10 +467,14 @@ func select_anchor(t: AnchorType) -> void:
 	selected_anchor = t
 	selected_slot = 0 if t == AnchorType.NAIL else 1
 	if t == AnchorType.NAIL:
-		set_hint("Выбран Гвоздь (1 блок). Q — заякорить. C — крафт (%d осыпи)." % NAIL_CRAFT_DUST)
-	else:
-		set_hint("Выбран Клин (~%dx%dx%d). Q — заякорить. C — крафт (%d осыпи)." % [
+		set_hint("Выбран Гвоздь (1 блок). Q — заякорить. C — меню крафта (%d осыпи)." % NAIL_CRAFT_DUST)
+	elif t == AnchorType.WEDGE:
+		set_hint("Выбран Клин (~%dx%dx%d). Q — заякорить. C — меню крафта (%d осыпи)." % [
 			WEDGE_SIZE, WEDGE_SIZE, WEDGE_SIZE, WEDGE_CRAFT_DUST
+		])
+	else:
+		set_hint("Выбран Якорь3 (~%dx%dx%d). Q — заякорить. C — меню крафта (%d осыпи)." % [
+			ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_CRAFT_DUST
 		])
 
 
@@ -302,7 +482,9 @@ func can_afford_anchor(t: AnchorType) -> bool:
 	_reconcile_reagents()
 	if t == AnchorType.NAIL:
 		return nails >= 1 and reagents >= NAIL_COST_REAGENTS and clarity >= NAIL_COST_CLARITY
-	return wedges >= 1 and reagents >= WEDGE_COST_REAGENTS and clarity >= WEDGE_COST_CLARITY
+	if t == AnchorType.WEDGE:
+		return wedges >= 1 and reagents >= WEDGE_COST_REAGENTS and clarity >= WEDGE_COST_CLARITY
+	return anchors3 >= 1 and reagents >= ANCHOR3_COST_REAGENTS and clarity >= ANCHOR3_COST_CLARITY
 
 
 func try_place_anchor(origin: Vector3i) -> bool:
@@ -324,19 +506,25 @@ func try_place_anchor(origin: Vector3i) -> bool:
 		spend_reagents(NAIL_COST_REAGENTS, false)
 		spend_clarity(NAIL_COST_CLARITY)
 	else:
-		var half := WEDGE_SIZE / 2
-		for x in range(origin.x - half, origin.x - half + WEDGE_SIZE):
-			for y in range(origin.y - half, origin.y - half + WEDGE_SIZE):
-				for z in range(origin.z - half, origin.z - half + WEDGE_SIZE):
+		var zone := WEDGE_SIZE if t == AnchorType.WEDGE else ANCHOR3_SIZE
+		var half := zone / 2
+		for x in range(origin.x - half, origin.x - half + zone):
+			for y in range(origin.y - half, origin.y - half + zone):
+				for z in range(origin.z - half, origin.z - half + zone):
 					var c := Vector3i(x, y, z)
 					if dream_blocks.has(c):
 						cells.append(c)
 		if cells.is_empty():
-			set_hint("Клин: в зоне нет блоков.")
+			set_hint("Якорь: в зоне нет блоков.")
 			return false
-		wedges -= 1
-		spend_reagents(WEDGE_COST_REAGENTS, false)
-		spend_clarity(WEDGE_COST_CLARITY)
+		if t == AnchorType.WEDGE:
+			wedges -= 1
+			spend_reagents(WEDGE_COST_REAGENTS, false)
+			spend_clarity(WEDGE_COST_CLARITY)
+		else:
+			anchors3 -= 1
+			spend_reagents(ANCHOR3_COST_REAGENTS, false)
+			spend_clarity(ANCHOR3_COST_CLARITY)
 
 	for c in cells:
 		var data: Dictionary = dream_blocks[c]
@@ -345,7 +533,11 @@ func try_place_anchor(origin: Vector3i) -> bool:
 
 	pending_anchors.append({"type": t, "origin": origin, "cells": cells})
 	inventory_changed.emit()
-	var aname := "Гвоздь" if t == AnchorType.NAIL else "Клин"
+	var aname := "Гвоздь"
+	if t == AnchorType.WEDGE:
+		aname = "Клин"
+	elif t == AnchorType.ANCHOR3:
+		aname = "Якорь3"
 	set_hint("%s: заякорено %d блок(ов). F — проснуться." % [aname, cells.size()])
 	return true
 
@@ -356,7 +548,7 @@ func enter_dream() -> void:
 	awake_time = 0.0
 	clarity_changed.emit(clarity, CLARITY_MAX)
 	world_changed.emit(true)
-	set_hint("Сон. ЛКМ — блок, ПКМ — снять, 1/2 — якорь, Q — заякорить, C — крафт, F — проснуться.")
+	set_hint("Сон. ЛКМ — блок, ПКМ — снять, 1/2/3 — якорь, Q — заякорить, C — меню крафта, F — проснуться.")
 
 
 func resolve_wake() -> Dictionary:
@@ -378,12 +570,14 @@ func resolve_wake() -> Dictionary:
 		if wake_blocks.has(cell):
 			continue
 		var data: Dictionary = dream_blocks[cell]
+		var kind := str(data.get("kind", "drift"))
 		var mutant := false
-		if randf() < MUTATION_CHANCE:
+		if kind != "workbench" and randf() < MUTATION_CHANCE:
 			mutant = true
 			mutations += 1
+			kind = "mouth"
 		wake_blocks[cell] = {
-			"kind": "mouth" if mutant else data.get("kind", "drift"),
+			"kind": kind,
 			"mutant": mutant,
 		}
 		transferred += 1
@@ -458,6 +652,8 @@ func to_save_dict() -> Dictionary:
 		"dust": dust,
 		"nails": nails,
 		"wedges": wedges,
+		"anchors3": anchors3,
+		"day_time": day_time,
 		"selected_anchor": int(selected_anchor),
 		"selected_slot": selected_slot,
 		"item_slots": item_slots.duplicate(true),
@@ -476,8 +672,10 @@ func apply_save_dict(data: Dictionary) -> void:
 	dust = int(data.get("dust", 0))
 	nails = int(data.get("nails", 3))
 	wedges = int(data.get("wedges", 1))
+	anchors3 = int(data.get("anchors3", 0))
 	clarity = float(data.get("clarity", CLARITY_MAX))
 	awake_time = float(data.get("awake_time", 0.0))
+	day_time = float(data.get("day_time", 0.0))
 	world_seed_wake = int(data.get("world_seed_wake", 1337))
 	world_seed_dream = int(data.get("world_seed_dream", 9001))
 	selected_anchor = int(data.get("selected_anchor", 0)) as AnchorType
@@ -506,6 +704,7 @@ func apply_save_dict(data: Dictionary) -> void:
 				})
 	else:
 		_init_default_slots()
+	_ensure_anchor3_slot()
 	collected_reagent_ids = {}
 	var col: Variant = data.get("collected_reagent_ids", [])
 	if typeof(col) == TYPE_ARRAY:
@@ -522,6 +721,20 @@ func apply_save_dict(data: Dictionary) -> void:
 	clarity_changed.emit(clarity, CLARITY_MAX)
 	inventory_changed.emit()
 	world_changed.emit(is_dream())
+
+
+
+func _ensure_anchor3_slot() -> void:
+	_ensure_inventory()
+	var has := false
+	for i in range(item_slots.size()):
+		if str(item_slots[i].get("id", "")) == "anchor3":
+			item_slots[i]["count"] = anchors3
+			has = true
+	if has:
+		return
+	if item_slots.size() > 2 and str(item_slots[2].get("id", "")) == "":
+		item_slots[2] = {"id": "anchor3", "name": "Якорь3", "count": anchors3}
 
 
 func _blocks_to_json(src: Dictionary) -> Dictionary:

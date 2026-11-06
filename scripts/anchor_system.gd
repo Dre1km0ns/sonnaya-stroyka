@@ -33,12 +33,13 @@ func _process(_delta: float) -> void:
 		preview.visible = false
 		return
 
+	if GameState.craft_menu_open:
+		preview.visible = false
+		return
 	if Input.is_action_just_pressed("select_nail"):
 		GameState.select_anchor(GameState.AnchorType.NAIL)
 	if Input.is_action_just_pressed("select_wedge"):
 		GameState.select_anchor(GameState.AnchorType.WEDGE)
-	if Input.is_action_just_pressed("craft_nail"):
-		GameState.craft_selected_from_dust()
 
 	_update_preview()
 
@@ -65,6 +66,8 @@ func _update_preview() -> void:
 	var size := 1.0
 	if GameState.selected_anchor == GameState.AnchorType.WEDGE:
 		size = float(GameState.WEDGE_SIZE)
+	elif GameState.selected_anchor == GameState.AnchorType.ANCHOR3:
+		size = float(GameState.ANCHOR3_SIZE)
 	preview.scale = Vector3.ONE * size
 	preview.global_position = dream_voxels.cell_to_world(cell)
 	preview.visible = true

@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.4.1: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
+## Headless smoke v0.4.2: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -51,14 +51,28 @@ func _run() -> void:
 	assert(dv.cell_to_world(height_cell).is_equal_approx(wv.cell_to_world(height_cell)))
 	assert(is_equal_approx(dv.cell_to_world(Vector3i(2, 0, 4)).y, 0.5))
 	gs.dust = 9
+	assert(not gs.craft_nail_from_dust())
+	gs.dust = 10
 	assert(gs.craft_nail_from_dust())
+	assert(gs.NAIL_CRAFT_DUST == 10)
 
 	# Клин из осыпи
-	gs.dust = 20
+	gs.dust = 100
 	var wedges_before: int = gs.wedges
 	assert(gs.craft_wedge_from_dust())
 	assert(gs.wedges == wedges_before + 1)
-	assert(gs.dust == 20 - gs.WEDGE_CRAFT_DUST)
+	assert(gs.dust == 0)
+	assert(gs.WEDGE_CRAFT_DUST == 100)
+	gs.dust = 250
+	var a3_before: int = gs.anchors3
+	assert(gs.craft_anchor3_from_dust())
+	assert(gs.anchors3 == a3_before + 1)
+	assert(gs.dust == 0)
+	assert(gs.ANCHOR3_CRAFT_DUST == 250)
+	assert(gs.ANCHOR3_SIZE == 9)
+	assert(is_equal_approx(gs.CLARITY_DRAIN_PER_SEC, 1.25))
+	assert(gs.recipe_defs().size() >= 5)
+	assert(not ("макс" in gs.inventory_status_text()))
 
 	# Хардкор-кража (может вернуть dust:N)
 	gs.dust = 3
@@ -102,8 +116,9 @@ func _run() -> void:
 	assert(gs_m.dream_exit_count == 2)
 	assert(gs_m.mobs_unlocked())
 
-	# Инвентарь 5 слотов
+	# Инвентарь 5 слотов (0 гвоздь, 1 клин, 2 якорь3)
 	assert(gs.item_slots.size() == 5)
+	assert(str(gs.item_slots[2].get("id")) == "anchor3")
 	gs.select_item_slot(3)
 	assert(gs.selected_slot == 3)
 	gs.cycle_item_slot(1)
@@ -111,9 +126,41 @@ func _run() -> void:
 	gs.cycle_item_slot(1)
 	assert(gs.selected_slot == 0)
 	var added_at: int = gs.add_item("test_tool", "Тест", 1)
-	assert(added_at == 2)
-	assert(str(gs.item_slots[2].get("id")) == "test_tool")
-	assert(int(gs.item_slots[2].get("count")) == 1)
+	assert(added_at == 3)
+	assert(str(gs.item_slots[3].get("id")) == "test_tool")
+	assert(int(gs.item_slots[3].get("count")) == 1)
+
+	# Верстак и кирка
+	var gs_c: Node = gs_script.new()
+	root.add_child(gs_c)
+	gs_c.enter_dream()
+	gs_c.reagent_counts = [10, 0, 0]
+	gs_c.reagents = 10
+	assert(gs_c.craft_recipe("workbench", {"is_dream": true}))
+	assert(str(gs_c.item_slots[3].get("id")) == "workbench")
+	assert(not gs_c.craft_recipe("pickaxe", {"at_workbench": false}))
+	gs_c.reagent_counts = [0, 2, 3]
+	gs_c.reagents = 5
+	assert(gs_c.craft_recipe("pickaxe", {"at_workbench": true}))
+	assert(str(gs_c.item_slots[4].get("id")) == "pickaxe")
+	var wb := Vector3i(8, 0, 8)
+	assert(gs_c.place_dream_block(wb, "workbench"))
+	gs_c.nails = 2
+	gs_c.reagent_counts = [3, 2, 3]
+	gs_c.reagents = 8
+	gs_c.clarity = 100.0
+	gs_c.select_anchor(gs_c.AnchorType.NAIL)
+	assert(gs_c.try_place_anchor(wb))
+	var wb_res: Dictionary = gs_c.resolve_wake()
+	assert(int(wb_res["transferred"]) >= 1)
+	assert(gs_c.wake_blocks.has(wb))
+	assert(str(gs_c.wake_blocks[wb].get("kind")) == "workbench")
+	gs_c.select_item_slot(4)
+	assert(gs_c.selected_is("pickaxe"))
+	var mine_cell := Vector3i(3, 0, 3)
+	gs_c.wake_blocks[mine_cell] = {"kind": "drift", "mutant": false}
+	assert(gs_c.mine_wake_block(mine_cell))
+	assert(not gs_c.wake_blocks.has(mine_cell))
 
 	# Чанки
 	var cm_script: GDScript = load("res://scripts/chunk_manager.gd")
@@ -155,7 +202,8 @@ func _run() -> void:
 	assert(ruin_candidates <= 24)
 	assert(cm.count_loaded_lakes() >= 1)
 	assert(cm.count_loaded_ruins() >= 1)
-	assert(max_ruin_reagents >= 8)
+	assert(max_ruin_reagents >= 2)
+	assert(max_ruin_reagents <= 6)
 	var lake_p: Vector3 = cm.get_any_lake_sample_point()
 	assert(lake_p != Vector3.ZERO)
 	assert(cm.is_world_in_lake(lake_p))
@@ -176,7 +224,33 @@ func _run() -> void:
 		if irregular_ok:
 			break
 	assert(irregular_ok)
-	assert(is_equal_approx(cm.LAKE_DEPTH, 0.8))
+	assert(cm.LAKE_DEPTH > 1.0)
+	assert(cm.HILL_MAX == 4)
+	var found_h4 := false
+	var max_h := 0
+	for hx in range(-48, 49):
+		for hz in range(-48, 49):
+			var hh: int = cm.height_at(hx, hz)
+			max_h = maxi(max_h, hh)
+			if hh == 4:
+				found_h4 = true
+	assert(found_h4)
+	assert(max_h == 4)
+	var reagent_on_top := true
+	for node in cm.get_tree().get_nodes_in_group("reagent"):
+		if not (node is Node3D):
+			continue
+		if not cm.is_ancestor_of(node):
+			continue
+		var gp: Vector3 = node.global_position
+		var rh: int = cm.height_at(floori(gp.x), floori(gp.z))
+		if gp.y < float(rh) + 0.2:
+			reagent_on_top = false
+	assert(reagent_on_top)
+	var nav_script: GDScript = load("res://scripts/enemy_navigation.gd")
+	assert(nav_script.WATER_COST > 1.0)
+	var pth: Array = nav_script.find_path(Vector3(0, 1, 0), Vector3(6, 1, 0), cm)
+	assert(pth.size() >= 2)
 
 	# Враг (Шовник)
 	var enemy_script: GDScript = load("res://scripts/seam_creature.gd")
@@ -197,6 +271,10 @@ func _run() -> void:
 	assert(enemy.collision_layer == 16)
 	assert(enemy.collision_mask & 16 != 0)
 	assert(enemy.collision_mask & 1 != 0)
+	assert(enemy.collision_mask & 2 != 0)
+	assert(enemy.collision_mask & 4 != 0)
+	assert(enemy.has_node("Head"))
+	assert(is_equal_approx(enemy.ATTACK_INTERVAL, 0.55))
 
 	# Четыре типа призраков / цели Pac-Man
 	var ghost_script: GDScript = load("res://scripts/enemy_ghost.gd")
@@ -238,6 +316,20 @@ func _run() -> void:
 	assert(is_equal_approx(g1.SPEED, 2.45 * 0.6))
 	assert(g1.collision_layer == 16)
 	assert(g1.collision_mask & 16 != 0)
+	assert(g1.collision_mask & 2 != 0)
+	assert(g1.collision_mask & 4 != 0)
+	assert(g1.has_node("Head"))
+	var td_script: GDScript = load("res://scripts/threat_director.gd")
+	var td: Node = td_script.new()
+	assert(td.MAX_ENEMIES == 7)
+	var dc_script: GDScript = load("res://scripts/day_cycle.gd")
+	var dc: Node = dc_script.new()
+	assert(is_equal_approx(dc.DAY_LENGTH, 300.0))
+	dc.time_of_day = 10.0
+	assert(not dc.is_night())
+	dc.time_of_day = 301.0
+	assert(dc.is_night())
+	root.add_child(dc)
 
 	var persist_count: int = gs.dream_blocks.size()
 
@@ -274,7 +366,7 @@ func _run() -> void:
 	assert(gs2.dream_exit_count == gs.dream_exit_count)
 	assert(gs2.get_reagent_count(2) == gs.get_reagent_count(2))
 	assert(gs2.get_reagent_count(3) == gs.get_reagent_count(3))
-	assert(str(gs2.item_slots[2].get("id")) == "test_tool")
+	assert(str(gs2.item_slots[3].get("id")) == "test_tool")
 	# Очистка smoke-файла
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
@@ -285,9 +377,9 @@ func _run() -> void:
 	for n2 in get_nodes_in_group("enemy_ghost"):
 		ghost_count += 1
 
-	print("SMOKE: OK v0.4.1 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d" % [
-		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges,
+	print("SMOKE: OK v0.4.2 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1" % [
+		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
-		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count
+		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
 	])
 	quit(0)

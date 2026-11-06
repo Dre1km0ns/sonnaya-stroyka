@@ -12,6 +12,7 @@ var bed: Node3D
 var player: CharacterBody3D
 var awake_time: float = 0.0
 var _spawn_budget: int = 3
+const MAX_ENEMIES := 7
 var _next_spawn_at: float = 45.0
 var _unstable_cd: float = 18.0
 var _enemy_script: GDScript
@@ -88,13 +89,10 @@ func apply_save_dict(d: Dictionary) -> void:
 	if not mobs_can_spawn():
 		return
 	# Добить до сохранённого числа врагов (сессия могла быть пустой)
-	var want := maxi(3, int(d.get("enemy_count", 3)))
-	while _count_enemies() < want:
+	var want := mini(MAX_ENEMIES, maxi(3, int(d.get("enemy_count", 3))))
+	while _count_all_enemies() < MAX_ENEMIES and _count_enemies() < want:
 		_spawn_one(false if _count_enemies() < 3 else true)
 	_ensure_ghosts()
-	var want_g := maxi(4, int(d.get("ghost_count", 4)))
-	while _count_ghosts() < want_g:
-		_spawn_ghost(_count_ghosts() % 4, GHOST_SPOTS[_count_ghosts() % 4], GHOST_CORNERS[_count_ghosts() % 4])
 
 
 func _process(delta: float) -> void:
@@ -115,8 +113,8 @@ func _process(delta: float) -> void:
 
 	# Дальше от кровати / дольше не спишь → больше шовников
 	var target := 3 + int(awake_time / 50.0) + int(dist / 35.0)
-	target = mini(target, 10)
-	while _count_enemies() < target and awake_time >= _next_spawn_at:
+	target = mini(target, MAX_ENEMIES)
+	while _count_all_enemies() < MAX_ENEMIES and _count_enemies() < target and awake_time >= _next_spawn_at:
 		var elite := _count_enemies() >= 5 or dist > 50.0
 		_spawn_one(elite)
 		_next_spawn_at = awake_time + maxf(20.0, 55.0 - awake_time * 0.05)
@@ -132,6 +130,10 @@ func _ensure_base_spawns() -> void:
 		return
 	for i in range(BASE_SPAWN_SPOTS.size()):
 		_spawn_at(BASE_SPAWN_SPOTS[i], false)
+
+
+func _count_all_enemies() -> int:
+	return _count_enemies() + _count_ghosts()
 
 
 func _count_enemies() -> int:
@@ -151,6 +153,8 @@ func _spawn_one(elite: bool) -> void:
 
 func _spawn_at(pos: Vector3, elite: bool) -> void:
 	if _enemy_script == null or wake_root == null:
+		return
+	if _count_all_enemies() >= MAX_ENEMIES:
 		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos
@@ -223,6 +227,8 @@ func _ensure_ghosts() -> void:
 
 func _spawn_ghost(kind: int, pos: Vector3, corner: Vector3) -> void:
 	if _ghost_script == null or wake_root == null:
+		return
+	if _count_all_enemies() >= MAX_ENEMIES:
 		return
 	var e: CharacterBody3D = _ghost_script.new()
 	e.position = pos

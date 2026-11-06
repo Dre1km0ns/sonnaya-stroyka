@@ -23,6 +23,7 @@ var mouse_sens: float = MOUSE_SENS_DEFAULT
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	add_to_group("player")
+	collision_mask = 1 | 4 | 16
 	GameState.world_changed.connect(_on_world_changed)
 
 
@@ -32,6 +33,8 @@ func _on_world_changed(is_dream: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.craft_menu_open:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-event.relative.x * mouse_sens)
 		pivot.rotate_x(-event.relative.y * mouse_sens)

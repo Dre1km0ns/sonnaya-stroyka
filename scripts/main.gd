@@ -1,5 +1,5 @@
 extends Node3D
-## Главная сцена v0.4.1: реагенты, инвентарь, призраки, руины/озёра.
+## Главная сцена v0.4.2: реагенты, инвентарь, призраки, руины/озёра.
 
 @onready var player: CharacterBody3D = $Player
 @onready var wake_world: Node3D = $WakeWorld
@@ -26,11 +26,19 @@ func _ready() -> void:
 		wake_chunks.setup(player, GameState.world_seed_wake)
 	if dream_chunks and dream_chunks.has_method("setup"):
 		dream_chunks.setup(player, GameState.world_seed_dream)
+	var day_script: GDScript = load("res://scripts/day_cycle.gd")
+	var day: Node = day_script.new()
+	$Systems.add_child(day)
+	var sun := wake_world.get_node_or_null("Sun") as DirectionalLight3D
+	var fill := wake_world.get_node_or_null("WarmFill") as OmniLight3D
+	var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
+	if day.has_method("setup"):
+		day.setup(sun, we.environment if we else null, fill)
 	# Автозагрузка при старте, если есть сейв
 	if saver.has_save():
 		saver.load_game()
 		GameState.set_hint("Продолжение с диска (F5 сейв / F9 лоад).")
-	print("Сонная стройка v0.4.1 ready. Path OK.")
+	print("Сонная стройка v0.4.2 ready. Path OK.")
 
 
 func apply_world_visibility(is_dream: bool) -> void:

@@ -31,8 +31,15 @@ func _process(delta: float) -> void:
 	_place_cooldown = maxf(0.0, _place_cooldown - delta)
 	if player == null or dream_voxels == null:
 		return
+	if GameState.craft_menu_open:
+		ghost.visible = false
+		return
 	if not GameState.is_dream():
 		ghost.visible = false
+		if _place_cooldown <= 0.0 and (Input.is_action_just_pressed("place_block") or Input.is_action_just_pressed("remove_block")):
+			if GameState.selected_is("pickaxe"):
+				_try_mine_wake()
+				_place_cooldown = 0.16
 		return
 	_update_ghost()
 	if Input.is_action_just_pressed("place_block") and _place_cooldown <= 0.0:
@@ -82,9 +89,20 @@ func _try_place() -> void:
 
 
 func _place_at(cell: Vector3i) -> void:
-	if GameState.place_dream_block(cell, "drift"):
+	var kind := "drift"
+	if GameState.selected_is("workbench"):
+		if not GameState.consume_item("workbench", 1):
+			GameState.set_hint("Нет верстака в инвентаре.")
+			return
+		kind = "workbench"
+	if GameState.place_dream_block(cell, kind):
 		dream_voxels.add_block(cell, GameState.dream_blocks[cell])
-		GameState.set_hint("Дрейф-блок [%d,%d,%d]" % [cell.x, cell.y, cell.z])
+		if kind == "workbench":
+			GameState.set_hint("Верстак [%d,%d,%d]. Заякорь гвоздём, чтобы унести в явь." % [cell.x, cell.y, cell.z])
+		else:
+			GameState.set_hint("Дрейф-блок [%d,%d,%d]" % [cell.x, cell.y, cell.z])
+	elif kind == "workbench":
+		GameState.add_item("workbench", "Верстак", 1)
 
 
 func _try_remove() -> void:
@@ -100,3 +118,19 @@ func _try_remove() -> void:
 	if GameState.remove_dream_block(cell):
 		dream_voxels.remove_block(cell)
 		GameState.set_hint("Снят блок [%d,%d,%d]" % [cell.x, cell.y, cell.z])
+
+
+func _try_mine_wake() -> void:
+	var aim := _aim()
+	if not aim.get("hit", false):
+		return
+	var collider = aim["collider"]
+	if collider == null or not collider.has_meta("voxel_cell"):
+		return
+	if bool(collider.get_meta("is_dream")):
+		return
+	var cell: Vector3i = collider.get_meta("voxel_cell")
+	if GameState.mine_wake_block(cell):
+		for vox in get_tree().get_nodes_in_group("voxel_world"):
+			if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
+				vox.remove_block(cell)

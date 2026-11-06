@@ -1,5 +1,5 @@
 extends CanvasLayer
-## HUD v0.4: мир, ясность, реагенты по типам, хотбар на 5 слотов.
+## HUD v0.4.2: хотбар, крафт-меню, без «макс.100».
 
 @onready var world_label: Label = $Root/WorldLabel
 @onready var clarity_bar: ProgressBar = $Root/ClarityBar
@@ -12,6 +12,9 @@ var _hotbar_labels: Array[Label] = []
 
 
 func _ready() -> void:
+	var menu_script: GDScript = load("res://scripts/craft_menu.gd")
+	var menu: Control = menu_script.new()
+	$Root.add_child(menu)
 	_build_hotbar()
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
@@ -71,12 +74,7 @@ func _on_clarity(value: float, max_value: float) -> void:
 
 
 func _refresh_inv() -> void:
-	inv_label.text = "Осыпь: %d   Гвозди: %d   Клинья: %d\n%s: %d   %s: %d   %s: %d   (макс. 100)" % [
-		GameState.dust, GameState.nails, GameState.wedges,
-		GameState.reagent_type_name(1), GameState.get_reagent_count(1),
-		GameState.reagent_type_name(2), GameState.get_reagent_count(2),
-		GameState.reagent_type_name(3), GameState.get_reagent_count(3),
-	]
+	inv_label.text = GameState.inventory_status_text()
 	for i in range(_hotbar_slots.size()):
 		var selected := i == GameState.selected_slot
 		_hotbar_slots[i].color = Color(0.28, 0.24, 0.12, 0.88) if selected else Color(0.08, 0.08, 0.1, 0.72)
