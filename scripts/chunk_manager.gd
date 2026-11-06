@@ -339,7 +339,7 @@ func _add_floor_slab(root: Node3D, coord: Vector2i, lx: int, lz: int, w: int, d:
 	floor_mesh.mesh = box
 	var mat := StandardMaterial3D.new()
 	mat.roughness = 0.95
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.cull_mode = BaseMaterial3D.CULL_BACK
 	var colr := COLOR_DREAM if is_dream_layer else COLOR_WAKE
 	if top_y < -0.01:
 		colr = colr.darkened(0.18)
@@ -365,8 +365,10 @@ func _realize_lake(root: Node3D, coord: Vector2i, lake_cells: Dictionary, occupi
 		var wz := coord.y * chunk_size + cell.y
 		_lake_world_cells[Vector2i(wx, wz)] = true
 	_lakes_by_chunk[coord] = locals
-	# Тонкая поверхность воды (без боковых «стенок» объёма) + берега со всех сторон.
-	var water_h := 0.07
+	# Вода — только горизонтальная плоскость (без боковых граней BoxMesh).
+	# Боковые «стенки текстуры» давал BoxMesh 6 граней + CULL_DISABLED/alpha
+	# и дополнительные вставленные LakeBank внутри озера. Берег уже рисуют
+	# толстые плиты грунта (thickness = LAKE_DEPTH+1).
 	for lz in range(chunk_size):
 		var x := 0
 		while x < chunk_size:
@@ -379,22 +381,24 @@ func _realize_lake(root: Node3D, coord: Vector2i, lake_cells: Dictionary, occupi
 			var width := x - x0
 			var water := MeshInstance3D.new()
 			water.name = "LakeWater"
-			var box := BoxMesh.new()
-			box.size = Vector3(float(width), water_h, 1.0)
-			water.mesh = box
-			water.position = Vector3(float(x0) + float(width) * 0.5, LAKE_SURFACE_Y - water_h * 0.5, float(lz) + 0.5)
+			var plane := PlaneMesh.new()
+			plane.size = Vector2(float(width), 1.0)
+			plane.orientation = PlaneMesh.FACE_Y
+			water.mesh = plane
+			water.position = Vector3(float(x0) + float(width) * 0.5, LAKE_SURFACE_Y, float(lz) + 0.5)
+			water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			var mat := StandardMaterial3D.new()
 			if is_dream_layer:
-				mat.albedo_color = Color(0.22, 0.18, 0.48, 0.52)
+				mat.albedo_color = Color(0.22, 0.18, 0.48, 0.46)
 			else:
-				mat.albedo_color = Color(0.20, 0.42, 0.66, 0.52)
+				mat.albedo_color = Color(0.20, 0.42, 0.66, 0.46)
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-			mat.roughness = 0.12
-			mat.metallic = 0.18
+			mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+			mat.roughness = 0.38
+			mat.metallic = 0.04
 			water.material_override = mat
 			root.add_child(water)
-	_add_lake_banks(root, coord, lake_cells)
 	var area := Area3D.new()
 	area.name = "LakeArea"
 	area.add_to_group("lake")
@@ -747,6 +751,21 @@ func _shape_aabb(shape: Shape3D) -> AABB:
 		return AABB(Vector3(-cap.radius, -cap.height * 0.5, -cap.radius), Vector3(cap.radius * 2.0, cap.height, cap.radius * 2.0))
 	return AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
 
+
+
+func lake_water_is_planar() -> bool:
+	var seen := 0
+	for key in _loaded.keys():
+		var node: Node = _loaded[key]
+		if not is_instance_valid(node):
+			continue
+		for ch in node.get_children():
+			if str(ch.name).begins_with("LakeWater") and ch is MeshInstance3D:
+				seen += 1
+				var mesh: Mesh = (ch as MeshInstance3D).mesh
+				if mesh == null or not (mesh is PlaneMesh):
+					return false
+	return seen >= 0
 
 func lake_has_no_hills(coord: Vector2i) -> bool:
 	if not _lakes_by_chunk.has(coord):

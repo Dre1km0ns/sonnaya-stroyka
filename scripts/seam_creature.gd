@@ -32,6 +32,9 @@ var _atk_cell: Variant = null
 var _punch: float = 0.0
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _mesh_built: bool = false
+var hp: int = 50
+var max_hp: int = 50
+var _dead: bool = false
 
 
 func configure_elite(on: bool) -> void:
@@ -54,6 +57,7 @@ func _ready() -> void:
 	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night_look):
 		GameState.night_changed.connect(_on_night_look)
 	_on_night_look(GameState.is_night() if GameState.has_method("is_night") else false)
+	_Vis.update_hp_bar(self, hp, max_hp)
 
 
 func _build_mesh() -> void:
@@ -96,8 +100,30 @@ func _apply_dream_state(is_dream: bool) -> void:
 	set_physics_process(not is_dream)
 
 
+func take_damage(amount: int) -> void:
+	if _dead:
+		return
+	hp = maxi(0, hp - amount)
+	_Vis.update_hp_bar(self, hp, max_hp)
+	if hp <= 0:
+		_die()
+
+
+func _die() -> void:
+	_dead = true
+	_Vis.play_state(self, "death", true)
+	collision_layer = 0
+	collision_mask = 0
+	set_physics_process(false)
+	var tree: SceneTree = get_tree()
+	if tree:
+		await tree.create_timer(1.5).timeout
+	if is_instance_valid(self):
+		queue_free()
+
+
 func _physics_process(delta: float) -> void:
-	if frozen:
+	if frozen or _dead:
 		return
 	_steal_cd = maxf(0.0, _steal_cd - delta)
 	_rip_cd = maxf(0.0, _rip_cd - delta)
@@ -131,6 +157,20 @@ func _physics_process(delta: float) -> void:
 	if dist <= CONTACT_RANGE and _steal_cd <= 0.0:
 		_hit_player(player, to_player)
 		_steal_cd = STEAL_COOLDOWN * (0.75 if elite else 1.0)
+		_punch = maxf(_punch, 0.35)
+	_update_anim(attacking or _punch > 0.0)
+
+
+func _update_anim(attacking: bool) -> void:
+	if _dead:
+		return
+	var moving := Vector3(velocity.x, 0.0, velocity.z).length() > 0.18
+	if attacking:
+		_Vis.play_state(self, "attack")
+	elif moving:
+		_Vis.play_state(self, "walk")
+	else:
+		_Vis.play_state(self, "idle")
 
 
 func _pick_wander() -> void:
@@ -176,6 +216,7 @@ func _tick_block_attack(_delta: float) -> bool:
 	_atk_cd = ATTACK_INTERVAL
 	_punch = 0.18
 	_atk_hits += 1
+	_Vis.play_state(self, "attack", true)
 	var body := get_node_or_null("Body") as Node3D
 	if body:
 		body.position.z = 0.12

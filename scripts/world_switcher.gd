@@ -47,7 +47,7 @@ func _try_interact() -> void:
 	if collider == null:
 		return
 	var target: Node = collider
-	if not target.is_in_group("bed") and not target.is_in_group("reagent"):
+	if not target.is_in_group("bed") and not target.is_in_group("reagent") and not target.is_in_group("pickup"):
 		if collider.get_parent() != null:
 			target = collider.get_parent()
 	if target.is_in_group("bed"):
@@ -56,7 +56,7 @@ func _try_interact() -> void:
 		else:
 			enter_dream()
 		return
-	if target.is_in_group("reagent") and target.has_method("collect"):
+	if (target.is_in_group("reagent") or target.is_in_group("pickup")) and target.has_method("collect"):
 		target.collect()
 		return
 	if collider.has_meta("voxel_cell") and not GameState.is_dream():

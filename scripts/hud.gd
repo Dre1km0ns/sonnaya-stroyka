@@ -1,5 +1,5 @@
 extends CanvasLayer
-## HUD v0.4.3: хотбар, крафт-меню, без «макс.100».
+## HUD v0.4.4: хотбар, крафт, полоска босса.
 
 @onready var world_label: Label = $Root/WorldLabel
 @onready var clarity_bar: ProgressBar = $Root/ClarityBar
@@ -9,6 +9,9 @@ extends CanvasLayer
 
 var _hotbar_slots: Array[ColorRect] = []
 var _hotbar_labels: Array[Label] = []
+var _boss_wrap: Control
+var _boss_bar: ProgressBar
+var _boss_label: Label
 
 
 func _ready() -> void:
@@ -16,6 +19,7 @@ func _ready() -> void:
 	var menu: Control = menu_script.new()
 	$Root.add_child(menu)
 	_build_hotbar()
+	_build_boss_bar()
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
 	GameState.clarity_changed.connect(_on_clarity)
@@ -96,3 +100,60 @@ func _on_hint(_text: String) -> void:
 	if hint_label:
 		hint_label.visible = false
 		hint_label.text = ""
+
+
+func _build_boss_bar() -> void:
+	var root: Control = $Root
+	_boss_wrap = Control.new()
+	_boss_wrap.name = "BossBarWrap"
+	_boss_wrap.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_boss_wrap.offset_left = 180
+	_boss_wrap.offset_right = -180
+	_boss_wrap.offset_top = 14
+	_boss_wrap.offset_bottom = 70
+	_boss_wrap.visible = false
+	root.add_child(_boss_wrap)
+	_boss_label = Label.new()
+	_boss_label.text = "Мать блоков"
+	_boss_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_boss_label.offset_bottom = 22
+	_boss_label.add_theme_font_size_override("font_size", 18)
+	_boss_wrap.add_child(_boss_label)
+	_boss_bar = ProgressBar.new()
+	_boss_bar.max_value = 1000
+	_boss_bar.value = 1000
+	_boss_bar.show_percentage = false
+	_boss_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_boss_bar.offset_top = 24
+	_boss_bar.offset_bottom = 48
+	_boss_bar.custom_minimum_size = Vector2(0, 24)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.78, 0.16, 0.18)
+	fill.set_corner_radius_all(4)
+	_boss_bar.add_theme_stylebox_override("fill", fill)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.10, 0.08, 0.08, 0.88)
+	bg.set_corner_radius_all(4)
+	_boss_bar.add_theme_stylebox_override("background", bg)
+	_boss_wrap.add_child(_boss_bar)
+
+
+func _process(_delta: float) -> void:
+	if _boss_wrap == null:
+		return
+	var bosses: Array = get_tree().get_nodes_in_group("block_mother") if get_tree() else []
+	var live: Node = null
+	for b in bosses:
+		if is_instance_valid(b) and int(b.get("hp")) > 0:
+			live = b
+			break
+	if live == null:
+		_boss_wrap.visible = false
+		return
+	_boss_wrap.visible = true
+	var hp: int = int(live.get("hp"))
+	var mx: int = int(live.get("max_hp"))
+	_boss_bar.max_value = mx
+	_boss_bar.value = hp
+	_boss_label.text = "Мать блоков   %d / %d" % [hp, mx]

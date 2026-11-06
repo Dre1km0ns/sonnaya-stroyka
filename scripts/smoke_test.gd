@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.4.3: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
+## Headless smoke v0.4.4: transfer + чанки + враг + сейв + реагенты + инвентарь + призраки.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -51,28 +51,31 @@ func _run() -> void:
 	assert(dv.cell_to_world(height_cell).is_equal_approx(wv.cell_to_world(height_cell)))
 	assert(is_equal_approx(dv.cell_to_world(Vector3i(2, 0, 4)).y, 0.5))
 	gs.dust = 9
-	assert(not gs.craft_nail_from_dust())
+	assert(not gs.craft_recipe("nail", {"is_dream": true}))
 	gs.dust = 10
-	assert(gs.craft_nail_from_dust())
+	assert(gs.craft_recipe("nail", {"is_dream": true}))
+	assert(not gs.craft_recipe("nail", {"is_dream": false}))
+	assert(not gs.craft_recipe("nail", {"at_workbench": true, "is_dream": true}))
 	assert(gs.NAIL_CRAFT_DUST == 10)
 
-	# Клин из осыпи
+	# Клин из осыпи — только во сне, не на верстаке
 	gs.dust = 100
 	var wedges_before: int = gs.wedges
-	assert(gs.craft_wedge_from_dust())
+	assert(gs.craft_recipe("wedge", {"is_dream": true}))
 	assert(gs.wedges == wedges_before + 1)
 	assert(gs.dust == 0)
 	assert(gs.WEDGE_CRAFT_DUST == 100)
 	gs.dust = 250
 	var a3_before: int = gs.anchors3
-	assert(gs.craft_anchor3_from_dust())
+	assert(gs.craft_recipe("anchor3", {"is_dream": true}))
 	assert(gs.anchors3 == a3_before + 1)
 	assert(gs.dust == 0)
 	assert(gs.ANCHOR3_CRAFT_DUST == 250)
 	assert(gs.ANCHOR3_SIZE == 9)
 	assert(is_equal_approx(gs.CLARITY_DRAIN_PER_SEC, 1.25))
-	assert(gs.recipe_defs().size() >= 6)
+	assert(gs.recipe_defs().size() >= 7)
 	assert(not gs.find_recipe("torch").is_empty())
+	assert(not gs.find_recipe("sword").is_empty())
 	assert(not ("макс" in gs.inventory_status_text()))
 
 	# Хардкор-кража (может вернуть dust:N)
@@ -162,6 +165,21 @@ func _run() -> void:
 	gs_c.wake_blocks[mine_cell] = {"kind": "drift", "mutant": false}
 	assert(gs_c.mine_wake_block(mine_cell))
 	assert(not gs_c.wake_blocks.has(mine_cell))
+	assert(str(gs_c.last_mined_kind) == "drift")
+	var drop_script: GDScript = load("res://scripts/block_pickup.gd")
+	var drop: StaticBody3D = drop_script.new()
+	drop.configure("drift")
+	root.add_child(drop)
+	await process_frame
+	assert(drop.is_in_group("pickup"))
+	assert(drop.has_method("collect"))
+	gs_c.add_mined_block("drift", 1)
+	var stored_c := 0
+	for sl2 in gs_c.item_slots:
+		if str(sl2.get("id", "")) == "drift":
+			stored_c += int(sl2.get("count", 0))
+	stored_c += int(gs_c.block_stash.get("drift", 0))
+	assert(stored_c >= 1)
 	var gs_t: Node = gs_script.new()
 	root.add_child(gs_t)
 	gs_t.reagent_counts = [1, 1, 0]
@@ -172,7 +190,29 @@ func _run() -> void:
 	assert(gs_t.place_wake_block(torch_cell, "torch"))
 	assert(str(gs_t.wake_blocks[torch_cell].get("kind")) == "torch")
 	assert(FileAccess.file_exists("res://assets/audio/music.mp3"))
+	assert(FileAccess.file_exists("res://assets/audio/dream_ost.mp3"))
+	assert(FileAccess.file_exists("res://assets/audio/boss_ost.mp3"))
 	assert(ResourceLoader.exists("res://assets/models/ghost.glb"))
+	assert(ResourceLoader.exists("res://assets/models/greenblob.glb"))
+	assert(ResourceLoader.exists("res://assets/models/reagent_crystal.glb"))
+	assert(ResourceLoader.exists("res://assets/models/reagent_herb.glb"))
+	assert(ResourceLoader.exists("res://assets/models/reagent_ore.glb"))
+	var gs_s: Node = gs_script.new()
+	root.add_child(gs_s)
+	gs_s.reagent_counts = [5, 2, 0]
+	gs_s.reagents = 7
+	assert(not gs_s.craft_recipe("sword", {"at_workbench": false}))
+	assert(gs_s.craft_recipe("sword", {"at_workbench": true}))
+	assert(str(gs_s.item_slots[3].get("id")) == "sword")
+	var wb_only: Array = gs_s.get_visible_recipes({"at_workbench": true, "is_dream": true})
+	for recw in wb_only:
+		var ridw := str(recw.get("id", ""))
+		assert(ridw != "nail" and ridw != "wedge" and ridw != "anchor3")
+	var found_sword := false
+	for recw2 in wb_only:
+		if str(recw2.get("id", "")) == "sword":
+			found_sword = true
+	assert(found_sword)
 	var menu_script: GDScript = load("res://scripts/craft_menu.gd")
 	var menu: Control = menu_script.new()
 	root.add_child(menu)
@@ -251,6 +291,7 @@ func _run() -> void:
 	assert(lakes_flat)
 	var col_issues: Array = cm.collect_collision_issues()
 	assert(col_issues.is_empty())
+	assert(cm.lake_water_is_planar())
 	assert(cm.LAKE_DEPTH > 1.0)
 	assert(cm.HILL_MAX == 4)
 	var found_h4 := false
@@ -307,6 +348,17 @@ func _run() -> void:
 	assert(enemy.collision_mask & 2 != 0)
 	assert(enemy.collision_mask & 4 != 0)
 	assert(enemy.has_node("Model"))
+	assert(enemy.hp == 50)
+	assert(enemy.max_hp == 50)
+	var vis: GDScript = load("res://scripts/enemy_visuals.gd")
+	assert(vis.has_clip(enemy, "walk"))
+	assert(vis.has_clip(enemy, "attack"))
+	assert(vis.has_clip(enemy, "idle"))
+	assert(vis.has_clip(enemy, "death"))
+	var played: String = vis.play_state(enemy, "walk", true)
+	assert(played != "")
+	enemy.take_damage(10)
+	assert(enemy.hp == 40)
 	assert(is_equal_approx(enemy.ATTACK_INTERVAL, 0.55))
 
 	# Четыре типа призраков / цели Pac-Man
@@ -352,6 +404,23 @@ func _run() -> void:
 	assert(g1.collision_mask & 2 != 0)
 	assert(g1.collision_mask & 4 != 0)
 	assert(g1.has_node("Model"))
+	assert(g1.hp == 50)
+	g1.take_damage(10)
+	assert(g1.hp == 40)
+	assert(vis.has_clip(g1, "walk"))
+	assert(vis.has_clip(g1, "attack"))
+	var boss_script: GDScript = load("res://scripts/block_mother.gd")
+	var boss: CharacterBody3D = boss_script.new()
+	boss.position = Vector3(4, 1, 4)
+	root.add_child(boss)
+	await process_frame
+	await process_frame
+	assert(boss.is_in_group("block_mother"))
+	assert(boss.hp == 1000)
+	assert(boss.max_hp == 1000)
+	boss.take_damage(10)
+	assert(boss.hp == 990)
+	assert(boss.get_tree() != null)
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
 	assert(td.MAX_ENEMIES == 7)
@@ -410,7 +479,7 @@ func _run() -> void:
 	for n2 in get_nodes_in_group("enemy_ghost"):
 		ghost_count += 1
 
-	print("SMOKE: OK v0.4.3 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 music=1 col=0" % [
+	print("SMOKE: OK v0.4.4 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0

@@ -1,26 +1,32 @@
 Сонная стройка — сторонние ассеты
 =================================
 
-Модели врагов (assets/models/*.glb)
------------------------------------
+Модели врагов и босса (assets/models/*.glb)
+------------------------------------------
 Источник: Quaternius — Ultimate Monsters (октябрь 2022)
 https://quaternius.com/packs/ultimatemonsters.html
 Лицензия: CC0 1.0 Universal
 https://creativecommons.org/publicdomain/zero/1.0/
 
-Используются (по одному на тип):
 - demon.glb          — Шовник
 - ghost.glb          — враг1
 - pinkblob.glb       — враг2
 - bluedemon.glb      — враг3
 - ghost_skull.glb    — враг4
+- greenblob.glb      — босс «Мать блоков»
+
+Модели реагентов
+----------------
+- reagent_crystal.glb — Crystal 1, Quaternius Ultimate RPG Items (август 2019), CC0
+- reagent_herb.glb    — Mushroom 1, Quaternius Nature Crops Pack (январь 2020), CC0
+- reagent_ore.glb     — Mineral, Quaternius Ultimate RPG Items (август 2019), CC0
 
 Автор разрешает любое использование, в том числе коммерческое;
 указание авторства необязательно, но желательно: «Quaternius».
 
-Фоновая музыка (assets/audio/music.mp3)
----------------------------------------
-Предоставлена пользователем проекта для этой игры.
-Циклически проигрывается во время сессии.
-
-Примитивные серые меши больше не используются как модели врагов.
+Музыка (assets/audio/)
+----------------------
+Все три трека предоставлены пользователем проекта:
+- music.mp3      — Явь (существующий трек)
+- dream_ost.mp3  — Сон («lofi Good Niiight», reflektpro8)
+- boss_ost.mp3   — босс «Мать блоков» («репчик инструментал», gsgsg7384)

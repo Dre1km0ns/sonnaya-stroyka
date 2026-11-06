@@ -39,23 +39,66 @@ func _ready() -> void:
 	_on_night(GameState.is_night() if GameState.has_method("is_night") else false)
 
 
+const MODEL_PATHS := [
+	"res://assets/models/reagent_crystal.glb",
+	"res://assets/models/reagent_herb.glb",
+	"res://assets/models/reagent_ore.glb",
+]
+
+
+func _model_path() -> String:
+	return MODEL_PATHS[clampi(reagent_type, 1, 3) - 1]
+
+
+func _fit_model(inst: Node3D, target_h: float) -> void:
+	var acc := AABB()
+	var first := true
+	var stack: Array[Node] = [inst]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh:
+			var mi := n as MeshInstance3D
+			var local: AABB = mi.mesh.get_aabb()
+			var xf: Transform3D = inst.global_transform.affine_inverse() * mi.global_transform
+			var world_a: AABB = xf * local
+			if first:
+				acc = world_a
+				first = false
+			else:
+				acc = acc.merge(world_a)
+		for ch in n.get_children():
+			stack.append(ch)
+	if acc.size.y < 0.01:
+		return
+	inst.scale = Vector3.ONE * (target_h / acc.size.y)
+	# повторный сдвиг после масштаба
+	acc = AABB(acc.position * inst.scale, acc.size * inst.scale)
+	inst.position.y -= acc.position.y
+
+
 func _apply_visual() -> void:
 	var colr: Color = TYPE_COLORS[reagent_type - 1]
-	var mesh_i := get_node_or_null("Mesh") as MeshInstance3D
-	if mesh_i == null:
-		mesh_i = MeshInstance3D.new()
-		mesh_i.name = "Mesh"
-		var sphere := SphereMesh.new()
-		sphere.radius = 0.25
-		sphere.height = 0.5
-		mesh_i.mesh = sphere
-		add_child(mesh_i)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = colr
-	mat.emission_enabled = true
-	mat.emission = colr
-	mat.emission_energy_multiplier = 0.65
-	mesh_i.material_override = mat
+	if get_node_or_null("Model") == null:
+		var packed: Resource = load(_model_path())
+		if packed is PackedScene:
+			var inst: Node3D = (packed as PackedScene).instantiate()
+			inst.name = "Model"
+			add_child(inst)
+			_fit_model(inst, 0.55)
+		else:
+			var mesh_i := MeshInstance3D.new()
+			mesh_i.name = "Mesh"
+			var sphere := SphereMesh.new()
+			sphere.radius = 0.25
+			sphere.height = 0.5
+			mesh_i.mesh = sphere
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = colr
+			mat.emission_enabled = true
+			mat.emission = colr
+			mat.emission_energy_multiplier = 0.65
+			mesh_i.material_override = mat
+			add_child(mesh_i)
 	if get_node_or_null("Collision") == null:
 		var col := CollisionShape3D.new()
 		col.name = "Collision"
@@ -67,7 +110,7 @@ func _apply_visual() -> void:
 	if tag == null:
 		tag = Label3D.new()
 		tag.name = "Tag"
-		tag.position = Vector3(0, 0.55, 0)
+		tag.position = Vector3(0, 0.7, 0)
 		tag.font_size = 28
 		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		add_child(tag)
@@ -103,18 +146,16 @@ func collect() -> void:
 
 func _on_night(night: bool) -> void:
 	var mesh_i := get_node_or_null("Mesh") as MeshInstance3D
-	if mesh_i == null or mesh_i.material_override == null:
-		return
-	var mat := mesh_i.material_override as StandardMaterial3D
-	if mat == null:
-		return
-	if night:
-		mat.emission_enabled = false
-		mat.emission_energy_multiplier = 0.0
-	else:
-		mat.emission_enabled = true
-		mat.emission = TYPE_COLORS[clampi(reagent_type, 1, 3) - 1]
-		mat.emission_energy_multiplier = 0.65
+	if mesh_i and mesh_i.material_override:
+		var mat := mesh_i.material_override as StandardMaterial3D
+		if mat:
+			if night:
+				mat.emission_enabled = false
+				mat.emission_energy_multiplier = 0.0
+			else:
+				mat.emission_enabled = true
+				mat.emission = TYPE_COLORS[clampi(reagent_type, 1, 3) - 1]
+				mat.emission_energy_multiplier = 0.65
 	var tag := get_node_or_null("Tag") as Label3D
 	if tag:
 		tag.modulate.a = 0.25 if night else 1.0

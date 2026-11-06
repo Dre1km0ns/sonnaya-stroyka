@@ -131,8 +131,8 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		fmat.emission = Color(1.0, 0.45, 0.1)
 		fmat.emission_energy_multiplier = 1.4
 		flame.material_override = fmat
-		flame.position = mi.position + Vector3(0, 0.42, 0)
-		add_child(flame)
+		flame.position = Vector3(0, 0.42, 0)
+		mi.add_child(flame)
 		var light := OmniLight3D.new()
 		light.name = "TorchLight"
 		light.light_color = Color(1.0, 0.72, 0.38)
@@ -140,18 +140,19 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		light.omni_range = 8.0
 		light.omni_attenuation = 1.2
 		light.shadow_enabled = false
-		light.position = mi.position + Vector3(0, 0.45, 0)
-		add_child(light)
+		light.position = Vector3(0, 0.45, 0)
+		mi.add_child(light)
 	if kind == "workbench":
+		# Столешница — дочерний узел блока: враг/кирка снимают верстак целиком.
 		var top := MeshInstance3D.new()
 		var top_box := BoxMesh.new()
-		top_box.size = Vector3(1.05, 0.12, 1.05)
+		top_box.size = Vector3(1.16, 0.14, 1.16)
 		top.mesh = top_box
 		var tmat := StandardMaterial3D.new()
 		tmat.albedo_color = Color(0.58, 0.38, 0.22)
 		top.material_override = tmat
-		top.position = mi.position + Vector3(0, 0.48, 0)
-		add_child(top)
+		top.position = Vector3(0, 0.50, 0)
+		mi.add_child(top)
 
 	var body := StaticBody3D.new()
 	body.collision_layer = 4 # blocks
@@ -159,7 +160,11 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	body.position = mi.position
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3.ONE * block_size
+	if kind == "workbench":
+		shape.size = Vector3(block_size, block_size * 1.2, block_size)
+		body.position = mi.position + Vector3(0, 0.10, 0)
+	else:
+		shape.size = Vector3.ONE * block_size
 	col.shape = shape
 	body.add_child(col)
 	body.set_meta("voxel_cell", cell)

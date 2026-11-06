@@ -1,5 +1,5 @@
 extends Node
-## Глобальное состояние «Сонная стройка» v0.4.3: крафт, якорь3, верстак, день/ночь.
+## Глобальное состояние «Сонная стройка» v0.4.4: меч, босс, дроп блоков, музыка.
 
 signal world_changed(is_dream: bool)
 signal inventory_changed
@@ -7,6 +7,7 @@ signal clarity_changed(value: float, max_value: float)
 signal hint_changed(text: String)
 signal wake_resolved(transferred: int, dust_gained: int, mutations: int)
 signal night_changed(is_night: bool)
+signal boss_changed(alive: bool)
 
 enum World { WAKE, DREAM }
 enum AnchorType { NAIL, WEDGE, ANCHOR3 }
@@ -59,6 +60,10 @@ var awake_time: float = 0.0
 var day_time: float = 0.0
 var craft_menu_open: bool = false
 var _night_flag: bool = false
+var boss_alive: bool = false
+var last_mined_kind: String = ""
+var last_mined_cell: Vector3i = Vector3i.ZERO
+var block_stash: Dictionary = {}
 const DAY_LENGTH := 300.0
 const NIGHT_LENGTH := 300.0
 var world_seed_wake: int = 1337
@@ -247,22 +252,30 @@ func slot_display_count(index: int) -> int:
 
 
 func inventory_status_text() -> String:
-	return "Осыпь: %d   Гвозди: %d   Клинья: %d   Якорь3: %d\n%s: %d   %s: %d   %s: %d" % [
+	var extra := ""
+	if not block_stash.is_empty():
+		var bits: Array[String] = []
+		for k in block_stash.keys():
+			bits.append("%s x%d" % [block_display_name(str(k)), int(block_stash[k])])
+		extra = "   запасы: " + ", ".join(bits)
+	return "Осыпь: %d   Гвозди: %d   Клинья: %d   Якорь3: %d\n%s: %d   %s: %d   %s: %d%s" % [
 		dust, nails, wedges, anchors3,
 		reagent_type_name(1), get_reagent_count(1),
 		reagent_type_name(2), get_reagent_count(2),
 		reagent_type_name(3), get_reagent_count(3),
+		extra,
 	]
 
 
 func recipe_defs() -> Array:
 	return [
-		{"id": "nail", "name": "Гвоздь", "where": "anywhere", "dust": NAIL_CRAFT_DUST, "gives": "nails"},
-		{"id": "wedge", "name": "Клин", "where": "anywhere", "dust": WEDGE_CRAFT_DUST, "gives": "wedges"},
-		{"id": "anchor3", "name": "Якорь3", "where": "anywhere", "dust": ANCHOR3_CRAFT_DUST, "gives": "anchors3"},
+		{"id": "nail", "name": "Гвоздь", "where": "dream", "dust": NAIL_CRAFT_DUST, "gives": "nails"},
+		{"id": "wedge", "name": "Клин", "where": "dream", "dust": WEDGE_CRAFT_DUST, "gives": "wedges"},
+		{"id": "anchor3", "name": "Якорь3", "where": "dream", "dust": ANCHOR3_CRAFT_DUST, "gives": "anchors3"},
 		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 10, "item": "workbench", "item_name": "Верстак"},
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent2": 2, "reagent3": 3, "item": "pickaxe", "item_name": "Кирка"},
 		{"id": "torch", "name": "Факел", "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
+		{"id": "sword", "name": "Меч", "where": "workbench", "reagent1": 5, "reagent2": 2, "item": "sword", "item_name": "Меч"},
 	]
 
 
@@ -279,10 +292,13 @@ func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
 	var where := str(rec.get("where", "anywhere"))
 	var dreaming := bool(ctx.get("is_dream", is_dream()))
 	var bench := bool(ctx.get("at_workbench", false))
-	if where == "dream" and not dreaming:
+	# Верстак показывает только верстачные рецепты (без якорей).
+	if bench:
+		return where == "workbench"
+	if where == "workbench":
 		return false
-	if where == "workbench" and not bench:
-		return false
+	if where == "dream":
+		return dreaming
 	return true
 
 
@@ -391,10 +407,13 @@ func mine_wake_block(cell: Vector3i) -> bool:
 		return false
 	if not wake_blocks.has(cell):
 		return false
+	var data: Dictionary = wake_blocks[cell]
+	var kind := str(data.get("kind", "drift"))
 	wake_blocks.erase(cell)
-	dust += 1
+	last_mined_kind = kind
+	last_mined_cell = cell
 	inventory_changed.emit()
-	set_hint("Кирка: блок [%d,%d,%d] → +1 осыпь" % [cell.x, cell.y, cell.z])
+	set_hint("Кирка: выпал блок «%s»." % block_display_name(kind))
 	return true
 
 
@@ -449,6 +468,52 @@ func notify_night_from_time() -> void:
 		_night_flag = n
 		night_changed.emit(n)
 
+
+
+func set_boss_alive(on: bool) -> void:
+	if boss_alive == on:
+		return
+	boss_alive = on
+	boss_changed.emit(on)
+
+
+func block_display_name(kind: String) -> String:
+	match kind:
+		"workbench":
+			return "Верстак"
+		"torch":
+			return "Факел"
+		"mouth":
+			return "Рот"
+		"sword":
+			return "Меч"
+		"pickaxe":
+			return "Кирка"
+		_:
+			return "Блок"
+
+
+func is_placeable_block(id: String) -> bool:
+	return id == "drift" or id == "mouth" or id == "workbench"
+
+
+func add_mined_block(kind: String, amount: int = 1) -> void:
+	if amount <= 0:
+		return
+	if add_item(kind, block_display_name(kind), amount) >= 0:
+		return
+	block_stash[kind] = int(block_stash.get(kind, 0)) + amount
+	inventory_changed.emit()
+
+
+func consume_placeable(kind: String) -> bool:
+	if consume_item(kind, 1):
+		return true
+	if int(block_stash.get(kind, 0)) > 0:
+		block_stash[kind] = int(block_stash[kind]) - 1
+		inventory_changed.emit()
+		return true
+	return false
 
 func place_wake_block(cell: Vector3i, kind: String) -> bool:
 	if is_dream():
