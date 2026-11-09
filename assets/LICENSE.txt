@@ -40,4 +40,4 @@ https://creativecommons.org/publicdomain/zero/1.0/
 Все три трека предоставлены пользователем проекта:
 - music.mp3      — Явь (существующий трек)
 - dream_ost.mp3  — Сон («lofi Good Niiight», reflektpro8)
-- boss_ost.mp3   — босс «Мать блоков» («репчик инструментал», gsgsg7384)
+- boss_ost.mp3   — босс «Мать блоков» (новый саундтрек)
