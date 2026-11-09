@@ -4,6 +4,16 @@ extends RefCounted
 
 ## v0.7: стак — 100 предметов (инструменты — 1). Реагенты и осыпь лежат в «кошеле» (общий для яви и сна).
 const ITEMS := {
+	"dirt": {"name":"Земля", "stack":100},
+	"pickaxe2": {"name": "Кирка2", "stack": 1},
+	"deep_stone": {"name": "Глубинный камень", "stack": 100},
+	"mossy_ruin": {"name": "Заросший руинный блок", "stack": 100},
+	"sawmill": {"name": "Лесопилка", "stack": 100},
+	"alchemy": {"name": "Алхимический стол", "stack": 100},
+	"idea_catcher": {"name": "Ловец идей", "stack": 100},
+	"door": {"name": "Дверь", "stack": 100},
+	"chest": {"name": "Сундук", "stack": 100},
+	"heal2": {"name": "Хилка2", "stack": 100},
 	"reagent1": {"name": "реагент1", "stack": 100},
 	"reagent2": {"name": "реагент2", "stack": 100},
 	"reagent3": {"name": "реагент3", "stack": 100},

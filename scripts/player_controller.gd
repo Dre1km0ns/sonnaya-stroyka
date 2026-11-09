@@ -13,6 +13,7 @@ const LAKE_SPEED_FACTOR := 0.4
 ## v0.7: автоподбор ресурсов/блоков/кучек смерти в радиусе, плавание в текучей воде.
 const PICKUP_RADIUS := 1.7
 const SWIM_UP := 3.2
+var _step_t := 0.0
 var _pickup_t := 0.0
 var auto_picked := 0
 
@@ -114,6 +115,10 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_pressed("jump") and not GameState.ui_blocked():
 			velocity.y = SWIM_UP
 	move_and_slide()
+	_step_t -= delta
+	if not flying and is_on_floor() and direction.length() > 0.1 and _step_t <= 0.0:
+		_step_t = 0.32 if Input.is_action_pressed("sprint") else 0.5
+		load("res://scripts/sfx.gd").play("step", self)
 	_pickup_t -= delta
 	if _pickup_t <= 0.0:
 		_pickup_t = 0.1

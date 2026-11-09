@@ -26,6 +26,7 @@ func _run() -> void:
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
 	var results: Array = []
 	for run in range(runs):
+		seed(1000 + run)
 		G.reset_state()
 		G.peaceful = false
 		G.day_time = 1020.0 + 5.0      # начало ночи (ночь = 1020..1440, 420 с)
@@ -49,6 +50,8 @@ func _run() -> void:
 		ana.set_physics_process(false)
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 1000 + run
+		var spare_torches := 6
+		var replace_t := 0.0
 		var t := 0.0
 		var dmg_taken := 0
 		var hp_prev: int = G.player_hp
@@ -103,6 +106,17 @@ func _run() -> void:
 			var dv := dodge_to - pl.global_position
 			pl.global_position += dv if dv.length() <= step else dv.normalized() * step
 			ana.tick(DT)
+			# Разумная подготовка: 6 запасных факелов, замена сломанного за 1.5 с.
+			if _arg("replace", "yes") == "yes" and n_t > 0 and spare_torches > 0:
+				replace_t += DT
+				if replace_t >= 1.5:
+					for tp in torches:
+						var cell := Vector3i(floori(tp.x),0,floori(tp.z))
+						if not G.wake_blocks.has(cell):
+							G.wake_blocks[cell] = {"kind":"torch"}
+							spare_torches -= 1
+							replace_t = 0.0
+							break
 			if G.player_hp < hp_prev:
 				dmg_taken += hp_prev - G.player_hp
 			if G.player_hp <= 0:
@@ -112,7 +126,7 @@ func _run() -> void:
 			if ana.state == ana.S.DEAD or ana.state == ana.S.LEAVING:
 				break
 		results.append({"ttk": t, "dead": ana.state == ana.S.DEAD, "hp_left": ana.hp, "dmg_taken": dmg_taken,
-			"deaths": died, "log": ana.attack_log.duplicate(), "phase": ana.phase, "reason": ana.leave_reason})
+			"deaths": died, "torches_broken": ana.torches_broken, "log": ana.attack_log.duplicate(), "phase": ana.phase, "reason": ana.leave_reason})
 		ana.free()
 		host.free()
 		G.wake_blocks.clear()
@@ -122,6 +136,7 @@ func _run() -> void:
 		print("ANASIM bot=%s ttk=%.1f killed=%s hp_left=%d phase=%d taken=%d deaths=%d stun=%d rest=%d burst_hit=%d cavein=%d coil=%d broken=%d %s" % [
 			bot, r["ttk"], str(r["dead"]), r["hp_left"], r["phase"], r["dmg_taken"], r["deaths"],
 			r["log"]["stun"], r["log"]["rest"], r["log"]["burst_hit"], r["log"]["cavein"], r["log"]["coil"], r["log"]["coil_broken"], r["reason"]])
+		print("ANASIM torches_broken=", r["torches_broken"])
 		if r["dead"]:
 			kills += 1
 			tsum += float(r["ttk"])

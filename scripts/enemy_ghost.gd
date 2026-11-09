@@ -242,7 +242,8 @@ func _tick_block_attack() -> bool:
 	if _atk_hits < ATTACK_HITS:
 		return true
 	_atk_hits = 0
-	GameState.wake_blocks.erase(ripped)
+	if not GameState.destroy_wake_structure(ripped):
+		return true
 	GameState.inventory_changed.emit()
 	for vox in get_tree().get_nodes_in_group("voxel_world"):
 		if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):

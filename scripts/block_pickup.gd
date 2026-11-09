@@ -1,4 +1,4 @@
-extends StaticBody3D
+extends CharacterBody3D
 ## Выпавший блок после кирки: подбирается как реагент (E).
 
 var kind: String = "drift"
@@ -12,7 +12,7 @@ func configure(block_kind: String) -> void:
 func _ready() -> void:
 	add_to_group("pickup")
 	collision_layer = 8
-	collision_mask = 0
+	collision_mask = 1 | 4
 	if kind == "":
 		kind = "drift"
 	_apply_visual()
@@ -31,14 +31,6 @@ func _apply_visual() -> void:
 	shape.radius = 0.38
 	col.shape = shape
 	add_child(col)
-	var tag := Label3D.new()
-	tag.name = "Tag"
-	tag.position = Vector3(0, 0.55, 0)
-	tag.font_size = 22
-	tag.pixel_size = 0.004
-	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.text = GameState.block_display_name(kind) if GameState.has_method("block_display_name") else kind
-	add_child(tag)
 
 
 func collect() -> void:
@@ -53,3 +45,10 @@ func collect() -> void:
 	visible = false
 	collision_layer = 0
 	queue_free()
+
+
+func _physics_process(delta: float) -> void:
+	if collected or GameState.is_dream():
+		return
+	velocity.y = maxf(-25.0, velocity.y - 18.0 * delta)
+	move_and_slide()

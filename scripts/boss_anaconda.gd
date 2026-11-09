@@ -96,6 +96,9 @@ var _coil_ang: float = 0.0
 var _coil_hit_cd: float = 0.0
 var _torches: Array[Vector3] = []
 var _torch_scan: float = 0.0
+var torch_break_cd := 0.0
+var torches_broken := 0
+var _torch_contacts: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _floor_y: float = 0.0
 var _stun_len: float = 0.0
@@ -322,6 +325,8 @@ func _physics_process(delta: float) -> void:
 
 
 func tick(delta: float) -> void:
+	torch_break_cd = maxf(0.0, torch_break_cd - delta)
+	_check_torch_collision()
 	if frozen or state == S.DEAD or state == S.LEAVING:
 		return
 	_t += delta
@@ -856,3 +861,34 @@ static func summon_with_egg(host: Node3D, player: Node3D, chunks: Node) -> Node:
 		return null
 	GameState.chat("Яйцо треснуло — земля дрожит… Анаконда идёт на зов!", Color(1.0, 0.45, 0.3))
 	return spawn_at(host, p, "summon")
+
+
+func _check_torch_collision() -> void:
+	if _head == null or state in [S.DEAD, S.LEAVING] or GameState.is_dream():
+		return
+	var contacts: Dictionary = {}
+	for c in GameState.wake_blocks.keys():
+		if GameState.wake_blocks[c].get("kind", "") != "torch":
+			continue
+		var pos := Vector3(c) + Vector3(0.5, 0.65, 0.5)
+		if _head.global_position.distance_to(pos) > HEAD_SIZE * 0.5 + 0.15:
+			continue
+		contacts[c] = true
+		if not _torch_contacts.has(c) and try_break_torch(c):
+			break
+	_torch_contacts = contacts
+
+func try_break_torch(c: Vector3i, roll: float = -1.0) -> bool:
+	if torch_break_cd > 0.0 or GameState.wake_blocks.get(c, {}).get("kind", "") != "torch":
+		return false
+	if (randf() if roll < 0.0 else roll) >= 1.0 / 15.0:
+		return false
+	torch_break_cd = 5.0
+	torches_broken += 1
+	GameState.wake_blocks.erase(c)
+	for v in get_tree().get_nodes_in_group("voxel_world"):
+		if not v.is_dream_layer:
+			v.remove_block(c)
+	_scan_torches()
+	GameState.chat("Анаконда сломала факел!", Color(1,0.7,0.3))
+	return true

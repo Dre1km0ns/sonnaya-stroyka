@@ -4,6 +4,7 @@ extends SceneTree
 
 
 var _fails: Array = []
+var _v08_done := false
 
 
 func _a(cond: Variant, line: int) -> void:
@@ -38,8 +39,8 @@ func _run() -> void:
 	var result: Dictionary = gs.resolve_wake()
 	_a(not gs.is_dream(), 39)
 	_a(int(result["transferred"]) == 1, 40)
-	_a(int(result["dust"]) == 0, 41)
-	_a(gs.dust == before_dust, 42)
+	_a(int(result["dust"]) == 1, 41)
+	_a(gs.dust == before_dust + 1, 42)
 	_a(gs.wake_blocks.has(Vector3i(1, 1, 1)), 43)
 	# v0.7: при пробуждении все блоки сна исчезают (заякоренные уже перенесены).
 	_a(gs.dream_blocks.is_empty(), 45)
@@ -56,6 +57,8 @@ func _run() -> void:
 	var height_cell := Vector3i(1, 1, 1)
 	_a(dv.cell_to_world(height_cell).is_equal_approx(wv.cell_to_world(height_cell)), 57)
 	_a(is_equal_approx(dv.cell_to_world(Vector3i(2, 0, 4)).y, 0.5), 58)
+	dv.free()
+	wv.free()
 	gs.dust = 9
 	_a(not gs.craft_recipe("nail", {"is_dream": true}), 60)
 	gs.dust = 10
@@ -175,7 +178,7 @@ func _run() -> void:
 	_a(not gs_c.wake_blocks.has(mine_cell), 175)
 	_a(str(gs_c.last_mined_kind) == "drift", 176)
 	var drop_script: GDScript = load("res://scripts/block_pickup.gd")
-	var drop: StaticBody3D = drop_script.new()
+	var drop: CharacterBody3D = drop_script.new()
 	drop.configure("drift")
 	root.add_child(drop)
 	await process_frame
@@ -516,6 +519,7 @@ func _run() -> void:
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
 	_a(td.MAX_ENEMIES == 7, 518)
+	td.free()
 	var dc_script: GDScript = load("res://scripts/day_cycle.gd")
 	var dc: Node = dc_script.new()
 	dc.time_of_day = 10.0
@@ -589,15 +593,23 @@ func _run() -> void:
 	await _v07_checks(gs_script, cm_script)
 	if not _v07_done:
 		_fails.append("v0.7 aborted")
+	await _v08_checks()
+	if not _v08_done:
+		_fails.append("v0.8 aborted")
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
 		return
-	print("SMOKE: OK v0.7 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
+	print("SMOKE: OK v0.8 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
 	])
+	# Остановить тестовые звуки и дать аудиопотоку освободить playback до закрытия движка.
+	for audio in root.find_children("*","AudioStreamPlayer",true,false)+root.find_children("*","AudioStreamPlayer3D",true,false):
+		audio.stop()
+		audio.queue_free()
+	await create_timer(0.15).timeout
 	quit(0)
 
 
@@ -680,13 +692,14 @@ func _v05_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 		_a(ResourceLoader.exists("res://assets/icons/%s.png" % iid), 680)
 
 	# --- Осыпь за убийства ---
-	_a(gs_script.new().DUST_PER_KILL == 20, 683)
+	_a(gs_script.DUST_PER_KILL_MIN == 5 and gs_script.DUST_PER_KILL_MAX == 8, 683)
 	gi.dust = 0
-	_a(gi.reward_kill(false, "Шовник") == 20, 685)
-	_a(gi.dust == 20, 686)
-	_a("+20 осыпи" in gi.last_hint, 687)
+	var kill_reward: int = gi.reward_kill(false,"Шовник")
+	_a(kill_reward >= 5 and kill_reward <= 8,685)
+	_a(gi.dust == kill_reward,686)
+	_a("+%d осыпи" % kill_reward in gi.last_hint,687)
 	_a(gi.reward_kill(true, "Мать блоков") == 250, 688)
-	_a(gi.dust == 270, 689)
+	_a(gi.dust == 250+kill_reward,689)
 
 	# --- Дев-сид 6767676767: всё бесконечно ---
 	var gd: Node = gs_script.new()
@@ -855,7 +868,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	g2.apply_save_dict(JSON.parse_string(JSON.stringify(blob)))
 	_a(g2.is_terrain_removed((tree["logs"] as Array)[0]), 856)
 	_a(g2.is_terrain_removed(leaves[0]), 857)
-	_a(int(blob["version"]) == 7, 858)
+	_a(int(blob["version"]) == 8, 858)
 	cm.queue_free()
 	anchor.queue_free()
 	# --- Бревно → доски (верстак) ---
@@ -1073,8 +1086,8 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.reset_state()
 	var lathe_ids: Array = G.get_visible_recipes({"at_lathe": true}).map(func(r): return str(r["id"]))
 	var bench_ids: Array = G.get_visible_recipes({"at_workbench": true}).map(func(r): return str(r["id"]))
-	_a(lathe_ids == ["sword2"], 1076)
-	_a("lathe" in bench_ids and not ("sword2" in bench_ids), 1077)
+	_a(lathe_ids == ["sword2", "pickaxe2"], 1076)
+	_a(not ("lathe" in bench_ids) and not ("sword2" in bench_ids), 1077)
 	for rid in bench_ids:
 		_a(not (rid in lathe_ids), 1079)
 	var lr: Dictionary = G.find_recipe("lathe")
@@ -1084,8 +1097,11 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(not G.craft_recipe("lathe", {"at_workbench": true}), 1084)
 	G.add_item_count("reagent3", 1)
 	_a(not G.craft_recipe("lathe", {"at_lathe": true}), 1086)
-	_a(G.craft_recipe("lathe", {"at_workbench": true}), 1087)
+	G.enter_dream()
+	G.add_item_count("workbench", 1)
+	_a(G.craft_recipe("lathe", {"is_dream": true}), 1087)
 	_a(G.count_item("lathe") == 1 and G.count_item("workbench") == 0 and G.count_item("reagent3") == 0, 1088)
+	G.resolve_wake()
 	var sr: Dictionary = G.find_recipe("sword2")
 	_a(sr["items"] == {"sword": 1} and int(sr["reagent1"]) == 2 and int(sr["reagent2"]) == 2 and int(sr["reagent3"]) == 2, 1090)
 	G.add_item_count("reagent1", 2)
@@ -1103,7 +1119,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	root.add_child(cmenu)
 	await process_frame
 	cmenu.open_lathe()
-	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword2"], 1106)
+	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword2", "pickaxe2"], 1106)
 	cmenu.close()
 	cmenu.queue_free()
 	_a(G.is_placeable_block("bed") and G.is_placeable_block("lathe"), 1109)
@@ -1382,11 +1398,20 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	# --- Автоподбор ---
 	var pcs: GDScript = load("res://scripts/player_controller.gd")
 	var pc: CharacterBody3D = pcs.new()
+	var pivot := Node3D.new()
+	pivot.name = "CameraPivot"
+	var cam := Camera3D.new()
+	cam.name = "Camera3D"
+	var ray := RayCast3D.new()
+	ray.name = "InteractRay"
+	cam.add_child(ray)
+	pivot.add_child(cam)
+	pc.add_child(pivot)
 	host2.add_child(pc)
 	pc.set_physics_process(false)
 	pc.set_process(false)
 	pc.global_position = Vector3(5, 0, 5)
-	var pk: StaticBody3D = load("res://scripts/block_pickup.gd").new()
+	var pk: CharacterBody3D = load("res://scripts/block_pickup.gd").new()
 	pk.configure("planks")
 	host2.add_child(pk)
 	pk.global_position = Vector3(5.5, 0.6, 5)
@@ -1399,3 +1424,306 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	await process_frame
 	print("SMOKE: v0.7 checks done")
 	_v07_done = true
+
+func _v08_checks() -> void:
+	print("SMOKE: v0.8 checks")
+	var G: Node = root.get_node("GameState")
+	var Rules: GDScript = load("res://scripts/mining_rules.gd")
+	G.reset_state()
+	G.dev_mode = false
+	_a(G.SAVE_FORMAT == 8, 8001)
+	for pair in [["ground",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
+		_a(is_equal_approx(Rules.hardness(pair[0]),pair[1]),8002)
+	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),1.125),8003)
+	_a(is_equal_approx(Rules.seconds("stone","pickaxe2"),0.5625),8004)
+	_a(is_inf(Rules.seconds("bedrock","pickaxe2")),8005)
+	for tool in ["pickaxe","sword","pickaxe2","sword2"]:
+		G.set_slot(0,{"id":tool,"count":1})
+		G.select_item_slot(0)
+		_a(int(G.get_slot(0).durability) == (500 if tool.ends_with("2") else 100),8006)
+		G.wear_tool(2)
+		var remain: int = G.tool_max(tool)-2
+		_a(int(G.get_slot(0).durability) == remain,8007)
+		G.quick_move(0)
+		_a(G.get_slot(9).get("durability") == remain,8008)
+		G.swap_slots(0,9)
+		var data: Dictionary = G.to_save_dict()
+		G.apply_save_dict(data)
+		_a(G.get_slot(0).get("durability") == remain,8009)
+		G.wear_tool(remain)
+		_a(G.get_slot(0).get("id","") == "",8010)
+	# modal input runs before GUI eats Esc / Y; button closes too.
+	var pil: Control = load("res://scripts/pillow_ui.gd").new()
+	root.add_child(pil)
+	await process_frame
+	for action in ["ui_cancel","pillow_check"]:
+		pil.open()
+		_a(G.pillow_open and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE,8011)
+		var e := InputEventAction.new()
+		e.action = action
+		e.pressed = true
+		pil._input(e)
+		_a(not G.pillow_open and not pil.visible and (DisplayServer.get_name()=="headless" or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED),8012)
+	pil.open()
+	pil.find_child("CloseButton",true,false).pressed.emit()
+	_a(not G.pillow_open,8013)
+	pil.queue_free()
+	var ui: Control = load("res://scripts/storage_ui.gd").new()
+	root.add_child(ui)
+	await process_frame
+	var c := Vector3i(5,0,5)
+	for action in ["ui_cancel","pillow_check"]:
+		ui.open(c,true)
+		_a(G.storage_open and G.ui_blocked(),8014)
+		var e := InputEventAction.new()
+		e.action = action
+		e.pressed = true
+		ui._input(e)
+		_a(not G.storage_open and not ui.visible and (DisplayServer.get_name()=="headless" or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED),8015)
+	ui.queue_free()
+	# Stations: crafted via C in dream; ingredient consumed, unlock persists.
+	for station in ["lathe","sawmill","alchemy","idea_catcher"]:
+		_a(G.find_recipe(station).where == "dream",8016)
+		_a(not G.recipe_available(G.find_recipe(station),{"at_workbench":true}),8017)
+	_a(not G.recipe_available(G.find_recipe("alchemy"),{"is_dream":true}),8018)
+	G.on_mother_killed()
+	_a(G.recipe_available(G.find_recipe("alchemy"),{"is_dream":true}),8019)
+	_a(G.recipe_available(G.find_recipe("idea_catcher"),{"is_dream":true}),8020)
+	_a(not G.recipe_available(G.find_recipe("planks"),{"at_workbench":true}),8021)
+	_a(G.recipe_available(G.find_recipe("planks"),{"station":"sawmill"}),8022)
+	_a(not G.recipe_available(G.find_recipe("door"),{"station":"sawmill","upgraded":false}),8023)
+	_a(G.recipe_available(G.find_recipe("door"),{"station":"sawmill","upgraded":true}),8024)
+	G.wake_blocks[c] = {"kind":"sawmill"}
+	G.wake_blocks[c+Vector3i(1,0,1)] = {"kind":"workbench"}
+	_a(not G.station_upgraded(c),8025)
+	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"workbench"}
+	_a(G.station_upgraded(c),8026)
+	G.wake_blocks.clear()
+	_a(G.find_recipe("pickaxe2").items == {"pickaxe":1},8027)
+	G.add_item_count("pickaxe",1)
+	G.add_item_count("reagent1",2)
+	G.add_item_count("reagent2",2)
+	G.add_item_count("reagent3",2)
+	_a(G.craft_recipe("pickaxe2",{"at_lathe":true}),8028)
+	_a(G.count_item("pickaxe")==0 and G.count_item("pickaxe2")==1,8029)
+	G.add_item_count("reagent1",1)
+	G.add_item_count("reagent2",1)
+	_a(G.craft_recipe("torch",{"at_workbench":true}) and G.count_item("torch")==2,8030)
+	G.add_item_count("heal2",1)
+	G.select_item_slot(_slot_of(G,"heal2"))
+	G.player_hp = 40
+	G.heal_cd = 0
+	_a(G.use_heal() and G.player_hp == 80 and G.heal_cd == 15,8031)
+	_a(not G.use_heal(),8032)
+	# Catcher stack exactly 100; 99 stays; one bonus per type, forever/save.
+	G.reset_state()
+	G.set_slot(0,{"id":"stone","count":99})
+	_a(G.storage_deposit(c,0,true)==99 and G.dream_bonus_seconds==0,8033)
+	G.set_slot(0,{"id":"stone","count":1})
+	_a(G.storage_deposit(c,0,true)==1 and G.dream_bonus_seconds==5,8034)
+	G.set_slot(0,{"id":"stone","count":100})
+	G.storage_deposit(c,0,true)
+	_a(G.storage_slots(c)[0].count==100 and G.dream_bonus_seconds==5,8035)
+	G.set_slot(0,{"id":"sword","count":1})
+	_a(G.storage_deposit(c,0,true)==0,8036)
+	G.add_item_count("reagent1",2)
+	_a(G.storage_deposit(c,_slot_of(G,"reagent1"),true)==0,8037)
+	var blob: Dictionary = G.to_save_dict()
+	G.apply_save_dict(blob)
+	_a(G.idea_eaten.has("stone") and G.dream_bonus_seconds==5 and G.storage_slots(c)[0].count==100,8038)
+	_a(not G.storage_take(c,0,true),8039)
+	G.enter_dream()
+	_a(G.storage_take(c,0,true) and G.count_item("stone")==100,8040)
+	_a(is_equal_approx(G.clarity,G.CLARITY_MAX+6.25),8041)
+	_a(G.storage_deposit(c,0,true)==0,8042)
+	G.resolve_wake()
+	# Chest roundtrip preserves worn tools and refuses mining while full.
+	G.set_slot(0,{"id":"sword2","count":1,"durability":17})
+	_a(G.storage_deposit(c,0,false)==1,8043)
+	_a(not G.break_storage(c),8044)
+	G.apply_save_dict(G.to_save_dict())
+	_a(G.storage_take(c,0,false),8045)
+	_a(G.get_slot(0).get("durability")==17,8046)
+	_a(G.break_storage(c),8047)
+	# Multipart occupancy and respawn fallback.
+	G.reset_state()
+	_a(G.place_wake_block(c,"bed"),8048)
+	_a(G.wake_blocks.get(c+Vector3i.BACK,{}).get("kind")=="bed_foot",8049)
+	_a(not G.place_wake_block(c+Vector3i.BACK,"stone"),8050)
+	G.active_bed = G.cell_key(c)
+	G.spawn_point = Vector3(c)+Vector3(0.5,1.1,0.5)
+	G.add_item_count("pickaxe",1)
+	G.select_item_slot(_slot_of(G,"pickaxe"))
+	_a(G.mine_wake_block(c+Vector3i.BACK),8051)
+	_a(not G.wake_blocks.has(c) and not G.wake_blocks.has(c+Vector3i.BACK) and G.spawn_point==G.creation_spawn,8052)
+	_a(G.place_wake_block(c,"door") and G.toggle_door(c+Vector3i.UP),8053)
+	_a(G.wake_blocks[c].open,8054)
+	G.apply_save_dict(G.to_save_dict())
+	_a(G.wake_blocks[c].open,8055)
+	G.wake_blocks.clear()
+	G.wake_blocks[c] = {"kind":"beacon"}
+	_a(G.beacon_protects(c+Vector3i(10,10,-10)),8056)
+	_a(not G.beacon_protects(c+Vector3i(11,0,0)),8057)
+	var dust0: int = G.dust
+	_a(G.suppress_mutation(c+Vector3i.RIGHT) and G.dust==dust0+5,8058)
+	G.enter_dream()
+	for i in range(11):
+		G.place_dream_block(Vector3i(i,0,0),"drift")
+	var res: Dictionary = G.resolve_wake()
+	_a(res.dust==2,8059)
+	# World layers and settlement distributions from deterministic plans.
+	var CM: GDScript = load("res://scripts/chunk_manager.gd")
+	_a(CM.depth_kind(-5)=="dirt" and CM.depth_kind(-6)=="stone" and CM.depth_kind(-18)=="deep_stone" and CM.depth_kind(-31)=="bedrock",8060)
+	var cm: Node3D = CM.new()
+	cm.panorama_mode = true
+	cm._seed = G.DEV_SEED
+	root.add_child(cm)
+	_a(cm._is_settlement(Vector2i(2,1)),8061)
+	var houses: Array = cm.ruin_plan(Vector2i(2,1))
+	_a(houses.size()>=3 and houses.size()<=5,8062)
+	var dev_center := Vector3(40,0,24)
+	var dist: float = dev_center.distance_to(G.creation_spawn)
+	_a(dist>=40 and dist<=50,8063)
+	var settlements := 0
+	var ruins := 0
+	var large := 0
+	var shapes := {}
+	for x in range(-50,50):
+		for z in range(-50,50):
+			var coord := Vector2i(x,z)
+			if cm._is_settlement(coord):
+				settlements += 1
+			elif cm.chunk_has_ruin(coord):
+				ruins += 1
+				var plan: Array = cm.ruin_plan(coord)
+				shapes[int(plan[0].shape)] = true
+				if int(plan[0].w)>=10:
+					large += 1
+	_a(shapes.size()==3 and large>0 and large<ruins/5,8064)
+	print("SMOKE: v08 world samples=10000 ruins=",ruins," settlements=",settlements," large=",large," dev_settlement_distance=",dist," houses=",houses.size())
+	cm.queue_free()
+	# Torch collision: 1/15, 5-second successful-break cooldown.
+	var host := Node3D.new()
+	root.add_child(host)
+	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
+	G.wake_blocks[c] = {"kind":"torch"}
+	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"torch"}
+	var ana: Node3D = AS.spawn_at(host,Vector3(50,0,50),"smoke08")
+	_a(not ana.try_break_torch(c,0.1),8065)
+	_a(ana.try_break_torch(c,0.0) and ana.torch_break_cd==5,8066)
+	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8067)
+	ana.torch_break_cd = 0
+	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)
+	host.queue_free()
+	# Falling drops only; placed unsupported blocks retain their grid position.
+	var drop: CharacterBody3D = load("res://scripts/block_pickup.gd").new()
+	drop.configure("stone")
+	drop.position = Vector3(600,10,600)
+	root.add_child(drop)
+	G.wake_blocks[Vector3i(600,10,600)] = {"kind":"stone"}
+	for i in range(12):
+		await physics_frame
+	_a(drop.position.y<10 and G.wake_blocks.has(Vector3i(600,10,600)),8069)
+	drop.queue_free()
+	# Закрытие инвентаря с предметом на курсоре не обновляет прочность.
+	G.reset_state()
+	var inv_ui: Control = load("res://scripts/inventory_ui.gd").new()
+	root.add_child(inv_ui)
+	G.set_slot(0,{"id":"pickaxe","count":1,"durability":66})
+	inv_ui.open()
+	inv_ui._on_slot_clicked(0,MOUSE_BUTTON_LEFT,false)
+	inv_ui.close()
+	_a(G.get_slot(0).get("durability")==66,1660)
+	inv_ui.open()
+	inv_ui._on_slot_clicked(0,MOUSE_BUTTON_LEFT,false)
+	G.set_slot(0,{"id":"stone","count":1})
+	inv_ui.close()
+	_a(G.get_slot(1).get("durability")==66,1661)
+	inv_ui.queue_free()
+	# Полная транзакция алхимии: ингредиент-хилка берётся из подушки во сне.
+	G.reset_state()
+	G.enter_dream()
+	G.on_mother_killed()
+	G.add_item_count("workbench",1)
+	G.add_item_count("stone",8)
+	G.add_item_count("reagent2",3)
+	G.add_to_pillow("heal1",1)
+	_a(G.craft_recipe("alchemy",{"is_dream":true}),1662)
+	_a(G.count_item("workbench")==0 and G.count_item("stone")==0 and G.pillow_count("heal1")==0 and G.count_item("alchemy")==1,1663)
+	# Маяк блокирует и источник, и цель распространения пасти.
+	G.reset_state()
+	var mouth := Vector3i(100,3,100)
+	G.wake_blocks[mouth] = {"kind":"mouth"}
+	G.wake_blocks[mouth+Vector3i.RIGHT] = {"kind":"planks"}
+	G.wake_blocks[mouth+Vector3i(10,0,0)] = {"kind":"beacon"}
+	_a(not G.spread_mouth_once(), 1670)
+	G.wake_blocks.erase(mouth+Vector3i(10,0,0))
+	_a(G.spread_mouth_once() and G.wake_blocks[mouth+Vector3i.RIGHT].kind == "mouth",1671)
+	# Боковая полоса воды между слоями разной высоты добавляет ровно одну грань.
+	var water_cm: Node3D = load("res://scripts/chunk_manager.gd").new()
+	var water_host := Node3D.new()
+	root.add_child(water_cm)
+	water_cm.set_process(false)
+	water_cm.add_child(water_host)
+	water_cm._loaded[Vector2i.ZERO] = water_host
+	water_cm._solid_by_chunk[Vector2i.ZERO] = {}
+	water_cm._water = {Vector3i(3,3,3):8,Vector3i(4,3,3):8}
+	water_cm._water_by_chunk[Vector2i.ZERO] = {Vector3i(3,3,3):true,Vector3i(4,3,3):true}
+	water_cm._build_flow_water(Vector2i.ZERO)
+	var equal_mesh: ArrayMesh = water_host.get_node("FlowWater").mesh
+	var equal_count: int = equal_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+	water_cm._water[Vector3i(4,3,3)] = 2
+	water_cm._build_flow_water(Vector2i.ZERO)
+	var unequal_mesh: ArrayMesh = water_host.get_node("FlowWater").mesh
+	_a(unequal_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size() == equal_count+6,1672)
+	water_cm.queue_free()
+	# Порог задержки призраков и предел явно закреплены.
+	var td_script: GDScript = load("res://scripts/threat_director.gd")
+	_a(td_script.GHOST_RESPAWN_DELAY >= 20.0 and td_script.GHOST_RESPAWN_DELAY <= 30.0,1673)
+	_a(td_script.MAX_GHOSTS_PER_SPOT == 3,1674)
+	var director: Node = td_script.new()
+	root.add_child(director)
+	director.set_process(false)
+	director.awake_time = 100.0
+	_a(not director._ghost_can_spawn(0,1),1675)
+	director.awake_time = 101.0
+	_a(not director._ghost_can_spawn(0,0),1676)
+	director.awake_time = 125.9
+	_a(not director._ghost_can_spawn(0,0),1677)
+	var gdump: Dictionary = JSON.parse_string(JSON.stringify(director.to_save_dict()))
+	director.apply_save_dict(gdump)
+	_a(not director._ghost_can_spawn(0,0),1678)
+	director.awake_time = 126.0
+	_a(director._ghost_can_spawn(0,0) and not director._ghost_can_spawn(0,3),1679)
+	director.queue_free()
+	G.reset_state()
+	G.wake_blocks[c] = {"kind":"bed"}
+	G.add_shape_parts(G.wake_blocks,c,"bed")
+	G.active_bed = G.cell_key(c)
+	_a(G.destroy_wake_structure(c+Vector3i.BACK),1680)
+	_a(not G.wake_blocks.has(c) and not G.wake_blocks.has(c+Vector3i.BACK) and G.active_bed=="",1681)
+	G.wake_blocks[c] = {"kind":"chest"}
+	G.storage_slots(c)[0] = {"id":"stone","count":1}
+	_a(not G.destroy_wake_structure(c) and G.wake_blocks.has(c),1682)
+	G.reset_state()
+	G.enter_dream()
+	G.on_mother_killed()
+	G.dust = 500
+	G.add_item_count("reagent1",6)
+	for i in range(36):
+		G.set_slot(i,{"id":"stone","count":100})
+	_a(not G.craft_recipe("idea_catcher",{"is_dream":true}),1683)
+	_a(G.dust==500 and G.get_reagent_count(1)==6,1684)
+	G.set_slot(0,{})
+	_a(G.craft_recipe("idea_catcher",{"is_dream":true}) and G.dust==100,1685)
+	G.reset_state()
+	var old_save: Dictionary = G.to_save_dict()
+	old_save["version"] = 7
+	old_save["wake_blocks"] = {"1,0,1":{"kind":"bed"},"5,0,5":{"kind":"bed"},"5,0,6":{"kind":"stone"}}
+	G.apply_save_dict(old_save)
+	_a(G.wake_blocks.has(Vector3i(1,0,2)),1686)
+	_a(G.wake_blocks[Vector3i(5,0,5)].get("legacy_compact",false) and G.wake_blocks[Vector3i(5,0,6)].kind=="stone",1687)
+	_a(G.destroy_wake_structure(Vector3i(5,0,5)) and G.wake_blocks.has(Vector3i(5,0,6)),1688)
+	await process_frame
+	_v08_done = true
+	print("SMOKE: v0.8 checks done")

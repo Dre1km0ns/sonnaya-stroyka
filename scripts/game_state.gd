@@ -43,13 +43,14 @@ const BEACON_CRAFT_DUST := 30
 const BED_CRAFT_DUST := 40
 const BED_CRAFT_R1 := 3
 ## Осыпь за убийство моба = 1/5 стоимости клина; босс «Мать блоков» даёт стоимость Якоря3.
-const DUST_PER_KILL := WEDGE_CRAFT_DUST / 5
+const DUST_PER_KILL_MIN := 5
+const DUST_PER_KILL_MAX := 8
 const DUST_PER_BOSS_KILL := ANCHOR3_CRAFT_DUST
 const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 30.0
 const MUTATION_CHANCE := 0.07
-const NO_MUTATION_KINDS := ["workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 7
+const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
+const SAVE_FORMAT := 8
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
@@ -195,9 +196,21 @@ func _ready() -> void:
 
 
 func ui_blocked() -> bool:
-	return craft_menu_open or inventory_open or paused or death_open or pillow_open
+	return Engine.get_process_frames() <= modal_closed_frame + 1 or storage_open or craft_menu_open or inventory_open or paused or death_open or pillow_open
 
 var pillow_open: bool = false
+var storage_open := false
+var modal_closed_frame := -100
+var _mouth_t := 30.0
+var mother_defeated := false
+var dream_bonus_seconds := 0.0
+var idea_eaten: Dictionary = {}
+var world_storage: Dictionary = {} # String cell key -> 27 slots; shared catcher storage across worlds.
+var active_bed := ""
+var creation_spawn := DEFAULT_SPAWN
+var tutorial_enabled := true
+var tutorial_step := 0
+
 
 
 # --- Сид и мир ---
@@ -221,9 +234,18 @@ static func derive_dream_seed(s: int) -> int:
 
 
 func reset_state() -> void:
+	storage_open = false
+	mother_defeated = false
+	dream_bonus_seconds = 0.0
+	idea_eaten = {}
+	world_storage = {}
+	active_bed = ""
+	creation_spawn = DEFAULT_SPAWN
+	tutorial_enabled = true
+	tutorial_step = 0
 	## Полный сброс перед входом в другой мир.
 	current_world = World.WAKE
-	clarity = CLARITY_MAX
+	clarity = dream_clarity_max()
 	nails = 3
 	wedges = 1
 	anchors3 = 0
@@ -287,7 +309,7 @@ func is_dev() -> bool:
 	return dev_mode
 
 
-const DEV_WAKE_ITEMS := ["pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
+const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
 	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
@@ -409,6 +431,8 @@ func add_item_count(id: String, count: int) -> int:
 		if str(item_slots[i].get("id", "")) == "":
 			var put2 := mini(cap, left)
 			item_slots[i] = {"id": id, "name": ItemDB.display_name(id, id), "count": put2}
+			if tool_max(id) > 0:
+				item_slots[i]["durability"] = tool_max(id)
 			left -= put2
 	if left != count:
 		inventory_changed.emit()
@@ -506,7 +530,9 @@ func set_slot(i: int, data: Dictionary) -> void:
 	if data.is_empty() or str(data.get("id", "")) == "" or int(data.get("count", 0)) <= 0:
 		item_slots[i] = _empty_slot()
 	else:
-		item_slots[i] = {"id": str(data["id"]), "name": str(data.get("name", ItemDB.display_name(str(data["id"])))), "count": int(data["count"])}
+		item_slots[i] = data.duplicate(true)
+		if tool_max(str(data["id"])) > 0:
+			item_slots[i]["durability"] = int(data.get("durability", tool_max(str(data["id"]))))
 	inventory_changed.emit()
 
 
@@ -539,7 +565,8 @@ func quick_move(i: int) -> void:
 			break
 		if str(item_slots[j].get("id", "")) == "":
 			var put2 := mini(cap, left)
-			item_slots[j] = {"id": id, "name": str(s.get("name", id)), "count": put2}
+			item_slots[j] = s.duplicate(true)
+			item_slots[j]["count"] = put2
 			left -= put2
 	if left <= 0:
 		item_slots[i] = _empty_slot()
@@ -750,14 +777,21 @@ func recipe_defs() -> Array:
 		{"id": "beacon", "name": "Маяк", "where": "dream", "dust": BEACON_CRAFT_DUST, "reagent3": 1, "gives": "beacons"},
 		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 10, "item": "workbench", "item_name": "Верстак"},
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent2": 2, "reagent3": 3, "item": "pickaxe", "item_name": "Кирка"},
-		{"id": "torch", "name": "Факел", "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
+		{"id": "torch", "name": "Факел ×2", "count": 2, "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
 		{"id": "sword", "name": "Меч", "where": "workbench", "reagent1": 5, "reagent2": 2, "item": "sword", "item_name": "Меч"},
-		{"id": "planks", "name": "Доски ×4", "where": "workbench", "log": 1, "item": "planks", "item_name": "Доски", "count": 4},
+		{"id": "planks", "name": "Доски ×4", "where": "sawmill", "log": 1, "item": "planks", "item_name": "Доски", "count": 4},
 		# v0.7
 		{"id": "bed", "name": "Кровать", "where": "dream", "dust": BED_CRAFT_DUST, "reagent1": BED_CRAFT_R1, "item": "bed", "item_name": "Кровать"},
 		{"id": "heal1", "name": "хилка1 (под подушку)", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1"},
-		{"id": "lathe", "name": "Станок", "where": "workbench", "items": {"workbench": 1}, "reagent3": 7, "item": "lathe", "item_name": "Станок"},
+		{"id": "lathe", "name": "Станок", "where": "dream", "items": {"workbench": 1}, "reagent3": 7, "item": "lathe", "item_name": "Станок"},
 		{"id": "sword2", "name": "Меч2 (улучшить Меч)", "where": "lathe", "items": {"sword": 1}, "reagent1": 2, "reagent2": 2, "reagent3": 2, "item": "sword2", "item_name": "Меч2"},
+		{"id": "pickaxe2", "name": "Кирка2 (каменная)", "where": "lathe", "items": {"pickaxe": 1}, "reagent1": 2, "reagent2": 2, "reagent3": 2, "item": "pickaxe2"},
+		{"id": "sawmill", "name": "Лесопилка", "where": "dream", "items": {"workbench": 1}, "reagent3": 10, "reagent2": 3, "item": "sawmill"},
+		{"id": "door", "name": "Дверь", "where": "sawmill_plus", "items": {"planks": 10}, "item": "door"},
+		{"id": "chest", "name": "Сундук (27 ячеек)", "where": "sawmill_plus", "items": {"planks": 8}, "item": "chest"},
+		{"id": "alchemy", "name": "Алхимический стол", "where": "dream", "unlock": "mother", "items": {"workbench": 1, "stone": 8, "heal1": 1}, "reagent2": 3, "item": "alchemy"},
+		{"id": "heal2", "name": "Хилка2 (+40 HP)", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 3, "item": "heal2"},
+		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 400, "item": "idea_catcher"},
 	]
 
 
@@ -771,20 +805,20 @@ func find_recipe(rid: String) -> Dictionary:
 func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
 	if rec.is_empty():
 		return false
+	if rec.get("unlock", "") == "mother" and not mother_defeated and not dev_mode:
+		return false
 	var where := str(rec.get("where", "anywhere"))
 	var dreaming := bool(ctx.get("is_dream", is_dream()))
-	var bench := bool(ctx.get("at_workbench", false))
-	var lathe := bool(ctx.get("at_lathe", false))
-	# Станок — только свои рецепты; верстак — только верстачные (без якорей и без станка).
-	if lathe:
+	var station_id := str(ctx.get("station", ""))
+	if station_id == "sawmill":
+		return where == "sawmill" or (where == "sawmill_plus" and bool(ctx.get("upgraded", false)))
+	if station_id == "alchemy":
+		return where == "alchemy"
+	if bool(ctx.get("at_lathe", false)):
 		return where == "lathe"
-	if bench:
+	if bool(ctx.get("at_workbench", false)):
 		return where == "workbench"
-	if where == "workbench" or where == "lathe":
-		return false
-	if where == "dream":
-		return dreaming
-	return true
+	return where == "dream" and dreaming
 
 
 func get_visible_recipes(ctx: Dictionary = {}) -> Array:
@@ -810,7 +844,7 @@ func can_afford_recipe(rec: Dictionary) -> bool:
 		return false
 	var need: Dictionary = rec.get("items", {})
 	for iid in need.keys():
-		if count_item(str(iid)) < int(need[iid]):
+		if count_item(str(iid)) + (pillow_count("heal1") if str(iid) == "heal1" and is_dream() else 0) < int(need[iid]):
 			return false
 	return true
 
@@ -889,18 +923,23 @@ func mine_wake_block(cell: Vector3i) -> bool:
 	if is_dream():
 		set_hint("Киркой пользуются в яви.")
 		return false
-	if not selected_is("pickaxe"):
+	if not selected_is("pickaxe") and not selected_is("pickaxe2"):
 		set_hint("Чтобы ломать блоки яви, возьми кирку.")
 		return false
 	if not wake_blocks.has(cell):
 		return false
 	var data: Dictionary = wake_blocks[cell]
 	var kind := str(data.get("kind", "drift"))
-	wake_blocks.erase(cell)
+	cell = root_cell(wake_blocks, cell)
+	kind = str(wake_blocks.get(cell, {}).get("kind", kind))
+	if not break_storage(cell):
+		return false
+	remove_shape(wake_blocks, cell)
 	last_mined_kind = kind
 	last_mined_cell = cell
-	if kind == "bed" and Vector3i(floori(spawn_point.x), floori(spawn_point.y - 1.6), floori(spawn_point.z)) == cell:
-		spawn_point = DEFAULT_SPAWN
+	if active_bed == cell_key(cell):
+		active_bed = ""
+		spawn_point = creation_spawn
 	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
 	set_hint("Кирка: выпал блок «%s»." % block_display_name(kind), false)
@@ -979,6 +1018,9 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 	if not can_afford_recipe(rec):
 		set_hint("Не хватает ресурсов для «%s»." % str(rec.get("name", rid)))
 		return false
+	var before_slots := item_slots.duplicate(true)
+	var before_pouch := pouch.duplicate(true)
+	var before_pillow := pillow.duplicate(true)
 	dust -= int(rec.get("dust", 0))
 	if int(rec.get("reagent1", 0)) > 0:
 		spend_typed_reagent(1, int(rec.get("reagent1", 0)))
@@ -991,10 +1033,23 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 	var need: Dictionary = rec.get("items", {})
 	if not dev_mode:
 		for iid in need.keys():
-			remove_item(str(iid), int(need[iid]))
+			if str(iid) == "heal1" and is_dream() and count_item("heal1") < int(need[iid]):
+				var left := int(need[iid])
+				for j in range(pillow.size()):
+					if pillow[j].get("id", "") == "heal1" and left > 0:
+						var take := mini(left, int(pillow[j]["count"]))
+						pillow[j]["count"] -= take
+						left -= take
+						if int(pillow[j]["count"]) == 0:
+							pillow[j] = {}
+			else:
+				remove_item(str(iid), int(need[iid]))
 	var to_pillow := str(rec.get("pillow", ""))
 	if to_pillow != "":
-		add_to_pillow(to_pillow, int(rec.get("count", 1)))
+		if add_to_pillow(to_pillow,int(rec.get("count",1))) < int(rec.get("count",1)):
+			_restore_craft(before_slots,before_pouch,before_pillow)
+			set_hint("Под подушкой нет свободного места.")
+			return false
 		inventory_changed.emit()
 		set_hint("Скрафчено: %s — лежит под подушкой кровати в яви." % str(rec.get("name", rid)))
 		return true
@@ -1011,7 +1066,8 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 	if item_id != "" and dev_mode and raw_count(item_id) > 0:
 		item_id = ""
 	if item_id != "":
-		if add_item(item_id, str(rec.get("item_name", item_id)), int(rec.get("count", 1))) < 0:
+		if add_item_count(item_id,int(rec.get("count",1))) < int(rec.get("count",1)):
+			_restore_craft(before_slots,before_pouch,before_pillow)
 			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
 			return false
 	inventory_changed.emit()
@@ -1081,6 +1137,11 @@ func chat(text: String, color: Color = Color(1, 1, 1)) -> void:
 # --- HP игрока (v0.6) ---
 
 func _process(delta: float) -> void:
+	if not is_dream() and not paused:
+		_mouth_t -= delta
+		if _mouth_t <= 0:
+			_mouth_t = 30.0
+			spread_mouth_once()
 	_clock += delta
 	_iframes = maxf(0.0, _iframes - delta)
 	if heal_cd > 0.0:
@@ -1195,7 +1256,7 @@ func take_from_pillow(i: int) -> bool:
 
 
 func can_use_heal() -> bool:
-	return heal_cd <= 0.0 and player_hp > 0 and player_hp < PLAYER_MAX_HP and count_item("heal1") > 0
+	return heal_cd <= 0.0 and player_hp > 0 and player_hp < PLAYER_MAX_HP and (count_item("heal1") > 0 or count_item("heal2") > 0)
 
 
 func use_heal() -> bool:
@@ -1205,11 +1266,13 @@ func use_heal() -> bool:
 	if player_hp <= 0 or player_hp >= PLAYER_MAX_HP:
 		set_hint("HP и так полное.", false)
 		return false
-	if count_item("heal1") <= 0:
+	if count_item("heal1") <= 0 and count_item("heal2") <= 0:
 		set_hint("Нет хилок. Крафт во сне (50 осыпи) → под подушкой кровати.", false)
 		return false
-	consume_item("heal1", 1)
-	player_hp = mini(PLAYER_MAX_HP, player_hp + HEAL1_AMOUNT)
+	var potion := "heal2" if selected_is("heal2") or count_item("heal1") <= 0 else "heal1"
+	consume_item(potion, 1)
+	Sfx.play("drink", get_tree().root)
+	player_hp = mini(PLAYER_MAX_HP, player_hp + (40 if potion == "heal2" else HEAL1_AMOUNT))
 	heal_cd = HEAL_COOLDOWN
 	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
 	heal_used.emit(HEAL_COOLDOWN)
@@ -1227,7 +1290,7 @@ func collect_death_drop() -> Array:
 	for i in range(inv_wake.size()):
 		var sl: Dictionary = inv_wake[i]
 		if str(sl.get("id", "")) != "" and int(sl.get("count", 0)) > 0:
-			out.append({"id": str(sl["id"]), "count": int(sl["count"])})
+			out.append(sl.duplicate(true))
 			inv_wake[i] = _empty_slot()
 	for pid in pouch.keys():
 		if int(pouch[pid]) > 0:
@@ -1271,10 +1334,20 @@ func pickup_grave(gid: int) -> int:
 	item_slots = inv_wake
 	for it in g["items"]:
 		var n := int(it["count"])
-		var got := add_item_count(str(it["id"]), n)
+		var got := 0
+		if tool_max(str(it["id"])) > 0:
+			for j in range(ITEM_SLOT_COUNT):
+				if get_slot(j).get("id", "") == "":
+					set_slot(j, it)
+					got = n
+					break
+		else:
+			got = add_item_count(str(it["id"]), n)
 		got_total += got
 		if got < n:
-			rest.append({"id": str(it["id"]), "count": n - got})
+			var remaining: Dictionary = it.duplicate(true)
+			remaining["count"] = n - got
+			rest.append(remaining)
 	item_slots = saved
 	if rest.is_empty():
 		graves.remove_at(idx)
@@ -1325,6 +1398,7 @@ func set_boss_alive(on: bool) -> void:
 
 
 func on_mother_killed() -> void:
+	mother_defeated = true
 	mother_cooldown = MOTHER_COOLDOWN
 	boss_next_mine = false
 
@@ -1376,12 +1450,12 @@ func block_display_name(kind: String) -> String:
 		"sword2":
 			return "Меч2"
 		_:
-			return "Блок"
+			return ItemDB.display_name(kind, "Блок")
 
 
 func is_placeable_block(id: String) -> bool:
 	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
-		"stone", "sand", "nest", "bed", "lathe"]
+		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
@@ -1389,8 +1463,6 @@ func add_mined_block(kind: String, amount: int = 1) -> void:
 		return
 	if kind == "egg":
 		kind = "anaconda_egg"
-	elif kind == "deep_stone":
-		kind = "stone"
 	if ItemDB.is_special(kind):
 		_add_special(kind, amount)
 		return
@@ -1413,9 +1485,10 @@ func consume_placeable(kind: String) -> bool:
 func place_wake_block(cell: Vector3i, kind: String) -> bool:
 	if is_dream():
 		return false
-	if wake_blocks.has(cell):
+	if not can_place_shape(wake_blocks, cell, kind):
 		return false
 	wake_blocks[cell] = {"kind": kind, "mutant": false}
+	add_shape_parts(wake_blocks, cell, kind)
 	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
 	return true
@@ -1442,7 +1515,7 @@ func spend_clarity(amount: float) -> bool:
 	if clarity < amount:
 		return false
 	clarity = maxf(0.0, clarity - amount)
-	clarity_changed.emit(clarity, CLARITY_MAX)
+	clarity_changed.emit(clarity, dream_clarity_max())
 	return true
 
 
@@ -1452,7 +1525,7 @@ func drain_clarity(delta: float) -> void:
 	if dev_mode:
 		return
 	clarity = maxf(0.0, clarity - CLARITY_DRAIN_PER_SEC * delta)
-	clarity_changed.emit(clarity, CLARITY_MAX)
+	clarity_changed.emit(clarity, dream_clarity_max())
 	if clarity <= 0.0:
 		set_hint("Ясность иссякла — принудительное пробуждение!")
 
@@ -1568,9 +1641,9 @@ func try_place_anchor(origin: Vector3i) -> bool:
 func enter_dream() -> void:
 	current_world = World.DREAM
 	_bind_inventory()
-	clarity = CLARITY_MAX
+	clarity = dream_clarity_max()
 	awake_time = 0.0
-	clarity_changed.emit(clarity, CLARITY_MAX)
+	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
 	set_hint("Сон. ЛКМ — блок, ПКМ — снять, R — сменить якорь, Q — заякорить, C — меню крафта, F — проснуться.")
 
@@ -1594,9 +1667,13 @@ func resolve_wake() -> Dictionary:
 		if wake_blocks.has(cell):
 			continue
 		var data: Dictionary = dream_blocks[cell]
+		if data.has("root"):
+			continue
 		var kind := str(data.get("kind", "drift"))
+		if not can_place_shape(wake_blocks,cell,kind):
+			continue
 		var mutant := false
-		if not (kind in NO_MUTATION_KINDS) and randf() < MUTATION_CHANCE:
+		if not (kind in NO_MUTATION_KINDS) and randf() < MUTATION_CHANCE and not suppress_mutation(cell):
 			mutant = true
 			mutations += 1
 			kind = "mouth"
@@ -1604,8 +1681,14 @@ func resolve_wake() -> Dictionary:
 			"kind": kind,
 			"mutant": mutant,
 		}
+		add_shape_parts(wake_blocks, cell, kind)
 		transferred += 1
 
+	var dream_roots := 0
+	for block in dream_blocks.values():
+		if not block.has("root"):
+			dream_roots += 1
+	dust_gained += maxi(0,dream_roots-transferred)/5
 	dust += dust_gained
 	pending_anchors.clear()
 	var wiped := dream_blocks.size()
@@ -1613,8 +1696,8 @@ func resolve_wake() -> Dictionary:
 	current_world = World.WAKE
 	_bind_inventory()
 	dream_exit_count += 1
-	clarity = CLARITY_MAX
-	clarity_changed.emit(clarity, CLARITY_MAX)
+	clarity = dream_clarity_max()
+	clarity_changed.emit(clarity, dream_clarity_max())
 	inventory_changed.emit()
 	world_changed.emit(false)
 	wake_resolved.emit(transferred, dust_gained, mutations)
@@ -1626,16 +1709,18 @@ func resolve_wake() -> Dictionary:
 
 
 func place_dream_block(cell: Vector3i, kind: String = "drift") -> bool:
-	if dream_blocks.has(cell):
+	if not can_place_shape(dream_blocks, cell, kind):
 		return false
 	dream_blocks[cell] = {"kind": kind, "anchored": false, "mutant": false}
+	add_shape_parts(dream_blocks, cell, kind)
 	return true
 
 
 func remove_dream_block(cell: Vector3i) -> bool:
 	if not dream_blocks.has(cell):
 		return false
-	dream_blocks.erase(cell)
+	cell = root_cell(dream_blocks, cell)
+	remove_shape(dream_blocks, cell)
 	for a in pending_anchors:
 		var cells: Array = a["cells"]
 		var idx := cells.find(cell)
@@ -1663,7 +1748,7 @@ func steal_resource_hardcore(amount: int = 1) -> String:
 
 
 func reward_kill(is_boss: bool = false, who: String = "") -> int:
-	var amount := DUST_PER_BOSS_KILL if is_boss else DUST_PER_KILL
+	var amount := DUST_PER_BOSS_KILL if is_boss else randi_range(DUST_PER_KILL_MIN,DUST_PER_KILL_MAX)
 	if not dev_mode:
 		add_item_count("dust", amount)
 	var prefix := (who + " повержен: ") if who != "" else ""
@@ -1681,6 +1766,14 @@ func count_enemies_in_tree(tree: SceneTree) -> int:
 func to_save_dict() -> Dictionary:
 	return {
 		"version": SAVE_FORMAT,
+		"mother_defeated": mother_defeated,
+		"dream_bonus_seconds": dream_bonus_seconds,
+		"idea_eaten": idea_eaten,
+		"world_storage": world_storage,
+		"active_bed": active_bed,
+		"creation_spawn": [creation_spawn.x, creation_spawn.y, creation_spawn.z],
+		"tutorial_enabled": tutorial_enabled,
+		"tutorial_step": tutorial_step,
 		"world": "dream" if is_dream() else "wake",
 		"world_name": world_name,
 		"seed_text": seed_text,
@@ -1730,6 +1823,16 @@ static func _seed_val(v: Variant, fallback: int) -> int:
 
 
 func apply_save_dict(data: Dictionary) -> void:
+	mother_defeated = bool(data.get("mother_defeated", false))
+	dream_bonus_seconds = maxf(0.0, float(data.get("dream_bonus_seconds", 0.0)))
+	idea_eaten = data.get("idea_eaten", {}).duplicate(true)
+	world_storage = data.get("world_storage", {}).duplicate(true)
+	active_bed = str(data.get("active_bed", ""))
+	var cs: Array = data.get("creation_spawn", [DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, DEFAULT_SPAWN.z])
+	creation_spawn = Vector3(float(cs[0]), float(cs[1]), float(cs[2]))
+	tutorial_enabled = bool(data.get("tutorial_enabled", true))
+	tutorial_step = int(data.get("tutorial_step", 0))
+	storage_open = false
 	var fmt := int(data.get("version", 4))
 	nails = int(data.get("nails", 3))
 	wedges = int(data.get("wedges", 1))
@@ -1807,6 +1910,9 @@ func apply_save_dict(data: Dictionary) -> void:
 			collected_reagent_ids[str(cid2)] = true
 	wake_blocks = _blocks_from_json(data.get("wake_blocks", {}))
 	dream_blocks = _blocks_from_json(data.get("dream_blocks", {}))
+	if fmt < 8:
+		_migrate_beds(wake_blocks)
+		_migrate_beds(dream_blocks)
 	pending_anchors = _anchors_from_json(data.get("pending_anchors", []))
 	removed_terrain = _cells_kind_from_json(data.get("removed_terrain", {}))
 	_rebuild_removed_index()
@@ -1821,6 +1927,9 @@ func apply_save_dict(data: Dictionary) -> void:
 			collected_eggs[str(e)] = true
 	var sp: Variant = data.get("spawn_point", null)
 	spawn_point = Vector3(float(sp[0]), float(sp[1]), float(sp[2])) if typeof(sp) == TYPE_ARRAY and sp.size() >= 3 else DEFAULT_SPAWN
+	if active_bed == "" or (active_bed != "starter" and wake_blocks.get(key_cell(active_bed),{}).get("kind","") != "bed"):
+		active_bed = ""
+		spawn_point = creation_spawn
 	_graves_from_json(data.get("graves", []))
 	_boss_count = 0
 	death_open = false
@@ -1832,7 +1941,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
 	_bind_inventory()
-	clarity_changed.emit(clarity, CLARITY_MAX)
+	clarity_changed.emit(clarity, dream_clarity_max())
 	inventory_changed.emit()
 	world_changed.emit(is_dream())
 
@@ -1868,7 +1977,7 @@ func _slots_into(src: Variant, dst: Array) -> void:
 	for i in range(mini(src.size(), dst.size())):
 		var s: Variant = src[i]
 		if typeof(s) == TYPE_DICTIONARY and str(s.get("id", "")) != "" and int(s.get("count", 0)) > 0:
-			dst[i] = {"id": str(s["id"]), "name": str(s.get("name", "")), "count": int(s["count"])}
+			dst[i] = s.duplicate(true)
 
 
 func _graves_to_json() -> Array:
@@ -1890,7 +1999,7 @@ func _graves_from_json(src: Variant) -> void:
 		var items: Array = []
 		for it in g.get("items", []):
 			if typeof(it) == TYPE_DICTIONARY and int(it.get("count", 0)) > 0:
-				items.append({"id": str(it.get("id", "")), "count": int(it["count"])})
+				items.append(it.duplicate(true))
 		if not items.is_empty() and pa.size() >= 3:
 			_grave_seq += 1
 			graves.append({"id": _grave_seq, "pos": Vector3(float(pa[0]), float(pa[1]), float(pa[2])), "items": items})
@@ -1906,11 +2015,7 @@ func _blocks_to_json(src: Dictionary) -> Dictionary:
 		var c: Vector3i = k
 		var key := "%d,%d,%d" % [c.x, c.y, c.z]
 		var d: Dictionary = src[k]
-		out[key] = {
-			"kind": str(d.get("kind", "drift")),
-			"anchored": bool(d.get("anchored", false)),
-			"mutant": bool(d.get("mutant", false)),
-		}
+		out[key] = d.duplicate(true)
 	return out
 
 
@@ -1924,11 +2029,7 @@ func _blocks_from_json(src: Variant) -> Dictionary:
 			continue
 		var c := Vector3i(int(parts[0]), int(parts[1]), int(parts[2]))
 		var d: Dictionary = src[key]
-		out[c] = {
-			"kind": str(d.get("kind", "drift")),
-			"anchored": bool(d.get("anchored", false)),
-			"mutant": bool(d.get("mutant", false)),
-		}
+		out[c] = d.duplicate(true)
 	return out
 
 
@@ -1983,3 +2084,247 @@ func _cells_kind_from_json(src: Variant) -> Dictionary:
 		out[Vector3i(int(parts[0]), int(parts[1]), int(parts[2]))] = str(src[key])
 	return out
 
+
+# ================================================================ v0.8
+const Mining := preload("res://scripts/mining_rules.gd")
+const Sfx := preload("res://scripts/sfx.gd")
+
+func dream_clarity_max() -> float:
+	return CLARITY_MAX + dream_bonus_seconds * CLARITY_DRAIN_PER_SEC
+
+static func tool_max(id: String) -> int:
+	return 100 if id in ["pickaxe", "sword"] else (500 if id in ["pickaxe2", "sword2"] else 0)
+
+func wear_tool(amount: int) -> bool:
+	var d := get_selected_item()
+	var id := str(d.get("id", ""))
+	if dev_mode or tool_max(id) == 0:
+		return false
+	d["durability"] = maxi(0, int(d.get("durability", tool_max(id))) - amount)
+	var broken := int(d["durability"]) == 0
+	if broken:
+		item_slots[selected_slot] = _empty_slot()
+		set_hint("%s сломалась / сломался." % ItemDB.display_name(id))
+	inventory_changed.emit()
+	return broken
+
+static func cell_key(c: Vector3i) -> String:
+	return "%d,%d,%d" % [c.x, c.y, c.z]
+
+static func key_cell(k: String) -> Vector3i:
+	var p := k.split(",")
+	return Vector3i(int(p[0]), int(p[1]), int(p[2])) if p.size() == 3 else Vector3i.ZERO
+
+func beacon_protects(c: Vector3i) -> bool:
+	for b in wake_blocks:
+		if wake_blocks[b].get("kind", "") == "beacon":
+			var d: Vector3i = c - b
+			if maxi(absi(d.x), maxi(absi(d.y), absi(d.z))) <= 10:
+				return true
+	return false
+
+func suppress_mutation(c: Vector3i) -> bool:
+	if not beacon_protects(c):
+		return false
+	dust += 5
+	return true
+
+func station_upgraded(c: Vector3i, neighbor: String = "workbench") -> bool:
+	var source := dream_blocks if is_dream() else wake_blocks
+	for d in [Vector3i.LEFT, Vector3i.RIGHT, Vector3i.UP, Vector3i.DOWN, Vector3i.FORWARD, Vector3i.BACK]:
+		if source.get(c + d, {}).get("kind", "") == neighbor or (neighbor == "bed" and source.get(c+d,{}).get("kind", "") == "bed_foot"):
+			return true
+	# Стартовая кровать — тоже сосед для Ловца, только в яви.
+	if neighbor == "bed" and not is_dream():
+		for b in get_tree().get_nodes_in_group("bed"):
+			if not b.has_meta("voxel_cell"):
+				var bc := Vector3i(floori(b.global_position.x), floori(b.global_position.y), floori(b.global_position.z))
+				if (c - bc).abs().x + (c - bc).abs().y + (c - bc).abs().z == 1:
+					return true
+	return false
+
+static func part_offset(kind: String) -> Vector3i:
+	return Vector3i.BACK if kind == "bed" else Vector3i.UP
+
+static func shape_part(kind: String) -> String:
+	return {"bed": "bed_foot", "door": "door_top", "idea_catcher": "catcher_top"}.get(kind, "")
+
+func can_place_shape(source: Dictionary, c: Vector3i, kind: String) -> bool:
+	return not source.has(c) and (shape_part(kind) == "" or not source.has(c + part_offset(kind)))
+
+func add_shape_parts(source: Dictionary, c: Vector3i, kind: String) -> void:
+	if shape_part(kind) != "":
+		source[c + part_offset(kind)] = {"kind": shape_part(kind), "root": cell_key(c)}
+
+func root_cell(source: Dictionary, c: Vector3i) -> Vector3i:
+	return key_cell(str(source[c]["root"])) if source.has(c) and source[c].has("root") else c
+
+func remove_shape(source: Dictionary, c: Vector3i) -> void:
+	var kind: String = source.get(c, {}).get("kind", "")
+	if shape_part(kind) != "" and source.get(c+part_offset(kind),{}).get("root", "") == cell_key(c):
+		source.erase(c + part_offset(kind))
+	source.erase(c)
+
+func storage_slots(c: Vector3i) -> Array:
+	var k := cell_key(c)
+	if not world_storage.has(k):
+		world_storage[k] = _new_slots(27)
+	return world_storage[k]
+
+func catcher_eat(c: Vector3i) -> int:
+	var bonus := 0
+	var slots := storage_slots(c)
+	for i in range(slots.size()):
+		var d: Dictionary = slots[i]
+		var id := str(d.get("id", ""))
+		if int(d.get("count", 0)) == 100 and not idea_eaten.has(id):
+			var seconds := Mining.idea_seconds(id)
+			idea_eaten[id] = true
+			dream_bonus_seconds += seconds
+			bonus += seconds
+			slots[i] = {}
+	if bonus > 0:
+		set_hint("Ловец идей: +%d с сна навсегда!" % bonus)
+	return bonus
+
+func storage_deposit(c: Vector3i, i: int, catcher: bool) -> int:
+	if catcher and is_dream():
+		return 0
+	var d := get_slot(i).duplicate(true)
+	var id := str(d.get("id", ""))
+	if id == "" or (catcher and not is_placeable_block(id)):
+		return 0
+	var slots := storage_slots(c)
+	var left := int(d.get("count", 0))
+	var start := left
+	for j in range(27):
+		var old: Dictionary = slots[j]
+		if old.get("id", "") != id or tool_max(id) > 0:
+			continue
+		var add := mini(left, ItemDB.max_stack(id) - int(old.get("count", 0)))
+		old["count"] = int(old.get("count", 0)) + add
+		left -= add
+	for j in range(27):
+		if left <= 0:
+			break
+		if str(slots[j].get("id", "")) == "":
+			var add := mini(left, ItemDB.max_stack(id))
+			slots[j] = d.duplicate(true)
+			slots[j]["count"] = add
+			left -= add
+	# Даже на дев-сиде перенос не клонирует предметы.
+	d["count"] = left
+	set_slot(i, d)
+	if catcher:
+		catcher_eat(c)
+	return start - left
+
+func storage_take(c: Vector3i, i: int, catcher: bool) -> bool:
+	if catcher and not is_dream():
+		set_hint("Забрать из Ловца можно только во сне.")
+		return false
+	var slots := storage_slots(c)
+	var d: Dictionary = slots[i]
+	var id := str(d.get("id", ""))
+	if id == "":
+		return false
+	# Инструменты не теряют индивидуальную прочность при переносе.
+	if tool_max(id) > 0:
+		for j in range(ITEM_SLOT_COUNT):
+			if get_slot(j).get("id", "") == "":
+				set_slot(j, d)
+				slots[i] = {}
+				return true
+		return false
+	var added := add_item_count(id, int(d.get("count", 0)))
+	d["count"] = int(d.get("count", 0)) - added
+	if int(d["count"]) <= 0:
+		slots[i] = {}
+	return added > 0
+
+func break_storage(c: Vector3i) -> bool:
+	if world_storage.has(cell_key(c)):
+		for s in storage_slots(c):
+			if s.get("id", "") != "":
+				set_hint("Сначала опустоши хранилище.")
+				return false
+		world_storage.erase(cell_key(c))
+	return true
+
+func toggle_door(c: Vector3i) -> bool:
+	var source := dream_blocks if is_dream() else wake_blocks
+	c = root_cell(source, c)
+	if source.get(c, {}).get("kind", "") != "door":
+		return false
+	source[c]["open"] = not bool(source[c].get("open", false))
+	for vox in get_tree().get_nodes_in_group("voxel_world"):
+		if bool(vox.is_dream_layer) == is_dream():
+			vox._rebuild_from_state()
+	Sfx.play("door", get_tree().root)
+	return true
+
+
+func wake_solid(c: Vector3i) -> bool:
+	if not wake_blocks.has(c):
+		return false
+	var root_at := root_cell(wake_blocks,c)
+	var data: Dictionary = wake_blocks.get(root_at,{})
+	return not (data.get("kind", "") == "door" and bool(data.get("open", false)))
+
+
+func spread_mouth_once() -> bool:
+	for c in wake_blocks.keys():
+		if wake_blocks[c].get("kind", "") != "mouth" or beacon_protects(c):
+			continue
+		for d in [Vector3i.RIGHT, Vector3i.LEFT, Vector3i.BACK, Vector3i.FORWARD, Vector3i.UP, Vector3i.DOWN]:
+			var target: Vector3i = c+d
+			var old: Dictionary = wake_blocks.get(target,{})
+			var kind: String = old.get("kind", "")
+			if kind == "" or kind == "mouth" or kind in NO_MUTATION_KINDS or old.has("root") or beacon_protects(target):
+				continue
+			old["kind"] = "mouth"
+			old["mutant"] = true
+			for vox in get_tree().get_nodes_in_group("voxel_world"):
+				if not vox.is_dream_layer:
+					vox.refresh_block(target,old)
+			return true
+	return false
+
+
+func destroy_wake_structure(c: Vector3i, respect_beacon: bool = false) -> bool:
+	c = root_cell(wake_blocks,c)
+	if not wake_blocks.has(c):
+		return false
+	var kind: String = wake_blocks[c].get("kind", "")
+	if respect_beacon and (beacon_protects(c) or (shape_part(kind) != "" and beacon_protects(c+part_offset(kind)))):
+		return false
+	if not break_storage(c):
+		return false
+	remove_shape(wake_blocks,c)
+	if active_bed == cell_key(c):
+		active_bed = ""
+		spawn_point = creation_spawn
+	for vox in get_tree().get_nodes_in_group("voxel_world"):
+		if not vox.is_dream_layer:
+			vox._rebuild_from_state()
+	inventory_changed.emit()
+	return true
+
+
+func _restore_craft(slots: Array, wallet: Dictionary, under_pillow: Array) -> void:
+	item_slots.assign(slots)
+	pouch = wallet
+	pillow.assign(under_pillow)
+	inventory_changed.emit()
+	pillow_changed.emit()
+
+func _migrate_beds(source: Dictionary) -> void:
+	for c in source.keys():
+		if source[c].get("kind", "") != "bed":
+			continue
+		var other: Vector3i = c+Vector3i.BACK
+		if not source.has(other):
+			add_shape_parts(source,c,"bed")
+		elif source[other].get("root", "") != cell_key(c):
+			# Не перезаписывать соседнюю постройку при загрузке старого одноклеточного ложа.
+			source[c]["legacy_compact"] = true

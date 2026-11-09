@@ -38,3 +38,18 @@ static func count(path: String) -> int:
 		if p == path:
 			n += 1
 	return n
+
+static func play(kind: String, host: Node) -> void:
+	var path := "res://assets/audio/sfx_" + kind + ".ogg"
+	played.append(path)
+	if played.size() > 64:
+		played.remove_at(0)
+	if host == null or not host.is_inside_tree() or not ResourceLoader.exists(path):
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = load(path)
+	p.volume_db = -12.0
+	p.bus = &"SFX" if AudioServer.get_bus_index("SFX") >= 0 else &"Master"
+	host.add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()

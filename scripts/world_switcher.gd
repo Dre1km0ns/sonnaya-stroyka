@@ -99,11 +99,28 @@ func _try_interact() -> void:
 		else:
 			# v0.7: спать можно у любой кровати — там же и проснёшься/возродишься.
 			GameState.spawn_point = bed_spawn_point(target)
+			GameState.active_bed = GameState.cell_key(target.get_meta("voxel_cell")) if target.has_meta("voxel_cell") else "starter"
 			enter_dream()
 		return
 	if (target.is_in_group("reagent") or target.is_in_group("pickup")) and target.has_method("collect"):
 		target.collect()
 		return
+	if collider.has_meta("voxel_cell"):
+		var at: Vector3i = collider.get_meta("voxel_cell")
+		var source := GameState.dream_blocks if GameState.is_dream() else GameState.wake_blocks
+		at = GameState.root_cell(source, at)
+		var kind: String = source.get(at, GameState.wake_blocks.get(at, {})).get("kind", "")
+		if kind in ["chest", "idea_catcher"]:
+			if kind == "idea_catcher" and not GameState.station_upgraded(at, "bed") and not _catcher_bed_in_wake(at):
+				GameState.set_hint("Ловец идей должен стоять гранью к кровати.")
+				return
+			for ui in get_tree().get_nodes_in_group("storage_ui"):
+				ui.open(at, kind == "idea_catcher")
+			return
+		if kind in ["sawmill", "alchemy"]:
+			for menu in get_tree().get_nodes_in_group("craft_menu"):
+				menu.open_station(kind, GameState.station_upgraded(at))
+			return
 	if collider.has_meta("voxel_cell") and not GameState.is_dream():
 		var cell: Vector3i = collider.get_meta("voxel_cell")
 		var data: Dictionary = GameState.wake_blocks.get(cell, {})
@@ -200,3 +217,10 @@ func _set_process_recursive(root: Node, enabled: bool) -> void:
 				co.collision_layer = int(co.get_meta("_saved_layer"))
 		else:
 			co.collision_layer = 0
+
+
+func _catcher_bed_in_wake(c: Vector3i) -> bool:
+	for d in [Vector3i.LEFT, Vector3i.RIGHT, Vector3i.UP, Vector3i.DOWN, Vector3i.FORWARD, Vector3i.BACK]:
+		if GameState.wake_blocks.get(c + d, {}).get("kind", "") in ["bed", "bed_foot"]:
+			return true
+	return false

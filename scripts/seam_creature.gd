@@ -230,7 +230,8 @@ func _tick_block_attack(_delta: float) -> bool:
 	if _atk_hits < ATTACK_HITS:
 		return true
 	_atk_hits = 0
-	GameState.wake_blocks.erase(ripped)
+	if not GameState.destroy_wake_structure(ripped):
+		return true
 	GameState.dust += 1
 	GameState.inventory_changed.emit()
 	GameState.set_hint("Шовник разбил блок яви [%d,%d,%d]" % [ripped.x, ripped.y, ripped.z], false)

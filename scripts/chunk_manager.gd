@@ -131,6 +131,8 @@ func height_at(wx: int, wz: int) -> int:
 	## Редкие холмы, v0.7 — до 6 уровней (чуть выше). Зависит от сида мира.
 	if absi(wx) <= 14 and absi(wz) <= 14:
 		return 0
+	if _is_settlement(world_to_chunk(Vector3(wx, 0, wz))):
+		return 0
 	var n := _value_noise(float(wx) * 0.07, float(wz) * 0.07)
 	if n > 0.93:
 		return 6
@@ -339,10 +341,14 @@ func load_all_pending() -> void:
 
 
 func chunk_has_lake(coord: Vector2i) -> bool:
+	if _is_settlement(coord):
+		return false
 	return maxi(absi(coord.x), absi(coord.y)) >= 1 and _chunk_hash(coord, 11) > 0.82
 
 
 func chunk_has_ruin(coord: Vector2i) -> bool:
+	if _is_settlement(coord):
+		return true
 	return maxi(absi(coord.x), absi(coord.y)) >= 1 and _chunk_hash(coord, 29) > RUIN_HASH_THRESHOLD
 
 
@@ -607,57 +613,56 @@ func _register_lake(coord: Vector2i, lake_cells: Dictionary, occupied: Dictionar
 	_lakes_by_chunk[coord] = locals
 
 
+const SETTLEMENT_THRESHOLD := 0.999
+const DEV_SETTLEMENT := Vector2i(2, 1)
+
+func _is_settlement(coord: Vector2i) -> bool:
+	if is_dream_layer or maxi(absi(coord.x), absi(coord.y)) < 2:
+		return false
+	return (_seed == GameState.DEV_SEED and coord == DEV_SETTLEMENT) or _chunk_hash(coord, 8127) > SETTLEMENT_THRESHOLD
+
+func ruin_plan(coord: Vector2i) -> Array:
+	var rng := _rng_for(coord, 8421)
+	var out: Array = []
+	if _is_settlement(coord):
+		var count := 3 + rng.randi_range(0, 2)
+		for i in range(count):
+			out.append({"x": 1 + (i % 3) * 5, "z": 1 + (i / 3) * 8, "w": rng.randi_range(3, 4), "d": rng.randi_range(4, 6), "h": 6 if i % 2 == 0 else 3, "shape": i % 2})
+	else:
+		# Крупная форма выпадает гораздо реже маленькой.
+		var roll := rng.randf()
+		var w := 10 if roll > 0.96 else (7 if roll > 0.80 else rng.randi_range(4, 5))
+		out.append({"x": rng.randi_range(1, 15-w), "z": 2, "w": w, "d": rng.randi_range(4, mini(w+1, 10)), "h": 6 if roll > 0.96 else rng.randi_range(2, 4), "shape": rng.randi_range(0, 2)})
+	return out
+
 func _plan_ruin(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> void:
-	var w := 5
-	var d := 5
-	var ox := 3 + int(_hash01(coord.x + 3, coord.y) * 6.0)
-	var oz := 3 + int(_hash01(coord.x, coord.y + 3) * 6.0)
-	ox = clampi(ox, 1, chunk_size - w - 1)
-	oz = clampi(oz, 1, chunk_size - d - 1)
-	if occupied.has(Vector2i(ox + 2, oz + 2)) and str(occupied[Vector2i(ox + 2, oz + 2)]) == "lake":
-		ox = 1
-		oz = 1
-	var door_side := int(_hash01(coord.x * 9, coord.y * 9) * 4.0) % 4
-	_ruin_centers[coord] = chunk_origin(coord) + Vector3(float(ox) + float(w) * 0.5, 0.0, float(oz) + float(d) * 0.5)
-	var mx := ox + w / 2
-	var mz := oz + d / 2
-	for lx in range(ox, ox + w):
-		for lz in range(oz, oz + d):
-			var is_wall := lx == ox or lx == ox + w - 1 or lz == oz or lz == oz + d - 1
-			if not is_wall:
-				if not occupied.has(Vector2i(lx, lz)):
-					occupied[Vector2i(lx, lz)] = "ruin_floor"
-				continue
-			var is_door := false
-			if door_side == 0 and lz == oz and lx == mx:
-				is_door = true
-			elif door_side == 1 and lz == oz + d - 1 and lx == mx:
-				is_door = true
-			elif door_side == 2 and lx == ox and lz == mz:
-				is_door = true
-			elif door_side == 3 and lx == ox + w - 1 and lz == mz:
-				is_door = true
-			if is_door:
-				occupied[Vector2i(lx, lz)] = "door"
-				continue
-			var decay := _hash01(coord.x * 40 + lx, coord.y * 40 + lz)
-			if decay > 0.72:
-				occupied[Vector2i(lx, lz)] = "gap"
-				continue
-			if occupied.has(Vector2i(lx, lz)) and str(occupied[Vector2i(lx, lz)]) == "lake":
-				continue
-			occupied[Vector2i(lx, lz)] = "wall"
-			var height := 2 if decay > 0.35 else 3
-			var wx := coord.x * chunk_size + lx
-			var wz := coord.y * chunk_size + lz
-			var any_left := false
-			for y in range(height):
-				if is_cell_removed(wx, y, wz):
-					continue
-				any_left = true
-				solids[Vector3i(wx, y, wz)] = "ruin"
-			if any_left:
-				_add_wall(coord, Vector2i(wx, wz))
+	_ruin_centers[coord] = chunk_origin(coord) + Vector3(8, 0, 8)
+	for house in ruin_plan(coord):
+		var ox := int(house.x)
+		var oz := int(house.z)
+		var w := int(house.w)
+		var d := int(house.d)
+		for lx in range(ox, mini(16, ox+w)):
+			for lz in range(oz, mini(16, oz+d)):
+				var wall := lx == ox or lx == ox+w-1 or lz == oz or lz == oz+d-1
+				var door := lz == oz and lx == ox + w/2
+				var wp := Vector3i(coord.x*16+lx, 0, coord.y*16+lz)
+				occupied[Vector2i(lx,lz)] = "door" if door else ("wall" if wall else "ruin_floor")
+				for y in range(int(house.h)):
+					var c := wp + Vector3i(0,y,0)
+					var floor2 := y == 3 and int(house.h) > 4 and not (lx == ox+1 and lz == oz+1)
+					if not wall and not floor2:
+						continue
+					if door and y < 2:
+						continue
+					if int(house.shape) == 1 and lx >= ox+w-2 and lz >= oz+d-2:
+						continue
+					if y > 1 and _hash01(c.x+y*23,c.z-y*17) > 0.78:
+						continue
+					if not is_cell_removed(c.x,c.y,c.z):
+						solids[c] = "mossy_ruin" if _hash01(c.x+y*71,c.z+y*37) < 0.15 else "ruin"
+				if wall and not door:
+					_add_wall(coord, Vector2i(wp.x,wp.z))
 
 
 func _plan_hills(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> void:
@@ -677,7 +682,7 @@ func _plan_hills(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> v
 			for y in range(h):
 				if is_cell_removed(wx, y, wz) or is_carved(Vector3i(wx, y, wz)):
 					continue
-				solids[Vector3i(wx, y, wz)] = "hill"
+				solids[Vector3i(wx, y, wz)] = "stone" if y < height_at(wx, wz) - 2 else ("hill" if y == height_at(wx,wz)-1 else "dirt")
 
 
 func _add_wall(coord: Vector2i, w: Vector2i) -> void:
@@ -884,7 +889,7 @@ func _spawn_pickup(c: Vector3i, kind: String) -> void:
 	if host == null or panorama_mode:
 		return
 	var script: GDScript = load("res://scripts/block_pickup.gd")
-	var drop: StaticBody3D = script.new()
+	var drop: CharacterBody3D = script.new()
 	drop.configure(kind)
 	drop.position = Vector3(float(c.x) + 0.5, maxf(float(c.y) * 0.0 + 0.55, 0.55), float(c.z) + 0.5)
 	host.add_child(drop)
@@ -1126,7 +1131,7 @@ func _add_ruin_reagent_cluster(root: Node3D, coord: Vector2i, occupied: Dictiona
 	)
 	var salt := 1
 	for cell in locals:
-		if spawned >= RUIN_CLUSTER_TARGET:
+		if spawned >= (5 if _is_settlement(coord) else RUIN_CLUSTER_TARGET):
 			break
 		var pick := _hash01(coord.x * 17 + cell.x + salt, coord.y * 13 + cell.y)
 		if pick < 0.35 and spawned > 0:
@@ -1152,7 +1157,7 @@ func _try_spawn_reagent_at(root: Node3D, coord: Vector2i, occupied: Dictionary, 
 	if not panorama_mode and GameState.has_method("is_reagent_collected") and GameState.is_reagent_collected(rid):
 		return false
 	var type_id := 1 + int(_hash01(coord.x + lx * 3 + salt, coord.y + lz * 5) * 3.0)
-	type_id = clampi(type_id, 1, 3)
+	type_id = (1 + salt % 3) if _is_settlement(coord) else clampi(type_id, 1, 3)
 	occupied[key] = "reagent"
 	if _reagent_script == null:
 		_reagent_script = load("res://scripts/reagent_node.gd")
@@ -1318,7 +1323,11 @@ var _nest_cache: Dictionary = {}      # Vector2i -> Dictionary{Vector3i: "nest"/
 static func depth_kind(y: int) -> String:
 	if y <= BEDROCK_Y:
 		return "bedrock"
-	return "ground" if y >= -3 else "stone"
+	if y >= -1:
+		return "ground"
+	if y > -6:
+		return "dirt"
+	return "stone" if y > -18 else "deep_stone"
 
 
 func _caves_enabled() -> bool:
@@ -1799,7 +1808,7 @@ func floor_y_below(pos: Vector3, max_down: int = 40) -> float:
 
 
 func _cell_solid_any(c: Vector3i) -> bool:
-	if GameState.wake_blocks.has(c):
+	if GameState.wake_solid(c):
 		return true
 	var ck := world_to_chunk(Vector3(c.x, 0, c.z))
 	if _solid_by_chunk.has(ck) and (_solid_by_chunk[ck] as Dictionary).has(c):
@@ -1851,7 +1860,7 @@ func _water_open(c: Vector3i) -> bool:
 	var ck := world_to_chunk(Vector3(c.x, 0, c.z))
 	if not _loaded.has(ck):
 		return false
-	if GameState.wake_blocks.has(c):
+	if GameState.wake_solid(c):
 		return false
 	if (_solid_by_chunk.get(ck, {}) as Dictionary).has(c):
 		return false
@@ -2036,8 +2045,13 @@ func _build_flow_water(coord: Vector2i) -> void:
 		var mn := Vector3(c) - origin
 		for fi in range(6):
 			var n: Vector3i = c + dirs[fi]
+			var bottom := 0.0
 			if _water.has(n) or _water_src.has(n):
-				continue
+				if fi == 2 or fi == 3:
+					continue
+				bottom = 1.0 if water_level(n + Vector3i.UP) > 0 else clampf(float(water_level(n)) / WATER_FULL * 0.92, 0.12, 0.92)
+				if bottom >= h:
+					continue
 			if fi != 2 and _cell_solid_any(n):
 				continue
 			var f: Array = BlockTex.FACES[fi]
@@ -2046,7 +2060,7 @@ func _build_flow_water(coord: Vector2i) -> void:
 			var p: Array = []
 			for q in cs:
 				var v: Vector3 = q
-				p.append(mn + Vector3(v.x, v.y * h, v.z))
+				p.append(mn + Vector3(v.x, lerpf(bottom, h, v.y), v.z))
 			for idx in [0, 2, 1, 0, 3, 2]:
 				var pv: Vector3 = p[idx]
 				verts.append(pv)

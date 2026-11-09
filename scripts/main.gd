@@ -18,7 +18,7 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
-	if _want_shots07() or _want_inventory_mockup():
+	if _want_shots07() or _want_inventory_mockup() or _want_shots08():
 		GameState.begin_world("Скриншоты v0.7", "", "6767676767", GameState.DEV_SEED, true)
 	elif _want_shots06():
 		GameState.begin_world("Скриншоты v0.6", "", "6767676767", GameState.DEV_SEED, false)
@@ -69,7 +69,9 @@ func _ready() -> void:
 		player.global_position = player.global_position
 	if not GameState.player_died.is_connected(_on_player_died):
 		GameState.player_died.connect(_on_player_died)
-	if _want_inventory_mockup():
+	if _want_shots08():
+		call_deferred("_capture_v08")
+	elif _want_inventory_mockup():
 		call_deferred("_capture_inventory_mockup")
 	elif _want_shots07():
 		call_deferred("_capture_v07")
@@ -160,6 +162,10 @@ func _spawn_saved_graves() -> void:
 		_spawn_grave(int(gr["id"]))
 
 
+func _want_shots08() -> bool:
+	return "--shots08" in OS.get_cmdline_user_args()
+
+
 func _want_inventory_mockup() -> bool:
 	return "--mock-inventory" in OS.get_cmdline_user_args()
 
@@ -210,7 +216,7 @@ func _start_music() -> void:
 func _want_shots() -> bool:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
-	return _want_inventory_mockup() or "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
+	return _want_shots08() or _want_inventory_mockup() or "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
 
 
 func _want_shots05() -> bool:
@@ -1011,4 +1017,147 @@ func _capture_inventory_mockup() -> void:
 	await _wait(0.5)
 	await _save_shot("mock_inv_dream.png")
 	inv.close()
+	get_tree().quit(0)
+
+
+func _capture_v08() -> void:
+	await _wait(2.0)
+	GameState.day_time = 840
+	GameState.tutorial_enabled = true
+	_v7_goto(Vector3(6.5,0.1,9.5))
+	_look_at_point(Vector3(2,1,10),Vector3(6.5,0.1,9.5))
+	var inv = get_tree().get_first_node_in_group("inventory_ui")
+	inv.open()
+	await _wait(0.4)
+	await _save_shot("v08_inventory_wake.png")
+	inv.close()
+	switcher.enter_dream()
+	await _wait(0.5)
+	inv.open()
+	await _wait(0.4)
+	await _save_shot("v08_inventory_dream.png")
+	inv.close()
+	var menu = get_tree().get_first_node_in_group("craft_menu")
+	menu.open_general()
+	await _wait(0.4)
+	await _save_shot("v08_dream_craft.png")
+	menu.close()
+	switcher.wake_up()
+	await _wait(0.4)
+	GameState.add_to_pillow("heal1",2)
+	switcher.open_pillow()
+	await _wait(0.4)
+	await _save_shot("v08_pillow_close.png")
+	var pil = get_tree().get_first_node_in_group("pillow_ui")
+	var e := InputEventAction.new()
+	e.action = "pillow_check"
+	e.pressed = true
+	pil._input(e)
+	await _wait(0.2)
+	assert(not GameState.pillow_open and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
+	# Очистить только деревья вокруг постановочной UI-площадки (не обычный игровой запуск).
+	var clear_cells := []
+	for coord in wake_chunks._solid_by_chunk:
+		for c in wake_chunks._solid_by_chunk[coord]:
+			if wake_chunks._solid_by_chunk[coord][c] in ["log","leaves"] and c.x >= -12 and c.x <= 20 and c.z >= 0 and c.z <= 16:
+				clear_cells.append(c)
+	_v7_dig(clear_cells)
+	var bc := Vector3i(5,0,5)
+	var cc := Vector3i(4,0,5)
+	for pair in [[bc,"bed"],[cc,"idea_catcher"],[Vector3i(2,0,5),"chest"],[Vector3i(0,0,5),"sawmill"],[Vector3i(1,0,5),"workbench"],[Vector3i(-2,0,5),"alchemy"],[Vector3i(-4,0,5),"door"],[Vector3i(-6,0,5),"lathe"]]:
+		_v7_put(pair[0],pair[1])
+	wake_voxels._rebuild_from_state()
+	_look_at_point(Vector3(0,0.8,5.5),Vector3(1,2,12))
+	await _wait(0.5)
+	await _save_shot("v08_stations.png")
+	_look_at_point(Vector3(5.5,0.3,6),Vector3(7,1.0,9))
+	await _wait(0.4)
+	await _save_shot("v08_bed_two_blocks.png")
+	_look_at_point(Vector3(4.5,0.8,5.5),Vector3(6.5,1.0,8.5))
+	await _wait(0.4)
+	await _save_shot("v08_idea_catcher.png")
+	var st = get_tree().get_first_node_in_group("storage_ui")
+	GameState.storage_slots(cc)[0] = {"id":"stone","count":99}
+	GameState.storage_slots(cc)[1] = {"id":"leaves","count":100}
+	GameState.catcher_eat(cc)
+	st.open(cc,true)
+	await _wait(0.4)
+	await _save_shot("v08_idea_storage_wake.png")
+	st.close()
+	switcher.enter_dream()
+	await _wait(0.5)
+	st.open(cc,true)
+	await _wait(0.4)
+	await _save_shot("v08_idea_storage_dream.png")
+	st.close()
+	switcher.wake_up()
+	await _wait(0.5)
+	GameState.storage_slots(Vector3i(2,0,5))[0] = {"id":"planks","count":32}
+	st.open(Vector3i(2,0,5),false)
+	await _wait(0.4)
+	await _save_shot("v08_chest.png")
+	st.close()
+	menu.open_station("sawmill",true)
+	await _wait(0.4)
+	await _save_shot("v08_sawmill_recipes.png")
+	menu.close()
+	menu.open_station("alchemy")
+	await _wait(0.4)
+	await _save_shot("v08_alchemy_recipe.png")
+	menu.close()
+	menu.open_lathe()
+	await _wait(0.4)
+	await _save_shot("v08_lathe_pickaxe2.png")
+	menu.close()
+	_look_at_point(Vector3(-3.5,0.9,5.5),Vector3(-3.5,0.2,8))
+	await _wait(0.4)
+	await _save_shot("v08_door_closed.png")
+	GameState.toggle_door(Vector3i(-4,0,5))
+	await _wait(0.4)
+	await _save_shot("v08_door_open.png")
+	for id in ["pickaxe","pickaxe2","sword","sword2"]:
+		_v7_select(id)
+		GameState.item_slots[GameState.selected_slot]["durability"] = 35 if not id.ends_with("2") else 175
+		GameState.inventory_changed.emit()
+		await _wait(0.3)
+		await _save_shot("v08_"+id+"_hand.png")
+	_v7_goto(Vector3(53,15,40))
+	player.flying = true
+	_look_at_point(Vector3(40,1,24),Vector3(53,15,40))
+	await _wait(0.5)
+	await _save_shot("v08_settlement.png")
+	# Материалы глубины и падение дропа на демонстрационном стенде.
+	_v7_goto(Vector3(8,0.1,12))
+	player.flying = false
+	for pair in [[Vector3i(8,0,8),"ground"],[Vector3i(9,0,8),"stone"],[Vector3i(10,0,8),"deep_stone"],[Vector3i(11,0,8),"mossy_ruin"]]:
+		_v7_put(pair[0],pair[1])
+	_look_at_point(Vector3(10,0.4,8.5),Vector3(10,0.5,12))
+	await _wait(0.4)
+	await _save_shot("v08_stone_layers.png")
+	var drop: CharacterBody3D = load("res://scripts/block_pickup.gd").new()
+	drop.configure("stone")
+	drop.position = Vector3(10,3,8)
+	_look_at_point(Vector3(10,2,8),Vector3(10,0.6,13))
+	wake_world.add_child(drop)
+	await _wait(0.2)
+	await _save_shot("v08_falling_drop.png")
+	# Шов и маяк: постановочная иллюстрация самого эффекта (защита отдельно тестируется).
+	_v7_put(Vector3i(11,0,5),"beacon")
+	_look_at_point(Vector3(10,1,5),Vector3(11,0.5,10))
+	load("res://scripts/seam_effect.gd").spawn(wake_world,Vector3(9,0.2,5))
+	await _wait(0.16)
+	await _save_shot("v08_seam_beacon.png")
+	# Разные уровни текучей воды на стенде.
+	var cells := []
+	for x in range(13,18):
+		for z in range(5,8):
+			cells.append(Vector3i(x,-1,z))
+	_v7_dig(cells)
+	for x in range(13,18):
+		wake_chunks._water_set(Vector3i(x,0,6),8-(x-13))
+	wake_chunks._rebuild_water_meshes()
+	_look_at_point(Vector3(15,0.2,6.5),Vector3(16,0.5,10))
+	await _wait(0.1)
+	await _save_shot("v08_water_sides.png")
+	print("SHOT08 complete")
 	get_tree().quit(0)

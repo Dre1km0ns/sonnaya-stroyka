@@ -53,6 +53,7 @@ light_energy = 0.6
 omni_range = 15.0
 
 [node name="Hint" type="Label3D" parent="."]
+visible = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, -6)
 text = "Сон — строй свободно, якорь то, что заберёшь"
 font_size = 40

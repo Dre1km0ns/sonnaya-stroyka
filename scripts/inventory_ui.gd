@@ -93,11 +93,19 @@ func _build() -> void:
 	cap.add_theme_font_size_override("font_size", 13)
 	special_box.add_child(cap)
 	var special_row := HBoxContainer.new()
-	special_row.add_theme_constant_override("separation", 4)
+	special_row.add_theme_constant_override("separation", 6)
+	special_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	special_box.add_child(special_row)
 	for sp in ItemDB.SPECIAL:
 		var sv: Panel = SlotView.new()
 		sv.index = int(sp["anchor"])
+		sv.custom_minimum_size = Vector2(117, 92)
+		sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sv.set_meta("standing_figure", true)
+		sv._icon.offset_left = 18
+		sv._icon.offset_right = -18
+		sv._icon.offset_top = 6
+		sv._icon.offset_bottom = -6
 		sv.slot_clicked.connect(_on_special_clicked)
 		special_row.add_child(sv)
 		_specials.append([sv, str(sp["id"])])
@@ -191,6 +199,7 @@ func close() -> void:
 
 
 func _return_held() -> void:
+	var payload := _held.duplicate(true)
 	var id := str(_held.get("id", ""))
 	var cnt := int(_held.get("count", 0))
 	_held = {}
@@ -198,8 +207,12 @@ func _return_held() -> void:
 	if id == "" or cnt <= 0:
 		return
 	if _held_from >= 0 and str(GameState.get_slot(_held_from).get("id", "")) == "":
-		GameState.set_slot(_held_from, {"id": id, "count": cnt})
+		GameState.set_slot(_held_from, payload)
 		return
+	for i in range(GameState.ITEM_SLOT_COUNT):
+		if GameState.get_slot(i).get("id", "") == "":
+			GameState.set_slot(i,payload)
+			return
 	var added: int = GameState.add_item_count(id, cnt)
 	if added < cnt:
 		GameState.block_stash[id] = int(GameState.block_stash.get(id, 0)) + cnt - added
@@ -242,14 +255,17 @@ func _on_slot_clicked(i: int, button: int, shift: bool) -> void:
 			if sid == "" or scount <= 0:
 				return
 			var take := int(ceil(scount / 2.0))
-			_held = {"id": sid, "name": slot.get("name", sid), "count": take}
+			_held = slot.duplicate(true)
+			_held["count"] = take
 			_held_from = i
 			slot["count"] = scount - take
 			GameState.set_slot(i, slot)
 		else:
 			var hid2 := str(_held["id"])
 			if sid == "" or (sid == hid2 and scount < ItemDB.max_stack(hid2)):
-				GameState.set_slot(i, {"id": hid2, "count": scount + 1 if sid == hid2 else 1})
+				var one := _held.duplicate(true)
+				one["count"] = scount + 1 if sid == hid2 else 1
+				GameState.set_slot(i, one)
 				_held["count"] = int(_held["count"]) - 1
 				if int(_held["count"]) <= 0:
 					_held = {}
@@ -275,12 +291,14 @@ func _refresh() -> void:
 		var d: Dictionary = GameState.get_slot(i)
 		var id := str(d.get("id", ""))
 		s.set_item(id, int(d.get("count", 0)), i == GameState.selected_slot, GameState.is_infinite_slot(i))
+		s.set_durability(int(d.get("durability", GameState.tool_max(id))), GameState.tool_max(id))
 	for pair in _specials:
 		var sv = pair[0]
 		var sid: String = pair[1]
 		var cnt: int = GameState.special_display_count(sid)
 		var sel: bool = sv.index >= 0 and sv.index == int(GameState.selected_anchor)
 		sv.set_item(sid, cnt, sel, cnt >= GameState.INF_COUNT, true)
+		sv._icon.texture = load("res://assets/icons/standing_%s.png" % sid)
 	if _held.is_empty():
 		_held_view.visible = false
 	else:

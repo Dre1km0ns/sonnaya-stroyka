@@ -71,6 +71,11 @@ func _build() -> void:
 	_hint.add_theme_font_size_override("font_size", 12)
 	_hint.add_theme_color_override("font_color", Color(0.95, 0.9, 0.8))
 	box.add_child(_hint)
+	var close_btn := Button.new()
+	close_btn.name = "CloseButton"
+	close_btn.text = "Закрыть"
+	close_btn.pressed.connect(close)
+	box.add_child(close_btn)
 
 
 func open() -> void:
@@ -84,6 +89,7 @@ func open() -> void:
 
 
 func close() -> void:
+	GameState.modal_closed_frame = Engine.get_process_frames()
 	_open = false
 	visible = false
 	GameState.pillow_open = false
@@ -114,7 +120,7 @@ func _refresh() -> void:
 	_title.text = "Под подушкой" + ("  — пусто (крафт хилок во сне: 50 осыпи)" if n == 0 else "")
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if not _open:
 		return
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pillow_check"):

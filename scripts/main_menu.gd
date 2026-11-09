@@ -20,6 +20,7 @@ var _del_btn: Button
 var _del_armed := false
 var _name_edit: LineEdit
 var _seed_edit: LineEdit
+var _tutorial: CheckButton
 var _peaceful: CheckButton
 var _seed_info: Label
 var _env: Environment
@@ -39,6 +40,8 @@ func _ready() -> void:
 	var gsets := get_node_or_null("/root/GameSettings")
 	if gsets:
 		gsets.settings_changed.connect(func() -> void: gsets.apply_environment(_env))
+	if "--shots08-menu" in OS.get_cmdline_user_args():
+		call_deferred("_capture_v08_menu")
 	if "--menu-shots" in OS.get_cmdline_user_args():
 		call_deferred("_capture_shots")
 
@@ -156,7 +159,7 @@ func _build_ui() -> void:
 	for k in _screens.keys():
 		_ui.add_child(_screens[k])
 	var ver := Label.new()
-	ver.text = "Сонная стройка v0.7 · Godot 4.7"
+	ver.text = "Сонная стройка v0.8 · Godot 4.7"
 	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	ver.offset_left = 14
 	ver.offset_top = -32
@@ -299,6 +302,10 @@ func _build_create_screen() -> Control:
 	_peaceful = CheckButton.new()
 	_peaceful.text = "Мирный режим (враги не появляются)"
 	box.add_child(_peaceful)
+	_tutorial = CheckButton.new()
+	_tutorial.text = "Пройти обучение?"
+	_tutorial.button_pressed = true
+	box.add_child(_tutorial)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	box.add_child(row)
@@ -422,6 +429,8 @@ func _create_world() -> void:
 	var stext := _seed_edit.text.strip_edges()
 	var sv := GameState.seed_from_text(stext)
 	var meta := WorldStore.create_world(_name_edit.text, stext, sv, _peaceful.button_pressed)
+	meta["tutorial_enabled"] = _tutorial.button_pressed
+	WorldStore.write_meta(str(meta["folder"]), meta)
 	_start_world(meta)
 
 
@@ -429,6 +438,7 @@ func _start_world(meta: Dictionary) -> void:
 	var folder := str(meta.get("folder", ""))
 	GameState.begin_world(str(meta.get("name", "Мир")), folder, str(meta.get("seed_text", "")),
 		WorldStore.meta_seed(meta), bool(meta.get("peaceful", false)))
+	GameState.tutorial_enabled = bool(meta.get("tutorial_enabled", true))
 	WorldStore.touch(folder)
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
@@ -473,4 +483,11 @@ func _capture_shots() -> void:
 	_show("main")
 	_open_settings()
 	await _snap("v05_settings.png")
+	get_tree().quit(0)
+
+
+func _capture_v08_menu() -> void:
+	_show("create")
+	await get_tree().create_timer(1.0).timeout
+	await _snap("v08_tutorial_toggle.png")
 	get_tree().quit(0)

@@ -4,6 +4,8 @@ extends Control
 var _open: bool = false
 var _at_workbench: bool = false
 var _at_lathe: bool = false
+var _station_id := ""
+var _upgraded := false
 var _selected: int = 0
 var _recipes: Array = []
 var _title: Label
@@ -96,12 +98,14 @@ func _build() -> void:
 
 
 func open_general() -> void:
+	_station_id = ""
 	_at_workbench = false
 	_at_lathe = false
 	_show()
 
 
 func open_workbench() -> void:
+	_station_id = ""
 	_at_workbench = true
 	_at_lathe = false
 	_show()
@@ -110,6 +114,7 @@ func open_workbench() -> void:
 func open_lathe() -> void:
 	## v0.7: Станок — свой список рецептов (без верстачных).
 	_at_workbench = false
+	_station_id = ""
 	_at_lathe = true
 	_show()
 
@@ -126,7 +131,7 @@ func visible_recipe_ids() -> Array:
 
 
 func _ctx() -> Dictionary:
-	return {"is_dream": GameState.is_dream(), "at_workbench": _at_workbench, "at_lathe": _at_lathe}
+	return {"station": _station_id, "upgraded": _upgraded, "is_dream": GameState.is_dream(), "at_workbench": _at_workbench, "at_lathe": _at_lathe}
 
 
 func toggle() -> void:
@@ -138,6 +143,7 @@ func toggle() -> void:
 
 func close() -> void:
 	_open = false
+	_station_id = ""
 	_at_workbench = false
 	_at_lathe = false
 	visible = false
@@ -168,6 +174,8 @@ func _rebuild() -> void:
 		ch.queue_free()
 	_rows.clear()
 	_title.text = "Станок" if _at_lathe else ("Верстак" if _at_workbench else "Крафт")
+	if _station_id != "":
+		_title.text = "Лесопилка" if _station_id == "sawmill" else "Алхимический стол"
 	var ctx := _ctx()
 	_recipes = GameState.get_visible_recipes(ctx)
 	if _recipes.is_empty():
@@ -246,3 +254,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			_craft_selected()
 			get_viewport().set_input_as_handled()
+
+
+func open_station(id: String, upgraded: bool = false) -> void:
+	_at_workbench = false
+	_at_lathe = false
+	_station_id = id
+	_upgraded = upgraded
+	_show()

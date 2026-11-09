@@ -74,6 +74,10 @@ func _ready() -> void:
 	var pil_script: GDScript = load("res://scripts/pillow_ui.gd")
 	pillow_ui = pil_script.new()
 	$Root.add_child(pillow_ui)
+	var storage: Control = load("res://scripts/storage_ui.gd").new()
+	$Root.add_child(storage)
+	var context: Control = load("res://scripts/context_hints.gd").new()
+	$Root.add_child(context)
 	var death_script: GDScript = load("res://scripts/death_menu.gd")
 	death_menu = death_script.new()
 	$Root.add_child(death_menu)
@@ -84,7 +88,7 @@ func _ready() -> void:
 	GameState.toast.connect(show_toast)
 	_on_world(GameState.is_dream())
 	_refresh_inv()
-	_on_clarity(GameState.clarity, GameState.CLARITY_MAX)
+	_on_clarity(GameState.clarity, GameState.dream_clarity_max())
 	if hint_label:
 		hint_label.visible = false
 		hint_label.text = ""
@@ -551,6 +555,7 @@ func _refresh_inv() -> void:
 	for i in range(_hotbar.size()):
 		var d: Dictionary = GameState.get_slot(i)
 		_hotbar[i].set_item(str(d.get("id", "")), int(d.get("count", 0)), i == GameState.selected_slot, GameState.is_infinite_slot(i))
+		_hotbar[i].set_durability(int(d.get("durability", GameState.tool_max(str(d.get("id", ""))))), GameState.tool_max(str(d.get("id", ""))))
 	for pair in _specials:
 		var sv = pair[0]
 		var sid: String = pair[1]

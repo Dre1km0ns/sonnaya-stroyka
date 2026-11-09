@@ -23,6 +23,10 @@ const NIGHT_SPAWN_FACTOR := 0.6
 var _next_spawn_at: float = 45.0
 var _unstable_cd: float = 18.0
 var _enemy_script: GDScript
+var _ghost_respawn_at: Dictionary = {}
+var _ghost_present: Dictionary = {}
+const GHOST_RESPAWN_DELAY := 25.0
+const MAX_GHOSTS_PER_SPOT := 3
 var _ghost_script: GDScript
 const MODE_CHASE := 0
 const MODE_SCATTER := 1
@@ -81,6 +85,8 @@ func to_save_dict() -> Dictionary:
 		"unstable_cd": _unstable_cd,
 		"enemy_count": _count_enemies(),
 		"ghost_count": _count_ghosts(),
+		"ghost_respawn_at": _ghost_respawn_at.duplicate(),
+		"ghost_present": _ghost_present.duplicate(),
 		"ghost_mode": ghost_mode,
 		"mode_timer": _mode_timer,
 	}
@@ -93,6 +99,12 @@ func apply_save_dict(d: Dictionary) -> void:
 	_unstable_cd = float(d.get("unstable_cd", 18.0))
 	ghost_mode = int(d.get("ghost_mode", MODE_SCATTER))
 	_mode_timer = float(d.get("mode_timer", 7.0))
+	_ghost_respawn_at.clear()
+	_ghost_present.clear()
+	for k in d.get("ghost_respawn_at",{}):
+		_ghost_respawn_at[int(k)] = float(d.ghost_respawn_at[k])
+	for k in d.get("ghost_present",{}):
+		_ghost_present[int(k)] = bool(d.ghost_present[k])
 	if not mobs_can_spawn():
 		return
 	# Добить до сохранённого числа врагов (сессия могла быть пустой)
@@ -210,6 +222,8 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 		return
 	if _count_all_enemies() >= enemy_cap():
 		return
+	if GameState.beacon_protects(Vector3i(floori(pos.x), floori(pos.y), floori(pos.z))):
+		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos
 	if elite and e.has_method("configure_elite"):
@@ -217,6 +231,7 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 	elif elite:
 		e.set("elite", true)
 	wake_root.add_child(e)
+	load("res://scripts/seam_effect.gd").spawn(wake_root, pos)
 
 
 func _pulse_unstable_seam() -> void:
@@ -228,13 +243,15 @@ func _pulse_unstable_seam() -> void:
 	for cell in GameState.wake_blocks.keys():
 		var c: Vector3i = cell
 		var wp := Vector3(float(c.x) + 0.5, float(c.y) + 0.5, float(c.z) + 0.5)
-		if player.global_position.distance_to(wp) <= 6.0:
+		if player.global_position.distance_to(wp) <= 6.0 and not GameState.beacon_protects(c):
 			victims.append(c)
 	victims.shuffle()
 	for c2 in victims:
 		if ripped >= 2:
 			break
-		GameState.wake_blocks.erase(c2)
+		if not GameState.destroy_wake_structure(c2,true):
+			continue
+		load("res://scripts/seam_effect.gd").spawn(wake_root, Vector3(c2) + Vector3.ONE*0.5)
 		# Нестабильный шов НЕ даёт осыпь — чистая потеря (хардкор)
 		ripped += 1
 		for vox in get_tree().get_nodes_in_group("voxel_world"):
@@ -268,15 +285,25 @@ func _ensure_ghosts() -> void:
 		return
 	if _ghost_script == null or wake_root == null:
 		return
-	if _count_ghosts() >= 4:
-		return
-	var have: Dictionary = {}
+	var counts: Dictionary = {}
 	for n in get_tree().get_nodes_in_group("enemy_ghost"):
-		have[int(n.get("kind"))] = true
+		if not bool(n.get("_dead")):
+			var k := int(n.get("kind"))
+			counts[k] = int(counts.get(k, 0)) + 1
 	for i in range(4):
-		if have.has(i):
-			continue
-		_spawn_ghost(i, GHOST_SPOTS[i], GHOST_CORNERS[i])
+		var have := int(counts.get(i, 0))
+		if _ghost_can_spawn(i,have):
+			_spawn_ghost(i,GHOST_SPOTS[i],GHOST_CORNERS[i])
+
+
+func _ghost_can_spawn(i: int, have: int) -> bool:
+	if have > 0:
+		_ghost_present[i] = true
+		return false
+	if bool(_ghost_present.get(i,false)):
+		_ghost_present[i] = false
+		_ghost_respawn_at[i] = awake_time+GHOST_RESPAWN_DELAY
+	return have < MAX_GHOSTS_PER_SPOT and awake_time >= float(_ghost_respawn_at.get(i,0.0))
 
 
 func _spawn_ghost(kind: int, pos: Vector3, corner: Vector3) -> void:

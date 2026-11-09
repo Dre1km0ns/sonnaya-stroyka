@@ -68,10 +68,10 @@ static func is_solid_cell(query: Node, wx: int, wz: int) -> bool:
 	var cm := query if query != null and query.has_method("is_world_wall") else _chunk_manager(query)
 	if cm != null and cm.has_method("is_world_wall") and cm.is_world_wall(wx, wz):
 		return true
-	if GameState.wake_blocks.has(Vector3i(wx, 0, wz)):
+	if GameState.wake_solid(Vector3i(wx, 0, wz)):
 		return true
 	var h := maxi(cell_height(query, wx, wz), 0)
-	if h > 0 and GameState.wake_blocks.has(Vector3i(wx, h, wz)):
+	if h > 0 and GameState.wake_solid(Vector3i(wx, h, wz)):
 		return true
 	return false
 

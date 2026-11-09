@@ -162,3 +162,9 @@ func _on_night(night: bool) -> void:
 	var tag := get_node_or_null("Tag") as Label3D
 	if tag:
 		tag.modulate.a = 0.25 if night else 1.0
+
+
+func _process(_delta: float) -> void:
+	for child in get_children():
+		if child is Label3D:
+			child.visible = false

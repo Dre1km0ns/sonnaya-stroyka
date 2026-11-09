@@ -36,6 +36,11 @@ func _on_wake_resolved(_t: int, _d: int, _m: int) -> void:
 func _rebuild_from_state() -> void:
 	_clear_all()
 	var source: Dictionary = GameState.dream_blocks if is_dream_layer else GameState.wake_blocks
+	if is_dream_layer:
+		source = source.duplicate(true)
+		for c in GameState.wake_blocks:
+			if GameState.wake_blocks[c].get("kind", "") in ["idea_catcher", "catcher_top"]:
+				source[c] = GameState.wake_blocks[c]
 	for cell in source.keys():
 		var data: Dictionary = source[cell]
 		_spawn_visual(cell, data)
@@ -88,8 +93,10 @@ func refresh_block(cell: Vector3i, data: Dictionary) -> void:
 
 func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	## v0.6: пиксельные текстуры из общего атласа (BlockTex) вместо однотонных цветов.
-	var mi := MeshInstance3D.new()
 	var kind: String = str(data.get("kind", "drift"))
+	if kind in ["bed_foot", "door_top", "catcher_top"]:
+		return
+	var mi := MeshInstance3D.new()
 	var anchored: bool = bool(data.get("anchored", false))
 	var mutant: bool = bool(data.get("mutant", false)) or kind == "mouth"
 	var tex_kind := kind
@@ -107,12 +114,19 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	elif mutant:
 		tex_kind = "mouth"
 	if kind == "bed":
-		mi.mesh = BlockTex.bed_mesh(1.0)
-	elif kind == "lathe":
-		mi.mesh = BlockTex.lathe_mesh()
+		mi.mesh = BlockTex.bed_mesh(1.0 if data.get("legacy_compact",false) else 2.0)
+	elif kind in ["lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door"]:
+		mi.mesh = BlockTex.station_mesh(kind)
 	else:
 		mi.mesh = BlockTex.cube_mesh(tex_kind, size, is_dream_layer, tint)
 	mi.position = cell_to_world(cell)
+	if kind == "bed" and not data.get("legacy_compact",false):
+		mi.position.z += 0.5
+	if kind == "door":
+		mi.position.y += 0.5
+		if bool(data.get("open", false)):
+			mi.rotation.y = PI / 2.0
+			mi.position.x -= 0.4
 	add_child(mi)
 	_meshes[cell] = mi
 	if kind == "torch":
@@ -188,8 +202,16 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		shape.size = Vector3(block_size, block_size * 1.2, block_size)
 		body.position = mi.position + Vector3(0, 0.10, 0)
 	elif kind == "bed":
-		shape.size = Vector3(block_size, 0.56, block_size)
+		shape.size = Vector3(block_size,0.56,block_size*(1.0 if data.get("legacy_compact",false) else 2.0))
 		body.position = mi.position + Vector3(0, -0.22, 0)
+	elif kind == "door":
+		shape.size = Vector3(1.0, 2.0, 0.16)
+		body.rotation = mi.rotation
+		if bool(data.get("open", false)):
+			body.collision_layer = 0
+	elif kind == "idea_catcher":
+		shape.size = Vector3(0.9, 2.0, 0.9)
+		body.position.y += 0.5
 	else:
 		shape.size = Vector3.ONE * block_size
 	col.shape = shape

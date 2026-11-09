@@ -85,10 +85,12 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("scale"))
 		"scale_head":
 			return [tile("scale"), tile("scale"), tile("scale"), tile("scale"), tile("scale"), tile("scale_head")]
+		"mossy_ruin":
+			return _all(tile("brick_mossy"))
 		"ruin":
 			if dream:
 				return _all(tile("dream_brick"))
-			return _all(tile("brick_mossy") if variant % 3 == 0 else tile("brick"))
+			return _all(tile("brick"))
 		"log":
 			return _f(tile("log_side"), tile("log_top"), tile("log_top"))
 		"leaves":
@@ -261,3 +263,61 @@ static func sword2_mesh() -> ArrayMesh:
 	var m := stream_to_mesh(st)
 	_cubes["sword2_mesh"] = m
 	return m
+
+
+static func station_mesh(kind: String) -> ArrayMesh:
+	if kind == "lathe":
+		return lathe_mesh()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if kind == "door":
+		_mesh_part(st, "planks", Vector3(-0.5,-1,-0.08), Vector3(1,2,0.16))
+		_mesh_part(st, "beacon", Vector3(0.32,-0.12,-0.13), Vector3(0.1,0.12,0.08))
+	elif kind == "chest":
+		_mesh_part(st, "planks", Vector3(-0.45,-0.5,-0.45), Vector3(0.9,0.75,0.9))
+		_mesh_part(st, "log", Vector3(-0.47,0.24,-0.47), Vector3(0.94,0.15,0.94))
+		_mesh_part(st, "beacon", Vector3(-0.08,0.05,0.46), Vector3(0.16,0.18,0.04))
+	else:
+		for x in [-0.35,0.25]:
+			for z in [-0.35,0.25]:
+				_mesh_part(st,"log",Vector3(x,-0.5,z),Vector3(0.1,0.7,0.1))
+		_mesh_part(st,"workbench",Vector3(-0.48,0.08,-0.48),Vector3(0.96,0.18,0.96))
+		if kind == "sawmill":
+			_mesh_part(st,"stone",Vector3(-0.08,0.26,-0.3),Vector3(0.16,0.38,0.6))
+			_mesh_part(st,"log",Vector3(-0.4,0.26,0.15),Vector3(0.8,0.2,0.2))
+		elif kind == "alchemy":
+			_mesh_part(st,"stone",Vector3(-0.5,0.24,-0.5),Vector3(1,0.09,1))
+			_mesh_part(st,"mouth",Vector3(-0.2,0.33,-0.2),Vector3(0.18,0.35,0.18))
+			_mesh_part(st,"beacon",Vector3(0.15,0.33,0.1),Vector3(0.22,0.25,0.22))
+		elif kind == "idea_catcher":
+			_mesh_part(st,"planks",Vector3(-0.42,-0.45,-0.42),Vector3(0.84,0.6,0.84))
+			# Левитирующее кольцо из 12 сегментов, с нитью в центре.
+			for i in range(12):
+				var a := float(i)*TAU/12.0
+				_mesh_part(st,"drift_dream",Vector3(cos(a)*0.34-0.05,0.95+sin(a)*0.34,-0.05),Vector3(0.1,0.1,0.1))
+			_mesh_part(st,"beacon",Vector3(-0.02,0.58,-0.02),Vector3(0.04,0.75,0.04))
+	st.set_material(material())
+	return st.commit()
+
+static func _mesh_part(st: SurfaceTool, kind: String, mn: Vector3, size: Vector3) -> void:
+	# Кубы используют тот же атлас/UV, без новых материалов.
+	var mesh := cube_mesh(kind,size)
+	var xf := Transform3D(Basis.IDENTITY,mn+size*0.5)
+	st.append_from(mesh,0,xf)
+
+static func tool_mesh(kind: String) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var head := "stone" if kind.ends_with("2") else "planks"
+	if kind.begins_with("pickaxe"):
+		_mesh_part(st,"log",Vector3(-0.04,-0.4,-0.04),Vector3(0.08,0.7,0.08))
+		_mesh_part(st,head,Vector3(-0.32,0.24,-0.06),Vector3(0.64,0.12,0.12))
+		_mesh_part(st,head,Vector3(0.25,0.1,-0.06),Vector3(0.1,0.16,0.12))
+	else:
+		_mesh_part(st,"log",Vector3(-0.04,-0.4,-0.04),Vector3(0.08,0.24,0.08))
+		_mesh_part(st,"planks",Vector3(-0.18,-0.17,-0.06),Vector3(0.36,0.07,0.12))
+		_mesh_part(st,head,Vector3(-0.065,-0.1,-0.035),Vector3(0.13,0.65,0.07))
+		_mesh_part(st,head,Vector3(-0.045,0.55,-0.035),Vector3(0.09,0.06,0.07))
+		_mesh_part(st,head,Vector3(-0.025,0.61,-0.035),Vector3(0.05,0.06,0.07))
+	st.set_material(material())
+	return st.commit()

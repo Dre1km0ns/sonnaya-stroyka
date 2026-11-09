@@ -119,3 +119,17 @@ func _gui_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT:
 			slot_clicked.emit(index, event.button_index, event.shift_pressed)
 			accept_event()
+
+
+var _durability := -1
+var _durability_max := 0
+func set_durability(value: int, maximum: int) -> void:
+	_durability = value
+	_durability_max = maximum
+	queue_redraw()
+
+func _draw() -> void:
+	if _durability_max > 0:
+		var ratio := clampf(float(_durability) / _durability_max, 0.0, 1.0)
+		draw_rect(Rect2(5, size.y - 7, size.x - 10, 4), Color(0.04, 0.04, 0.04))
+		draw_rect(Rect2(5, size.y - 7, (size.x - 10) * ratio, 4), Color(1.0 - ratio, ratio, 0.15))
