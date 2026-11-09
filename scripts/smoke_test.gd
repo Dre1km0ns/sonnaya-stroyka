@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.5: меню/миры/сиды/инвентарь 9+27/дев-сид + всё из v0.4.5.
+## Headless smoke v0.6 (+ деревья, сутки 24 мин, луна, клавиши, босс 500 HP, предвестие):\n## v0.5: меню/миры/сиды/инвентарь 9+27/дев-сид + всё из v0.4.5.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -497,20 +497,22 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	assert(boss.is_in_group("block_mother"))
-	assert(boss.hp == 1000)
-	assert(boss.max_hp == 1000)
+	assert(boss.hp == 500)
+	assert(boss.max_hp == 500)
+	boss.take_damage(10)           # SPAWN — неуязвима
+	assert(boss.hp == 500)
+	boss._enter(boss.S.IDLE)
 	boss.take_damage(10)
-	assert(boss.hp == 990)
+	assert(boss.hp == 490)
 	assert(boss.get_tree() != null)
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
 	assert(td.MAX_ENEMIES == 7)
 	var dc_script: GDScript = load("res://scripts/day_cycle.gd")
 	var dc: Node = dc_script.new()
-	assert(is_equal_approx(dc.DAY_LENGTH, 300.0))
 	dc.time_of_day = 10.0
 	assert(not dc.is_night())
-	dc.time_of_day = 301.0
+	dc.time_of_day = 1100.0
 	assert(dc.is_night())
 	root.add_child(dc)
 
@@ -570,8 +572,13 @@ func _run() -> void:
 		push_error("SMOKE: v0.5 checks FAILED")
 		quit(1)
 		return
+	await _v06_checks(gs_script, cm_script)
+	if not _v06_ok:
+		push_error("SMOKE: v0.6 checks FAILED")
+		quit(1)
+		return
 
-	print("SMOKE: OK v0.5 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
+	print("SMOKE: OK v0.6 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
@@ -705,7 +712,7 @@ func _v05_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	assert(gm.nails == 2 and gm.anchors3 == 1)
 	assert(_slot_of(gm, "nail") == -1)
 	var v5: Dictionary = gm.to_save_dict()
-	assert(int(v5["version"]) == 5)
+	assert(int(v5["version"]) >= 5)
 	var gm2: Node = gs_script.new()
 	root.add_child(gm2)
 	gm2.apply_save_dict(JSON.parse_string(JSON.stringify(v5)))
@@ -740,3 +747,208 @@ func _v05_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	assert(hb != null and hb.get_child_count() == 9)
 	print("SMOKE: v0.5 checks OK")
 	_v05_ok = true
+
+
+var _v06_ok := false
+
+
+func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
+	print("SMOKE: v0.6 checks")
+	var G: Node = root.get_node("GameState")
+	G.reset_state()
+	G.peaceful = false
+	assert(not G.is_dream())
+	# --- Сутки 24 минуты, фазы ---
+	assert(is_equal_approx(G.DAY_CYCLE, 1440.0))
+	assert(G.phase_at(30.0) == "morning")
+	assert(G.phase_at(500.0) == "day")
+	assert(G.phase_at(900.0) == "evening")
+	assert(G.phase_at(1200.0) == "night")
+	assert(G.phase_at(1440.0 + 30.0) == "morning")
+	assert(G.clock_text(0.0) == "06:00")
+	assert(G.clock_text(1080.0) == "00:00")
+	# --- Луна: видна и светит синевато только ночью ---
+	var holder := Node3D.new()
+	root.add_child(holder)
+	var sun := DirectionalLight3D.new()
+	holder.add_child(sun)
+	var env := Environment.new()
+	var dc: Node = load("res://scripts/day_cycle.gd").new()
+	holder.add_child(dc)
+	dc.setup(sun, env)
+	dc.set_time(1230.0)
+	assert(G.is_night() and dc.is_night())
+	var moon: DirectionalLight3D = dc.get_moon()
+	assert(moon != null and moon.visible and moon.light_energy > 0.15)
+	assert(moon.light_color.b > moon.light_color.r)
+	assert(sun.light_energy < 0.05 or not sun.visible)
+	assert(dc.moon_dir().y > 0.2)   # луна над горизонтом
+	dc.set_time(500.0)
+	assert(not dc.is_night())
+	assert(moon.light_energy < 0.01 or not moon.visible)
+	assert(sun.light_energy > 0.5)
+	holder.queue_free()
+	# --- Деревья: детерминированно по сидам, по всему миру, с коллизией ---
+	var cm1: Node3D = cm_script.new()
+	cm1.panorama_mode = true
+	assert(cm1.tree_plan(Vector2i(5, -7)) == cm1.tree_plan(Vector2i(5, -7)))
+	cm1.free()
+	var anchor := Node3D.new()
+	anchor.position = Vector3(40, 0, 40)
+	root.add_child(anchor)
+	var cm: Node3D = cm_script.new()
+	cm.is_dream_layer = false
+	cm.load_radius = 2
+	root.add_child(cm)
+	cm.setup(anchor, 6767676767)
+	for i in range(30):
+		await process_frame
+	var trees: int = cm.count_loaded_trees()
+	assert(trees >= 6)
+	var tree: Dictionary = cm.find_first_tree()
+	assert(not tree.is_empty())
+	var log1: Vector3i = (tree["logs"] as Array)[1]
+	await physics_frame
+	await physics_frame
+	var space := root.get_world_3d().direct_space_state
+	var q := PhysicsPointQueryParameters3D.new()
+	q.position = Vector3(log1) + Vector3(0.5, 0.5, 0.5)
+	q.collide_with_bodies = true
+	var tree_col := space.intersect_point(q).size() > 0
+	assert(tree_col)
+	# --- Ломаем все брёвна → листва постепенно опадает ---
+	var leaves: Array = tree["leaves"]
+	for raw in tree["logs"]:
+		var c: Vector3i = raw
+		assert(G.remove_terrain_cell(c, "log"))
+		cm.rebuild_chunk_at_world(c.x, c.z)
+	var pend: int = cm.pending_leaf_decay()
+	assert(pend > 0)
+	var left_before := 0
+	for raw2 in leaves:
+		if not G.is_terrain_removed(raw2):
+			left_before += 1
+	assert(left_before > 0)   # не мгновенно
+	cm.force_leaf_decay_tick(30.0)
+	assert(cm.pending_leaf_decay() == 0)
+	for raw3 in leaves:
+		assert(G.is_terrain_removed(raw3))
+	# Сохранение: сломанные брёвна/листва — в сейве
+	var blob: Dictionary = G.to_save_dict()
+	var g2: Node = gs_script.new()
+	root.add_child(g2)
+	g2.apply_save_dict(JSON.parse_string(JSON.stringify(blob)))
+	assert(g2.is_terrain_removed((tree["logs"] as Array)[0]))
+	assert(g2.is_terrain_removed(leaves[0]))
+	assert(int(blob["version"]) == 6)
+	cm.queue_free()
+	anchor.queue_free()
+	# --- Бревно → доски (верстак) ---
+	assert(G.find_recipe("planks").size() > 0)
+	# --- Шанс босса + предвестие + флаг в сейве ---
+	var chats: Array = []
+	var cb := func(t: String, _c: Color = Color.WHITE) -> void: chats.append(t)
+	G.chat_message.connect(cb)
+	G.world_seed = 6767676767
+	G.dev_mode = true
+	assert(is_equal_approx(G.boss_spawn_chance(), 0.25))
+	G.dev_mode = false
+	G.world_seed = 12345
+	assert(is_equal_approx(G.boss_spawn_chance(), 0.01))
+	G.boss_next_mine = false
+	G.set_boss_alive(false)
+	assert(not G.on_block_mined(0.5))       # 0.5 ≥ 1% → нет
+	assert(not G.boss_next_mine)
+	assert(not G.on_block_mined(0.005))     # бросок на СЛЕДУЮЩИЙ блок → предвестие
+	assert(G.boss_next_mine)
+	assert(chats.has(G.BOSS_OMEN_TEXT))
+	assert(G.BOSS_OMEN_TEXT == "Вы слышите разъярённые крики убитой горем матери")
+	var b2: Dictionary = G.to_save_dict()
+	var g3: Node = gs_script.new()
+	root.add_child(g3)
+	g3.apply_save_dict(JSON.parse_string(JSON.stringify(b2)))
+	assert(g3.boss_next_mine)
+	assert(G.on_block_mined(0.9))           # следующий блок — босс
+	assert(not G.boss_next_mine)
+	G.chat_message.disconnect(cb)
+	# --- Урон-капы игрока ---
+	G.heal_player_full()
+	var total := 0
+	for k in range(4):
+		total += int(G.damage_player(30, "smoke", true))
+	assert(total <= 70)
+	assert(G.player_hp == 100 - total)
+	G.heal_player_full()
+	# --- Клавиши: переназначение, конфликт, сохранение ---
+	var gset: Node = root.get_node("GameSettings")
+	gset.reset_bindings()
+	var jump_new := {"type": "key", "code": KEY_KP_7}
+	assert(gset.rebind("jump", jump_new) == "")
+	var has_f := false
+	for ev in InputMap.action_get_events("jump"):
+		if ev is InputEventKey and (ev as InputEventKey).physical_keycode == KEY_KP_7:
+			has_f = true
+	assert(has_f)
+	var back_b: Dictionary = gset.bindings["move_back"] if gset.bindings.has("move_back") else gset.bindings["back"]
+	var back_name := "move_back" if gset.bindings.has("move_back") else "back"
+	var fwd_name := "move_forward" if gset.bindings.has("move_forward") else "forward"
+	var fwd_old: Dictionary = gset.bindings[fwd_name]
+	assert(gset.rebind(fwd_name, back_b) == back_name)   # конфликт → обмен
+	assert(gset.bindings[fwd_name] == back_b and gset.bindings[back_name] == fwd_old)
+	var gs_new: Node = load("res://scripts/game_settings.gd").new()
+	gs_new.load_settings()
+	assert(gs_new.bindings["jump"] == jump_new)
+	assert(gs_new.bindings[fwd_name] == back_b)
+	gs_new.free()
+	gset.reset_bindings()
+	assert(gset.bindings["jump"] == gset.default_binding("jump"))
+	# --- Босс: 500 HP, фазы 66/33 с переходами, уязвимость ---
+	var host := Node3D.new()
+	root.add_child(host)
+	var bs: GDScript = load("res://scripts/block_mother.gd")
+	for old in get_nodes_in_group("block_mother"):
+		old.free()
+	var boss: CharacterBody3D = bs.new()
+	host.add_child(boss)
+	await process_frame
+	assert(boss.hp == 500 and boss.phase == 1)
+	boss._enter(boss.S.IDLE)
+	boss.take_damage(400)                 # не проваливается сквозь порог фазы
+	assert(boss.hp == boss.P2_AT)
+	assert(boss.phase == 2 and boss.state == boss.S.TRANSITION)
+	boss.take_damage(50)                  # переход неуязвим
+	assert(boss.hp == boss.P2_AT)
+	boss._enter(boss.S.STAGGER)
+	boss._stagger_len = 2.0
+	assert(boss.is_vulnerable())
+	boss.take_damage(10)                  # ×1.5 в окне уязвимости
+	assert(boss.hp == boss.P2_AT - 15)
+	boss.take_damage(400)
+	assert(boss.hp == boss.P3_AT and boss.phase == 3)
+	boss._enter(boss.S.STAGGER)
+	boss.take_damage(400)
+	assert(boss.hp <= 0 or boss.state == boss.S.DEAD)
+	# Пити-таймер блоклингов и жёсткий кап
+	var b3: CharacterBody3D = bs.new()
+	host.add_child(b3)
+	await process_frame
+	var got := 0
+	for r in range(3):
+		if b3.minion_roll(0.99):
+			got += 1
+	assert(got == 1)                       # 3 неудачи подряд → гарантия
+	assert(not b3.minion_roll(0.0) and not b3.minion_roll(0.0))   # локаут 2 приземления
+	assert(b3.MINION_HARD_CAP == 6)
+	for cap in b3.MINION_CAP:
+		assert(int(cap) <= b3.MINION_HARD_CAP)
+	# Телеграфы ≥0.4 с, урон одного удара ≤40% HP
+	for w in b3.WINDUP:
+		assert(float(w) >= 0.4)
+	assert(b3.RAIN_WINDUP >= 0.4 and b3.BRICK_SHADOW >= 0.4 and b3.MARKER_TIME >= 0.4)
+	for dmg in [b3.SLAM_DAMAGE, b3.WAVE_DAMAGE, b3.REASSEMBLE_DAMAGE, b3.BRICK_DAMAGE, b3.CONTACT_DAMAGE]:
+		assert(int(dmg) <= 40)
+	b3.queue_free()
+	host.queue_free()
+	await process_frame
+	print("SMOKE: v0.6 checks OK trees=%d tree_col=%s leaves_pending=%d" % [trees, str(tree_col), pend])
+	_v06_ok = true

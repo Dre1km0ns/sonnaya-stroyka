@@ -111,6 +111,7 @@ func _tint_dream(is_dream: bool) -> void:
 	if _env == null:
 		return
 	if is_dream:
+		_env.background_mode = Environment.BG_COLOR
 		_env.background_color = Color(0.18, 0.14, 0.32)
 		_env.ambient_light_color = Color(0.55, 0.45, 0.75)
 		_env.fog_light_color = Color(0.45, 0.35, 0.65)

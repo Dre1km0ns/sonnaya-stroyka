@@ -99,6 +99,9 @@ func _apply_visual() -> void:
 			mat.emission_energy_multiplier = 0.65
 			mesh_i.material_override = mat
 			add_child(mesh_i)
+	var old_mesh := get_node_or_null("Mesh") as Node3D
+	if old_mesh and get_node_or_null("Model") != null:
+		old_mesh.visible = false   # v0.6: жёлтая сфера из сцены под моделью больше не торчит
 	if get_node_or_null("Collision") == null:
 		var col := CollisionShape3D.new()
 		col.name = "Collision"

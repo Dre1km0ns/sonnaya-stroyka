@@ -59,13 +59,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			GameState.cycle_item_slot(1)
 			get_viewport().set_input_as_handled()
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_BRACKETLEFT:
-			_adjust_mouse_sens(-MOUSE_SENS_STEP)
-		elif event.keycode == KEY_BRACKETRIGHT:
-			_adjust_mouse_sens(MOUSE_SENS_STEP)
-		elif event.keycode >= KEY_1 and event.keycode <= KEY_9:
-			GameState.select_item_slot(event.keycode - KEY_1)
+	if event.is_action_pressed("sens_down"):
+		_adjust_mouse_sens(-MOUSE_SENS_STEP)
+	elif event.is_action_pressed("sens_up"):
+		_adjust_mouse_sens(MOUSE_SENS_STEP)
+	for i in range(9):
+		if event.is_action_pressed("hotbar_%d" % (i + 1)):
+			GameState.select_item_slot(i)
+			break
 
 
 func _adjust_mouse_sens(delta: float) -> void:
@@ -79,13 +80,13 @@ func _physics_process(delta: float) -> void:
 	if GameState.ui_blocked():
 		input_dir = Vector2.ZERO
 	var direction := (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
-	var speed := (SPRINT if Input.is_key_pressed(KEY_SHIFT) else SPEED) * _move_factor()
+	var speed := (SPRINT if Input.is_action_pressed("sprint") else SPEED) * _move_factor()
 
 	if flying:
 		var y_move := 0.0
 		if Input.is_action_pressed("jump"):
 			y_move += 1.0
-		if Input.is_key_pressed(KEY_CTRL):
+		if Input.is_action_pressed("fly_down"):
 			y_move -= 1.0
 		velocity.x = direction.x * FLY_SPEED
 		velocity.z = direction.z * FLY_SPEED

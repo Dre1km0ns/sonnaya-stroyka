@@ -197,6 +197,8 @@ func _physics_process(delta: float) -> void:
 	elif attacking:
 		_Nav.apply_movement(self, Vector3.ZERO, 0.0, delta)
 
+	if dist <= CONTACT_RANGE + 1.0:
+		_Nav.face_point(self, player.global_position, delta)
 	if dist <= CONTACT_RANGE and _steal_cd <= 0.0:
 		_hit_player(player, to_player)
 		_steal_cd = STEAL_COOLDOWN
@@ -223,6 +225,7 @@ func _tick_block_attack() -> bool:
 		_atk_hits = 0
 		return false
 	var ripped: Vector3i = cell
+	_Nav.face_point(self, Vector3(float(ripped.x) + 0.5, 0.0, float(ripped.z) + 0.5), get_physics_process_delta_time())
 	if _atk_cell != ripped:
 		_atk_cell = ripped
 		_atk_hits = 0

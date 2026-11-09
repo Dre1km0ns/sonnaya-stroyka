@@ -33,7 +33,7 @@ func _process(delta: float) -> void:
 			if not (n is Node3D) or not is_instance_valid(n):
 				continue
 			var far := (n as Node3D).global_position.distance_squared_to(pp) > d2
-			if g == "block_mother":
+			if g == "block_mother" or n.is_in_group("block_mother"):
 				far = false
 			var was_far := bool(n.get_meta("_culled", false))
 			if far == was_far:

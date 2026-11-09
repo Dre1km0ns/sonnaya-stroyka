@@ -39,6 +39,16 @@ const HILL_MAX := 4
 const FRAME_BUDGET_USEC := 4000
 
 static var _mat_cache: Dictionary = {}
+const BlockTex := preload("res://scripts/block_tex.gd")
+const TREE_SAFE_RADIUS := 6.0
+const LEAF_DECAY_MIN := 0.6
+const LEAF_DECAY_SPREAD := 9.0
+var _trees_by_chunk: Dictionary = {} # Vector2i -> Array[{logs: Array[Vector3i], leaves: Array[Vector3i]}]
+var _walls_by_chunk: Dictionary = {} # Vector2i -> Array[Vector2i] (стены руин + стволы — для навигации)
+var _decay_queue: Dictionary = {} # Vector3i leaf -> время распада (сек, _clock)
+var _clock: float = 0.0
+var _dirty_chunks: Dictionary = {}
+var _dirty_t: float = 0.0
 static var _reagent_script: GDScript = null
 
 
@@ -230,6 +240,9 @@ func _process(delta: float) -> void:
 	if not panorama_mode and is_dream_layer and not GameState.is_dream():
 		return
 	_tick += delta
+	_clock += delta
+	if not _decay_queue.is_empty() or not _dirty_chunks.is_empty():
+		_process_leaf_decay(delta)
 	if _tick >= 0.2:
 		_tick = 0.0
 		_update_chunks(false)
@@ -376,11 +389,12 @@ func _unload_chunk(coord: Vector2i) -> void:
 			var local: Vector2i = raw
 			_lake_world_cells.erase(Vector2i(coord.x * chunk_size + local.x, coord.y * chunk_size + local.y))
 		_lakes_by_chunk.erase(coord)
-	if _ruin_centers.has(coord):
-		for lx in range(chunk_size):
-			for lz in range(chunk_size):
-				_wall_world_cells.erase(Vector2i(coord.x * chunk_size + lx, coord.y * chunk_size + lz))
-		_ruin_centers.erase(coord)
+	if _walls_by_chunk.has(coord):
+		for w in _walls_by_chunk[coord]:
+			_wall_world_cells.erase(w)
+		_walls_by_chunk.erase(coord)
+	_ruin_centers.erase(coord)
+	_trees_by_chunk.erase(coord)
 	if is_instance_valid(node):
 		node.queue_free()
 
@@ -417,11 +431,14 @@ func _load_chunk(coord: Vector2i) -> void:
 		_plan_ruin(coord, occupied, solids)
 	_add_reagents(root, coord, occupied)
 	_plan_hills(coord, occupied, solids)
+	if not is_dream_layer:
+		_plan_trees(coord, occupied, solids)
 	_solid_by_chunk[coord] = solids
 	_build_chunk_geometry(root, coord, lake_cells, solids)
 	_loaded[coord] = root
 	if not panorama_mode:
 		_sync_physics_tree(root, _physics_active())
+		_check_orphan_leaves(coord)
 
 
 func _value_noise(x: float, z: float) -> float:
@@ -590,7 +607,7 @@ func _plan_ruin(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> vo
 				any_left = true
 				solids[Vector3i(wx, y, wz)] = "ruin"
 			if any_left:
-				_wall_world_cells[Vector2i(wx, wz)] = true
+				_add_wall(coord, Vector2i(wx, wz))
 
 
 func _plan_hills(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> void:
@@ -611,6 +628,211 @@ func _plan_hills(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> v
 				if is_cell_removed(wx, y, wz):
 					continue
 				solids[Vector3i(wx, y, wz)] = "hill"
+
+
+func _add_wall(coord: Vector2i, w: Vector2i) -> void:
+	_wall_world_cells[w] = true
+	if not _walls_by_chunk.has(coord):
+		_walls_by_chunk[coord] = []
+	(_walls_by_chunk[coord] as Array).append(w)
+
+
+# ---------------------------------------------------------------- деревья (v0.6)
+
+func tree_plan(coord: Vector2i) -> Array:
+	## Детерминированные позиции деревьев чанка (зависят от сида): [{base: Vector2i local, h: int}].
+	## Деревья целиком внутри чанка (ствол 3..12 + крона r=2) и не ближе 5 клеток друг к другу.
+	var out: Array = []
+	var density := (_value_noise(float(coord.x) * 0.31 + 100.0, float(coord.y) * 0.31 - 50.0) + 1.0) * 0.5
+	var tries := 2 + int(density * 7.0)
+	for i in range(tries):
+		var lx := 3 + int(_hash01(coord.x * 71 + i * 13, coord.y * 37 - i * 7) * 10.0)
+		var lz := 3 + int(_hash01(coord.x * 19 - i * 5, coord.y * 83 + i * 29) * 10.0)
+		lx = clampi(lx, 3, 12)
+		lz = clampi(lz, 3, 12)
+		var chance := _hash01(coord.x * 7 + i * 101, coord.y * 11 - i * 53)
+		if chance > 0.18 + density * 0.62:
+			continue
+		var ok := true
+		for t in out:
+			var b: Vector2i = t["base"]
+			if absi(b.x - lx) < 5 and absi(b.y - lz) < 5:
+				ok = false
+				break
+		if not ok:
+			continue
+		var h := 4 + (1 if _hash01(coord.x + i * 3, coord.y * 2 + i) > 0.55 else 0)
+		out.append({"base": Vector2i(lx, lz), "h": h, "salt": i})
+	return out
+
+
+func _plan_trees(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> void:
+	var trees: Array = []
+	for t in tree_plan(coord):
+		var b: Vector2i = t["base"]
+		var wx := coord.x * chunk_size + b.x
+		var wz := coord.y * chunk_size + b.y
+		if Vector2(float(wx), float(wz)).length() < TREE_SAFE_RADIUS:
+			continue
+		if occupied.has(b) or height_at(wx, wz) != 0:
+			continue
+		if is_cell_removed(wx, -1, wz):
+			continue
+		var h: int = int(t["h"])
+		var logs: Array = []
+		var leaves: Array = []
+		var trunk_left := false
+		for y in range(h):
+			var lc := Vector3i(wx, y, wz)
+			logs.append(lc)
+			if is_cell_removed(wx, y, wz):
+				continue
+			solids[lc] = "log"
+			if y == 0:
+				trunk_left = true
+		if trunk_left:
+			_add_wall(coord, Vector2i(wx, wz))
+		occupied[b] = "tree"
+		for y2 in range(h - 2, h + 2):
+			var r := 2 if y2 < h else 1
+			for dx in range(-r, r + 1):
+				for dz in range(-r, r + 1):
+					if y2 >= h and r == 1 and y2 == h + 1 and absi(dx) + absi(dz) > 1:
+						continue
+					if r == 2 and absi(dx) == 2 and absi(dz) == 2:
+						if _hash01(wx * 13 + dx + y2 * 7, wz * 17 + dz) > 0.35:
+							continue
+					var c := Vector3i(wx + dx, y2, wz + dz)
+					if solids.has(c) and str(solids[c]) == "log":
+						continue
+					if dx == 0 and dz == 0 and y2 < h:
+						continue
+					leaves.append(c)
+					if is_cell_removed(c.x, c.y, c.z):
+						continue
+					if not solids.has(c):
+						solids[c] = "leaves"
+		trees.append({"logs": logs, "leaves": leaves})
+	_trees_by_chunk[coord] = trees
+
+
+func count_loaded_trees() -> int:
+	var n := 0
+	for k in _trees_by_chunk.keys():
+		n += (_trees_by_chunk[k] as Array).size()
+	return n
+
+
+func get_trees(coord: Vector2i) -> Array:
+	return _trees_by_chunk.get(coord, [])
+
+
+func find_first_tree() -> Dictionary:
+	## Ближайшее к центру дерево среди загруженных чанков.
+	var best: Dictionary = {}
+	var best_d := INF
+	for k in _trees_by_chunk.keys():
+		for t in _trees_by_chunk[k]:
+			var base: Vector3i = (t["logs"] as Array)[0]
+			var d := Vector2(base.x, base.z).length()
+			if d < best_d:
+				best_d = d
+				best = t
+	return best
+
+
+func _tree_has_logs(t: Dictionary) -> bool:
+	for raw in t["logs"]:
+		var c: Vector3i = raw
+		if not is_cell_removed(c.x, c.y, c.z):
+			return true
+	return false
+
+
+func _check_orphan_leaves(coord: Vector2i) -> void:
+	## Все брёвна дерева сломаны → его листва постепенно опадает (как в Minecraft).
+	if is_dream_layer or not _trees_by_chunk.has(coord):
+		return
+	for t in _trees_by_chunk[coord]:
+		if _tree_has_logs(t):
+			continue
+		var n := 0
+		for raw in t["leaves"]:
+			var c: Vector3i = raw
+			if is_cell_removed(c.x, c.y, c.z) or _decay_queue.has(c):
+				continue
+			n += 1
+			_decay_queue[c] = _clock + LEAF_DECAY_MIN + randf() * LEAF_DECAY_SPREAD
+	
+
+func absorb_trees_near(center: Vector3, radius: float) -> int:
+	## Мать блоков расчищает арену: брёвна деревьев рядом исчезают, листва затем опадает.
+	if is_dream_layer:
+		return 0
+	var n := 0
+	var touched: Dictionary = {}
+	for k in _trees_by_chunk.keys():
+		for t in _trees_by_chunk[k]:
+			var base: Vector3i = (t["logs"] as Array)[0]
+			if Vector2(float(base.x) + 0.5 - center.x, float(base.z) + 0.5 - center.z).length() > radius:
+				continue
+			if not _tree_has_logs(t):
+				continue
+			for raw in t["logs"]:
+				var c: Vector3i = raw
+				GameState.remove_terrain_cell_silent(c, "log")
+			touched[k] = true
+			n += 1
+	for k2 in touched.keys():
+		if _loaded.has(k2):
+			rebuild_chunk(k2)
+		_check_orphan_leaves(k2)
+	return n
+
+
+func pending_leaf_decay() -> int:
+	return _decay_queue.size()
+
+
+func _process_leaf_decay(delta: float) -> void:
+	var due: Array = []
+	for k in _decay_queue.keys():
+		if float(_decay_queue[k]) <= _clock:
+			due.append(k)
+	for raw in due:
+		var c: Vector3i = raw
+		_decay_queue.erase(c)
+		if GameState.has_method("remove_terrain_cell_silent"):
+			GameState.remove_terrain_cell_silent(c, "leaves")
+		_dirty_chunks[world_to_chunk(Vector3(c.x, 0, c.z))] = true
+		if randf() < 0.06:
+			_spawn_pickup(c, "leaves")
+	_dirty_t -= delta
+	if _dirty_t <= 0.0 and not _dirty_chunks.is_empty():
+		_dirty_t = 0.25
+		for ch in _dirty_chunks.keys():
+			if _loaded.has(ch):
+				rebuild_chunk(ch)
+		_dirty_chunks.clear()
+
+
+func force_leaf_decay_tick(seconds: float) -> void:
+	## Для тестов: прокрутить время распада.
+	_clock += seconds
+	_process_leaf_decay(1.0)
+	_dirty_t = 0.0
+	_process_leaf_decay(1.0)
+
+
+func _spawn_pickup(c: Vector3i, kind: String) -> void:
+	var host := get_parent()
+	if host == null or panorama_mode:
+		return
+	var script: GDScript = load("res://scripts/block_pickup.gd")
+	var drop: StaticBody3D = script.new()
+	drop.configure(kind)
+	drop.position = Vector3(float(c.x) + 0.5, maxf(float(c.y) * 0.0 + 0.55, 0.55), float(c.z) + 0.5)
+	host.add_child(drop)
 
 
 func _neighbor_solid(solids: Dictionary, c: Vector3i) -> bool:
@@ -663,18 +885,20 @@ func _emit_box(verts: PackedVector3Array, norms: PackedVector3Array, cols: Packe
 
 
 func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary, solids: Dictionary) -> void:
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	var cols := PackedColorArray()
+	## v0.6: пиксельные текстуры из атласа (BlockTex), UV в блоках, вершинный цвет = тень/оттенок.
+	var st: Dictionary = BlockTex.new_stream()
 	var body := StaticBody3D.new()
 	body.name = "TerrainBody"
 	body.collision_layer = 1
 	body.collision_mask = 0
 	body.set_meta("terrain_chunk", coord)
 	root.add_child(body)
-	var base_ground := COLOR_DREAM if is_dream_layer else COLOR_WAKE
-	var tint := 0.04 * float(posmod(coord.x * 3 + coord.y * 7, 5) - 2)
-	# Пол: полосы вдоль X с одинаковым тегом (как раньше), верх + боковины.
+	var tint := 1.0 + 0.025 * float(posmod(coord.x * 3 + coord.y * 7, 5) - 2)
+	var base_col := Color(tint, tint, tint)
+	var ground_tiles: Array = BlockTex.faces_for("ground", is_dream_layer, true)
+	var dirt_tiles: Array = BlockTex.faces_for("ground", is_dream_layer, false)
+	var bed_tiles: Array = BlockTex.faces_for("sand") if not is_dream_layer else dirt_tiles
+	# Пол: полосы вдоль X с одинаковым тегом, верх + боковины.
 	for lz in range(chunk_size):
 		var x := 0
 		while x < chunk_size:
@@ -689,18 +913,19 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 			elif tag == "pit":
 				top_y = -1.0
 			var thickness := 1.0 if top_y < -0.01 else (LAKE_DEPTH + 1.0)
-			var colr := base_ground
-			if top_y < -0.01:
-				colr = colr.darkened(0.18)
-			colr = colr.lightened(tint)
 			var mn := Vector3(float(x0), top_y - thickness, float(lz))
 			var sz := Vector3(float(width), thickness, 1.0)
-			_emit_box(verts, norms, cols, mn, sz, colr, 1 << 3)
+			if tag == "ground":
+				# Верхний блок — трава, ниже — земля (на срезах у озёр и ям).
+				BlockTex.emit_box(st, Vector3(float(x0), top_y - 1.0, float(lz)), Vector3(float(width), 1.0, 1.0), base_col, 1 << 3, ground_tiles)
+				BlockTex.emit_box(st, mn, Vector3(float(width), thickness - 1.0, 1.0), base_col, (1 << 3) | (1 << 2), dirt_tiles)
+			elif tag == "lake":
+				BlockTex.emit_box(st, mn, sz, base_col.darkened(0.08), 1 << 3, bed_tiles)
+			else:
+				BlockTex.emit_box(st, mn, sz, base_col.darkened(0.1), 1 << 3, dirt_tiles)
 			_add_box_shape(body, mn + sz * 0.5, sz)
-	# Кубы холмов и руин: рисуем только открытые грани.
+	# Кубы холмов, руин, деревьев: рисуем только открытые грани.
 	var origin := chunk_origin(coord)
-	var hill_base := COLOR_DREAM_BUMP if is_dream_layer else COLOR_WAKE_BUMP
-	var ruin_base := Color(0.34, 0.26, 0.42) if is_dream_layer else Color(0.46, 0.38, 0.31)
 	var dirs := [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
 	for key in solids.keys():
 		var c: Vector3i = key
@@ -711,15 +936,15 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 				mask |= 1 << fi
 		if mask == 63:
 			continue
-		var noise := (_hash01(c.x * 7 + c.y * 13, c.z * 11 - c.y) - 0.5) * 0.08
-		var col: Color
-		if kind == "ruin":
-			col = ruin_base.lightened(noise) if noise > 0 else ruin_base.darkened(-noise)
-		else:
-			col = hill_base.darkened(0.06 * float(c.y))
-			col = col.lightened(noise) if noise > 0 else col.darkened(-noise)
+		var noise := (_hash01(c.x * 7 + c.y * 13, c.z * 11 - c.y) - 0.5) * 0.10
+		var col := Color(tint + noise, tint + noise, tint + noise)
+		var variant := int(_hash01(c.x * 3 + c.y, c.z * 5 - c.y * 2) * 9.0)
+		var exposed := not (mask & (1 << 2))
+		if kind == "hill" and c.y < height_at(c.x, c.z) - 2:
+			kind = "stone"
+		var tiles: Array = BlockTex.faces_for(kind, is_dream_layer, exposed, variant)
 		var mn := Vector3(c) - origin
-		_emit_box(verts, norms, cols, mn, Vector3.ONE, col, mask)
+		BlockTex.emit_box(st, mn, Vector3.ONE, col, mask, tiles)
 	# Коллизия кубов: вертикальные колонны непрерывных клеток.
 	var columns: Dictionary = {}
 	for key2 in solids.keys():
@@ -742,18 +967,10 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 			var lp := Vector3(float(ck2.x) - origin.x, float(y0), float(ck2.y) - origin.z)
 			var sz2 := Vector3(1.0, float(y1 - y0 + 1), 1.0)
 			_add_box_shape(body, lp + sz2 * 0.5, sz2)
-	if verts.size() > 0:
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = verts
-		arrays[Mesh.ARRAY_NORMAL] = norms
-		arrays[Mesh.ARRAY_COLOR] = cols
-		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_material(0, _terrain_material())
+	if (st["v"] as PackedVector3Array).size() > 0:
 		var mi := MeshInstance3D.new()
 		mi.name = "TerrainMesh"
-		mi.mesh = mesh
+		mi.mesh = BlockTex.stream_to_mesh(st)
 		root.add_child(mi)
 	if not lake_cells.is_empty():
 		_build_water(root, lake_cells)
@@ -771,6 +988,7 @@ func _build_water(root: Node3D, lake_cells: Dictionary) -> void:
 	## Вода — только горизонтальные квадраты (без боковых граней), один меш на чанк.
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
 	for key in lake_cells.keys():
 		var c: Vector2i = key
 		var y := LAKE_SURFACE_Y
@@ -779,15 +997,18 @@ func _build_water(root: Node3D, lake_cells: Dictionary) -> void:
 		var p2 := Vector3(c.x + 1, y, c.y + 1)
 		var p3 := Vector3(c.x, y, c.y + 1)
 		verts.append_array([p0, p1, p2, p0, p2, p3])
+		for pp in [p0, p1, p2, p0, p2, p3]:
+			uvs.append(Vector2(pp.x, pp.z))
 		for _k in range(6):
 			norms.append(Vector3.UP)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.surface_set_material(0, _water_material())
+	mesh.surface_set_material(0, BlockTex.water_material(is_dream_layer))
 	var water := MeshInstance3D.new()
 	water.name = "LakeWater"
 	water.mesh = mesh

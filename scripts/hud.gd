@@ -25,6 +25,20 @@ var _debug_label: Label
 var _debug_t := 0.0
 var _last_sel := -1
 var inventory: Control
+## v0.6
+var _chat_box: VBoxContainer
+var _chat: Array = [] # [[Label, age]]
+const CHAT_LIFETIME := 8.0
+const CHAT_MAX := 8
+var _hearts: Array = []
+var _hp_wrap: Control
+var _phase_label: Label
+var _phase_t := 0.0
+var _anchor_cap: Label
+var _vuln_label: Label
+var _last_chat_text := ""
+var _last_chat_time := -100.0
+var _time := 0.0
 
 
 func _ready() -> void:
@@ -36,6 +50,13 @@ func _ready() -> void:
 	_build_special_bar()
 	_build_labels()
 	_build_boss_bar()
+	_build_chat()
+	_build_hearts()
+	_build_phase_label()
+	GameState.chat_message.connect(add_chat)
+	GameState.day_phase_changed.connect(func(_p: String) -> void: _update_phase_label())
+	GameState.player_hp_changed.connect(_on_hp)
+	_on_hp(GameState.player_hp, GameState.PLAYER_MAX_HP)
 	var inv_script: GDScript = load("res://scripts/inventory_ui.gd")
 	inventory = inv_script.new()
 	$Root.add_child(inventory)
@@ -55,7 +76,9 @@ func _ready() -> void:
 		_debug_label.visible = bool(gsets.show_fps)
 		gsets.settings_changed.connect(func() -> void:
 			_debug_label.visible = bool(gsets.show_fps)
-			_debug_t = 1.0)
+			_debug_t = 1.0
+			_refresh_key_hints())
+	_refresh_key_hints()
 
 
 func _build_hotbar() -> void:
@@ -101,6 +124,7 @@ func _build_special_bar() -> void:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(col)
 	var cap := Label.new()
+	_anchor_cap = cap
 	cap.text = "R ⟳"
 	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cap.add_theme_font_size_override("font_size", 13)
@@ -114,6 +138,168 @@ func _build_special_bar() -> void:
 		s.set_key_hint("G" if str(sp["id"]) == "beacon" else "")
 		col.add_child(s)
 		_specials.append([s, str(sp["id"])])
+
+
+func _key(action: String, fallback: String) -> String:
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets and gsets.has_method("key_label"):
+		return str(gsets.key_label(action))
+	return fallback
+
+
+func _refresh_key_hints() -> void:
+	if _anchor_cap:
+		_anchor_cap.text = "%s ⟳" % _key("cycle_anchor", "R")
+	for i in range(_hotbar.size()):
+		_hotbar[i].set_key_hint(_key("hotbar_%d" % (i + 1), str(i + 1)))
+	for pair in _specials:
+		if str(pair[1]) == "beacon":
+			pair[0].set_key_hint(_key("place_beacon", "G"))
+
+
+# --- v0.6: чат/журнал сообщений внизу слева (сообщения гаснут через ~8 с) ---
+
+func _build_chat() -> void:
+	var root: Control = $Root
+	_chat_box = VBoxContainer.new()
+	_chat_box.name = "ChatLog"
+	_chat_box.anchor_left = 0.0
+	_chat_box.anchor_right = 0.0
+	_chat_box.anchor_top = 1.0
+	_chat_box.anchor_bottom = 1.0
+	_chat_box.offset_left = 14
+	_chat_box.offset_right = 470
+	_chat_box.offset_top = -300
+	_chat_box.offset_bottom = -84
+	_chat_box.alignment = BoxContainer.ALIGNMENT_END
+	_chat_box.add_theme_constant_override("separation", 2)
+	_chat_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_chat_box)
+
+
+func add_chat(text: String, color: Color = Color(1, 1, 1)) -> void:
+	if text.strip_edges() == "":
+		return
+	if text == _last_chat_text and _time - _last_chat_time < 4.0:
+		return
+	_last_chat_text = text
+	_last_chat_time = _time
+	var l := Label.new()
+	l.text = text
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size = Vector2(450, 0)
+	l.add_theme_font_size_override("font_size", 15)
+	l.add_theme_color_override("font_color", color)
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	l.add_theme_constant_override("outline_size", 5)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0, 0, 0, 0.38)
+	bg.content_margin_left = 6
+	bg.content_margin_right = 6
+	bg.content_margin_top = 1
+	bg.content_margin_bottom = 1
+	l.add_theme_stylebox_override("normal", bg)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chat_box.add_child(l)
+	_chat.append([l, 0.0])
+	while _chat.size() > CHAT_MAX:
+		var old: Label = _chat[0][0]
+		_chat.remove_at(0)
+		old.queue_free()
+
+
+func chat_lines() -> Array:
+	var out: Array = []
+	for e in _chat:
+		out.append((e[0] as Label).text)
+	return out
+
+
+func _tick_chat(delta: float) -> void:
+	var i := 0
+	while i < _chat.size():
+		var e: Array = _chat[i]
+		e[1] = float(e[1]) + delta
+		var l: Label = e[0]
+		var age: float = e[1]
+		l.modulate.a = clampf((CHAT_LIFETIME - age) / 1.2, 0.0, 1.0)
+		if age >= CHAT_LIFETIME:
+			l.queue_free()
+			_chat.remove_at(i)
+			continue
+		i += 1
+
+
+# --- v0.6: HP игрока сердечками над хотбаром ---
+
+func _build_hearts() -> void:
+	var root: Control = $Root
+	_hp_wrap = HBoxContainer.new()
+	_hp_wrap.name = "Hearts"
+	_hp_wrap.anchor_left = 0.5
+	_hp_wrap.anchor_right = 0.5
+	_hp_wrap.anchor_top = 1.0
+	_hp_wrap.anchor_bottom = 1.0
+	var w := 9 * 52 + 8 * 4
+	_hp_wrap.offset_left = -w / 2.0
+	_hp_wrap.offset_right = -w / 2.0 + 240
+	_hp_wrap.offset_top = -92.0
+	_hp_wrap.offset_bottom = -70.0
+	_hp_wrap.add_theme_constant_override("separation", 1)
+	_hp_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_hp_wrap)
+	for i in range(10):
+		var t := TextureRect.new()
+		t.custom_minimum_size = Vector2(22, 20)
+		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_hp_wrap.add_child(t)
+		_hearts.append(t)
+
+
+func _on_hp(hp: int, max_hp: int) -> void:
+	var full: Texture2D = load("res://assets/icons/ui_heart_full.png")
+	var half: Texture2D = load("res://assets/icons/ui_heart_half.png")
+	var empty: Texture2D = load("res://assets/icons/ui_heart_empty.png")
+	var per := float(max_hp) / float(_hearts.size())
+	for i in range(_hearts.size()):
+		var v := float(hp) - float(i) * per
+		var t: TextureRect = _hearts[i]
+		if v >= per * 0.75:
+			t.texture = full
+		elif v >= per * 0.25:
+			t.texture = half
+		else:
+			t.texture = empty
+
+
+# --- v0.6: фаза суток и часы ---
+
+func _build_phase_label() -> void:
+	add_to_group("hud_phase")
+	var root: Control = $Root
+	_phase_label = Label.new()
+	_phase_label.name = "PhaseLabel"
+	_phase_label.position = Vector2(24, 58)
+	_phase_label.add_theme_font_size_override("font_size", 17)
+	_phase_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_phase_label.add_theme_constant_override("outline_size", 5)
+	root.add_child(_phase_label)
+	_update_phase_label()
+
+
+func _update_phase_label() -> void:
+	if _phase_label == null:
+		return
+	var ph: String = GameState.day_phase()
+	var name: String = str(GameState.PHASE_NAMES.get(ph, ph))
+	var icon := "☾" if ph == "night" else "☀"
+	_phase_label.text = "%s %s · %s" % [icon, name, GameState.clock_text(GameState.day_time)]
+	var cols := {"morning": Color(1.0, 0.82, 0.6), "day": Color(1.0, 0.95, 0.7), "evening": Color(1.0, 0.6, 0.45), "night": Color(0.65, 0.75, 1.0)}
+	_phase_label.add_theme_color_override("font_color", cols.get(ph, Color.WHITE))
+	_phase_label.visible = not GameState.is_dream()
 
 
 func _build_labels() -> void:
@@ -258,8 +444,8 @@ func _build_boss_bar() -> void:
 	_boss_label.add_theme_font_size_override("font_size", 18)
 	_boss_wrap.add_child(_boss_label)
 	_boss_bar = ProgressBar.new()
-	_boss_bar.max_value = 1000
-	_boss_bar.value = 1000
+	_boss_bar.max_value = 500
+	_boss_bar.value = 500
 	_boss_bar.show_percentage = false
 	_boss_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_boss_bar.offset_top = 24
@@ -267,10 +453,27 @@ func _build_boss_bar() -> void:
 	_boss_bar.custom_minimum_size = Vector2(0, 24)
 	_style_boss_bar(_boss_bar)
 	_boss_wrap.add_child(_boss_bar)
+	for frac in [0.33, 0.66]:
+		var mark := ColorRect.new()
+		mark.color = Color(1, 1, 1, 0.75)
+		mark.anchor_left = frac
+		mark.anchor_right = frac
+		mark.offset_left = -1
+		mark.offset_right = 1
+		mark.offset_top = 0
+		mark.offset_bottom = 24
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_boss_bar.add_child(mark)
 
 
 func _process(delta: float) -> void:
+	_time += delta
 	_tick_fades(delta)
+	_tick_chat(delta)
+	_phase_t -= delta
+	if _phase_t <= 0.0:
+		_phase_t = 0.5
+		_update_phase_label()
 	_debug_t += delta
 	if _debug_label.visible and _debug_t > 0.25:
 		_debug_t = 0.0
@@ -291,7 +494,10 @@ func _process(delta: float) -> void:
 	var mx: int = int(live.get("max_hp"))
 	_boss_bar.max_value = mx
 	_boss_bar.value = hp
-	_boss_label.text = "Мать блоков   %d / %d" % [hp, mx]
+	var ph := int(live.get("phase")) if "phase" in live else 1
+	var vuln := bool(live.call("is_vulnerable")) if live.has_method("is_vulnerable") else false
+	_boss_label.text = "Мать блоков · фаза %d   %d / %d%s" % [ph, hp, mx, "   — УЯЗВИМА!" if vuln else ""]
+	_boss_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3) if vuln else Color(1, 1, 1))
 
 
 func _style_boss_bar(bar: ProgressBar) -> void:

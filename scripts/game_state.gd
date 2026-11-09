@@ -14,6 +14,10 @@ signal boss_changed(alive: bool)
 signal anchor_selected(t: int)
 ## Короткое всплывающее сообщение над хотбаром (подсказки внизу скрыты по просьбе игрока).
 signal toast(text: String)
+signal chat_message(text: String, color: Color)
+signal player_hp_changed(hp: int, max_hp: int)
+signal player_died
+signal day_phase_changed(phase: String)
 
 enum World { WAKE, DREAM }
 enum AnchorType { NAIL, WEDGE, ANCHOR3 }
@@ -37,7 +41,7 @@ const DUST_PER_BOSS_KILL := ANCHOR3_CRAFT_DUST
 const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 30.0
 const MUTATION_CHANCE := 0.25
-const SAVE_FORMAT := 5
+const SAVE_FORMAT := 6
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
@@ -111,8 +115,32 @@ var boss_alive: bool = false
 var last_mined_kind: String = ""
 var last_mined_cell: Vector3i = Vector3i.ZERO
 var block_stash: Dictionary = {}
-const DAY_LENGTH := 300.0
-const NIGHT_LENGTH := 300.0
+## v0.6: игровые сутки = 24 реальные минуты: утро 3 мин, день 11, вечер 3, ночь 7 (1 мин = 1 игровой час).
+const DAY_CYCLE := 1440.0
+const PHASE_MORNING_END := 180.0
+const PHASE_DAY_END := 840.0
+const PHASE_EVENING_END := 1020.0
+const NEW_WORLD_TIME := 120.0
+const PHASE_NAMES := {"morning": "Утро", "day": "День", "evening": "Вечер", "night": "Ночь"}
+## Игрок (v0.6): HP нужен для босса. Обычные мобы по-прежнему воруют ресурсы.
+const PLAYER_MAX_HP := 100
+const PLAYER_REGEN_DELAY := 4.0
+const PLAYER_REGEN_PER_SEC := 2.0
+const PLAYER_IFRAMES := 0.5
+const COMBO_WINDOW := 3.0
+const COMBO_CAP := 70
+## Босс: шанс на добытый блок. Решение заранее бросается на СЛЕДУЮЩИЙ блок.
+const BOSS_CHANCE_NORMAL := 0.01
+const BOSS_CHANCE_DEV := 0.25
+const BOSS_OMEN_TEXT := "Вы слышите разъярённые крики убитой горем матери"
+var player_hp: int = PLAYER_MAX_HP
+var _hp_regen_cd: float = 0.0
+var _hp_regen_acc: float = 0.0
+var _iframes: float = 0.0
+var _combo_log: Array = [] # [[time, amount]]
+var _clock: float = 0.0
+var boss_next_mine: bool = false
+var _phase: String = ""
 var world_seed_wake: int = 1337
 var world_seed_dream: int = 9001
 ## Снятые клетки процедурного террейна яви: Vector3i -> kind ("hill"/"ruin"/"ground").
@@ -178,6 +206,12 @@ func reset_state() -> void:
 	last_mined_cell = Vector3i.ZERO
 	block_stash = {}
 	removed_terrain = {}
+	day_time = NEW_WORLD_TIME
+	player_hp = PLAYER_MAX_HP
+	_combo_log = []
+	_iframes = 0.0
+	boss_next_mine = false
+	_phase = ""
 	_init_default_slots()
 
 
@@ -203,7 +237,7 @@ func _fill_dev_inventory() -> void:
 	## Дев-сид: по стаку всего, количество бесконечное (∞, не уменьшается).
 	_init_default_slots()
 	var ids := ["pickaxe", "sword", "torch", "workbench", "reagent1", "reagent2", "reagent3", "dust", "hill",
-		"ruin", "ground", "drift", "mouth"]
+		"ruin", "ground", "drift", "mouth", "log", "planks", "leaves"]
 	for i in range(ids.size()):
 		item_slots[i] = {"id": ids[i], "name": ItemDB.display_name(ids[i]), "count": 1}
 	inventory_changed.emit()
@@ -610,6 +644,7 @@ func recipe_defs() -> Array:
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent2": 2, "reagent3": 3, "item": "pickaxe", "item_name": "Кирка"},
 		{"id": "torch", "name": "Факел", "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
 		{"id": "sword", "name": "Меч", "where": "workbench", "reagent1": 5, "reagent2": 2, "item": "sword", "item_name": "Меч"},
+		{"id": "planks", "name": "Доски ×4", "where": "workbench", "log": 1, "item": "planks", "item_name": "Доски", "count": 4},
 	]
 
 
@@ -655,6 +690,8 @@ func can_afford_recipe(rec: Dictionary) -> bool:
 		return false
 	if get_reagent_count(3) < int(rec.get("reagent3", 0)):
 		return false
+	if count_item("log") < int(rec.get("log", 0)):
+		return false
 	return true
 
 
@@ -668,6 +705,8 @@ func recipe_cost_text(rec: Dictionary) -> String:
 		parts.append("%d %s" % [int(rec.get("reagent2", 0)), reagent_type_name(2)])
 	if int(rec.get("reagent3", 0)) > 0:
 		parts.append("%d %s" % [int(rec.get("reagent3", 0)), reagent_type_name(3)])
+	if int(rec.get("log", 0)) > 0:
+		parts.append("%d бревно" % int(rec.get("log", 0)))
 	return ", ".join(parts) if not parts.is_empty() else "бесплатно"
 
 
@@ -682,6 +721,8 @@ func recipe_label(rec: Dictionary) -> String:
 		parts.append("%d %s" % [int(rec.get("reagent2", 0)), reagent_type_name(2)])
 	if int(rec.get("reagent3", 0)) > 0:
 		parts.append("%d %s" % [int(rec.get("reagent3", 0)), reagent_type_name(3)])
+	if int(rec.get("log", 0)) > 0:
+		parts.append("%d бревно" % int(rec.get("log", 0)))
 	var cost := ", ".join(parts) if not parts.is_empty() else "бесплатно"
 	return "%s  (%s)" % [str(rec.get("name", rec.get("id", "?"))), cost]
 
@@ -748,6 +789,13 @@ func terrain_removed_kind(cell: Vector3i) -> String:
 	return str(removed_terrain.get(cell, ""))
 
 
+func remove_terrain_cell_silent(cell: Vector3i, kind: String) -> bool:
+	if removed_terrain.has(cell):
+		return false
+	removed_terrain[cell] = kind
+	return true
+
+
 func remove_terrain_cell(cell: Vector3i, kind: String) -> bool:
 	if removed_terrain.has(cell):
 		return false
@@ -776,6 +824,8 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 		spend_typed_reagent(2, int(rec.get("reagent2", 0)))
 	if int(rec.get("reagent3", 0)) > 0:
 		spend_typed_reagent(3, int(rec.get("reagent3", 0)))
+	if int(rec.get("log", 0)) > 0 and not dev_mode:
+		remove_item("log", int(rec.get("log", 0)))
 	var gives := str(rec.get("gives", ""))
 	if gives == "nails":
 		nails += 1
@@ -789,7 +839,7 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 	if item_id != "" and dev_mode and raw_count(item_id) > 0:
 		item_id = ""
 	if item_id != "":
-		if add_item(item_id, str(rec.get("item_name", item_id)), 1) < 0:
+		if add_item(item_id, str(rec.get("item_name", item_id)), int(rec.get("count", 1))) < 0:
 			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
 			return false
 	inventory_changed.emit()
@@ -798,14 +848,38 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 
 
 
+static func cycle_time(t: float) -> float:
+	var m := fmod(t, DAY_CYCLE)
+	if m < 0.0:
+		m += DAY_CYCLE
+	return m
+
+
+static func phase_at(t: float) -> String:
+	var c := cycle_time(t)
+	if c < PHASE_MORNING_END:
+		return "morning"
+	if c < PHASE_DAY_END:
+		return "day"
+	if c < PHASE_EVENING_END:
+		return "evening"
+	return "night"
+
+
+static func clock_text(t: float) -> String:
+	## 0 c цикла = 06:00, 1 реальная минута = 1 игровой час.
+	var hours := 6.0 + cycle_time(t) / 60.0
+	var hh := int(floor(hours)) % 24
+	var mm := int(floor((hours - floor(hours)) * 60.0))
+	return "%02d:%02d" % [hh, mm]
+
+
+func day_phase() -> String:
+	return phase_at(day_time)
+
+
 func is_night() -> bool:
-	var cycle := DAY_LENGTH + NIGHT_LENGTH
-	if cycle <= 0.0:
-		return false
-	var t := fmod(day_time, cycle)
-	if t < 0.0:
-		t += cycle
-	return t >= DAY_LENGTH
+	return day_phase() == "night"
 
 
 func notify_night_from_time() -> void:
@@ -813,7 +887,99 @@ func notify_night_from_time() -> void:
 	if n != _night_flag:
 		_night_flag = n
 		night_changed.emit(n)
+	var ph := day_phase()
+	if ph != _phase:
+		var first := _phase == ""
+		_phase = ph
+		day_phase_changed.emit(ph)
+		if not first:
+			chat("Наступает %s." % str(PHASE_NAMES.get(ph, ph)).to_lower(), Color(1.0, 0.9, 0.6))
 
+
+# --- Чат / журнал сообщений (v0.6) ---
+
+func chat(text: String, color: Color = Color(1, 1, 1)) -> void:
+	chat_message.emit(text, color)
+
+
+# --- HP игрока (v0.6) ---
+
+func _process(delta: float) -> void:
+	_clock += delta
+	_iframes = maxf(0.0, _iframes - delta)
+	if player_hp < PLAYER_MAX_HP and player_hp > 0:
+		_hp_regen_cd -= delta
+		if _hp_regen_cd <= 0.0:
+			_hp_regen_acc += PLAYER_REGEN_PER_SEC * delta
+			if _hp_regen_acc >= 1.0:
+				var add := int(_hp_regen_acc)
+				_hp_regen_acc -= float(add)
+				player_hp = mini(PLAYER_MAX_HP, player_hp + add)
+				player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
+
+
+func combo_damage_recent() -> int:
+	var total := 0
+	for e in _combo_log:
+		if _clock - float(e[0]) <= COMBO_WINDOW:
+			total += int(e[1])
+	return total
+
+
+func damage_player(amount: int, source: String = "", ignore_iframes: bool = false) -> int:
+	## Возвращает фактический урон. i-frames 0.5 с после удара ≥10; за любые 3 с — не больше 70 (запрет ваншот-цепочек).
+	if amount <= 0 or player_hp <= 0:
+		return 0
+	if _iframes > 0.0 and not ignore_iframes:
+		return 0
+	var filtered: Array = []
+	for e in _combo_log:
+		if _clock - float(e[0]) <= COMBO_WINDOW:
+			filtered.append(e)
+	_combo_log = filtered
+	var allowed := maxi(0, COMBO_CAP - combo_damage_recent())
+	var dmg := mini(amount, allowed)
+	if dmg <= 0:
+		return 0
+	_combo_log.append([_clock, dmg])
+	player_hp = maxi(0, player_hp - dmg)
+	_hp_regen_cd = PLAYER_REGEN_DELAY
+	_hp_regen_acc = 0.0
+	if dmg >= 10:
+		_iframes = PLAYER_IFRAMES
+	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
+	if player_hp <= 0:
+		chat("Ты погиб%s. Возрождение у кровати." % ((" (" + source + ")") if source != "" else ""), Color(1.0, 0.45, 0.4))
+		player_died.emit()
+	return dmg
+
+
+func heal_player_full() -> void:
+	player_hp = PLAYER_MAX_HP
+	_combo_log = []
+	_iframes = 1.5
+	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
+
+
+# --- Босс: шанс и предвестие (v0.6) ---
+
+func boss_spawn_chance() -> float:
+	return BOSS_CHANCE_DEV if dev_mode else BOSS_CHANCE_NORMAL
+
+
+func on_block_mined(rng_value: float = -1.0) -> bool:
+	## Вызывается после каждого добытого блока. true → босс появляется СЕЙЧАС (решение было брошено
+	## на прошлом блоке и объявлено в чате). Затем бросаем решение на следующий блок.
+	var spawn_now := false
+	if boss_next_mine and not boss_alive and not peaceful:
+		spawn_now = true
+		boss_next_mine = false
+	if not boss_next_mine and not peaceful:
+		var r := rng_value if rng_value >= 0.0 else randf()
+		if r < boss_spawn_chance():
+			boss_next_mine = true
+			chat(BOSS_OMEN_TEXT, Color(1.0, 0.35, 0.35))
+	return spawn_now
 
 
 func set_boss_alive(on: bool) -> void:
@@ -845,12 +1011,18 @@ func block_display_name(kind: String) -> String:
 			return "Дрейф-блок"
 		"beacon":
 			return "Маяк"
+		"log":
+			return "Бревно"
+		"leaves":
+			return "Листва"
+		"planks":
+			return "Доски"
 		_:
 			return "Блок"
 
 
 func is_placeable_block(id: String) -> bool:
-	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground"]
+	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
@@ -890,6 +1062,8 @@ func is_dream() -> bool:
 
 
 func set_hint(text: String) -> void:
+	if text != last_hint and not text.begins_with("Слот") and not text.begins_with("Чувствительность"):
+		chat(text)
 	last_hint = text
 	hint_changed.emit(text)
 
@@ -1166,6 +1340,8 @@ func to_save_dict() -> Dictionary:
 		"dream_blocks": _blocks_to_json(dream_blocks),
 		"pending_anchors": _anchors_to_json(pending_anchors),
 		"removed_terrain": _cells_kind_to_json(removed_terrain),
+		"boss_next_mine": boss_next_mine,
+		"player_hp": player_hp,
 	}
 
 
@@ -1238,6 +1414,9 @@ func apply_save_dict(data: Dictionary) -> void:
 	dream_blocks = _blocks_from_json(data.get("dream_blocks", {}))
 	pending_anchors = _anchors_from_json(data.get("pending_anchors", []))
 	removed_terrain = _cells_kind_from_json(data.get("removed_terrain", {}))
+	boss_next_mine = bool(data.get("boss_next_mine", false))
+	player_hp = clampi(int(data.get("player_hp", PLAYER_MAX_HP)), 1, PLAYER_MAX_HP)
+	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
 	if dev_mode:
 		_ensure_dev_items()
 	var w := str(data.get("world", "wake"))

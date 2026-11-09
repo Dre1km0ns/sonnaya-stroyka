@@ -18,7 +18,9 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
-	if _want_shots05():
+	if _want_shots06():
+		GameState.begin_world("Скриншоты v0.6", "", "6767676767", GameState.DEV_SEED, false)
+	elif _want_shots05():
 		GameState.begin_world("Скриншоты", "", "6767676767", GameState.DEV_SEED, true)
 	elif GameState.world_folder == "" and not _want_shots() and not _want_perf():
 		# Сцену запустили напрямую (F6 в редакторе) — временный мир без сохранения.
@@ -60,7 +62,11 @@ func _ready() -> void:
 	if gsets:
 		gsets.settings_changed.connect(_apply_settings)
 	_start_music()
-	if _want_shots05():
+	if not GameState.player_died.is_connected(_on_player_died):
+		GameState.player_died.connect(_on_player_died)
+	if _want_shots06():
+		call_deferred("_capture_v06")
+	elif _want_shots05():
 		call_deferred("_capture_v05")
 	elif _want_shots():
 		call_deferred("_capture_shots")
@@ -69,7 +75,24 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
-	print("Сонная стройка v0.5 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.6 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+
+
+func _on_player_died() -> void:
+	## v0.6: смерть — возрождение у кровати с полным HP, штраф: до 3 ресурсов; босс уходит (как в Terraria).
+	for b in get_tree().get_nodes_in_group("block_mother"):
+		if b.has_method("leave"):
+			b.leave("Мать блоков потеряла к тебе интерес и ушла под землю.")
+	var lost := GameState.steal_resource_hardcore(3)
+	player.global_position = Vector3(0, 2, 6)
+	player.velocity = Vector3.ZERO
+	GameState.heal_player_full()
+	if lost != "none":
+		GameState.chat("Потеряно при смерти: %s" % lost, Color(1.0, 0.6, 0.5))
+
+
+func _want_shots06() -> bool:
+	return "--shots06" in OS.get_cmdline_user_args()
 
 
 func _apply_settings() -> void:
@@ -110,7 +133,7 @@ func _start_music() -> void:
 func _want_shots() -> bool:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
-	return "--shots" in args or "--shots05" in args
+	return "--shots" in args or "--shots05" in args or "--shots06" in args
 
 
 func _want_shots05() -> bool:
@@ -179,6 +202,195 @@ func _capture_v05() -> void:
 	await _save_shot("v05_dream.png")
 	if gsets:
 		gsets.set_value("show_fps", false)
+	get_tree().quit(0)
+
+
+func _day() -> Node:
+	var arr := get_tree().get_nodes_in_group("day_cycle")
+	return arr[0] if arr.size() > 0 else null
+
+
+func _wait(sec: float) -> void:
+	await get_tree().create_timer(sec, true, false, true).timeout
+
+
+func _capture_v06() -> void:
+	## v0.6: текстуры, деревья, фазы суток и луна, иконки, перебинд, мобы лицом вперёд, бой с боссом.
+	DirAccess.make_dir_recursive_absolute("/workspace/shots")
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets:
+		gsets.set("render_distance", 4)
+	wake_chunks._apply_radius(4)
+	wake_chunks._update_chunks(true)
+	wake_chunks.load_all_pending()
+	var day := _day()
+	var tree: Dictionary = wake_chunks.find_first_tree()
+	var tpos := Vector3(10, 0, 10)
+	if not tree.is_empty():
+		var base: Vector3i = (tree["logs"] as Array)[0]
+		tpos = Vector3(base.x + 0.5, 0, base.z + 0.5)
+	print("SHOT06 tree at ", tpos, " trees=", wake_chunks.count_loaded_trees())
+	# 1. День: текстурированный рельеф и деревья
+	day.set_time(500.0)
+	_look_at_point(tpos + Vector3(0, 2.5, 0), tpos + Vector3(-7, 3.2, 9))
+	GameState.select_item_slot(0)
+	await _wait(1.0)
+	await _save_shot("v06_day_trees.png")
+	_look_at_point(Vector3(30, 0, -30), Vector3(0, 9, 8))
+	await _wait(0.5)
+	await _save_shot("v06_day_panorama.png")
+	# 2. Утро, вечер, ночь с луной
+	day.set_time(40.0)
+	_look_at_point(Vector3(60, 6, 4), Vector3(0, 10, 4))
+	await _wait(0.5)
+	await _save_shot("v06_morning.png")
+	day.set_time(985.0)
+	_look_at_point(Vector3(-60, 6, 4), Vector3(0, 10, 4))
+	await _wait(0.5)
+	await _save_shot("v06_evening.png")
+	day.set_time(1110.0)
+	var md: Vector3 = day.moon_dir()
+	_look_at_point(Vector3(0, 3.5, 6) + md * 50.0 + Vector3(0, -14, 0), Vector3(0, 3.5, 6))
+	await _wait(0.6)
+	await _save_shot("v06_night_moon.png")
+	_look_at_point(tpos + Vector3(0, 2.0, 0), tpos + Vector3(-7, 3.2, 9))
+	await _wait(0.4)
+	await _save_shot("v06_night_trees.png")
+	day.set_time(500.0)
+	# 3. Инвентарь (иконки)
+	var hud := get_node_or_null("HUD")
+	if hud and "inventory" in hud and hud.inventory:
+		hud.inventory.open()
+		await _wait(0.3)
+		await _save_shot("v06_inventory.png")
+		hud.inventory.close()
+	# 4. Перебинд клавиш
+	var pm := get_node_or_null("PauseMenu")
+	if pm:
+		pm.open()
+		pm._open_settings()
+		await _wait(0.2)
+		var sm: Node = pm._settings
+		if sm and sm.has_method("_open_keybinds"):
+			sm._open_keybinds()
+			await _wait(0.2)
+			sm._keybinds._start_wait("jump")
+			await _wait(0.1)
+			await _save_shot("v06_keybinds.png")
+			sm._keybinds._close()
+		pm.resume()
+		await _wait(0.2)
+	# 5. Дерево: сломать все брёвна → листва опадает
+	if not tree.is_empty():
+		_look_at_point(tpos + Vector3(0, 2.5, 0), tpos + Vector3(-6, 3.0, 7))
+		for raw in tree["logs"]:
+			var c: Vector3i = raw
+			GameState.remove_terrain_cell(c, "log")
+		wake_chunks.rebuild_chunk_at_world(int(tpos.x), int(tpos.z))
+		await _wait(0.4)
+		await _save_shot("v06_tree_logs_removed.png")
+		print("SHOT06 decay pending=", wake_chunks.pending_leaf_decay())
+		await _wait(5.0)
+		await _save_shot("v06_tree_decaying.png")
+		await _wait(7.0)
+		await _save_shot("v06_tree_decayed.png")
+		print("SHOT06 decay pending after=", wake_chunks.pending_leaf_decay())
+	# 6. Мобы идут лицом вперёд (ИИ выключен, ведём apply_movement вручную)
+	var stage := Vector3(0.0, 0.0, 1.0)
+	var nav: GDScript = load("res://scripts/enemy_navigation.gd")
+	var mobs: Array = []
+	var gs_s: GDScript = load("res://scripts/seam_creature.gd")
+	var gg_s: GDScript = load("res://scripts/enemy_ghost.gd")
+	for i in range(3):
+		var m: CharacterBody3D = gs_s.new() if i == 0 else gg_s.new()
+		if i > 0:
+			m.configure(i, stage, stage)
+		m.position = stage + Vector3(-4.2 + float(i) * 2.2, 0.1, float(i) * 1.4 - 2.4)
+		wake_world.add_child(m)
+		mobs.append(m)
+	var walker: CharacterBody3D = gg_s.new()
+	walker.configure(0, stage, stage)
+	walker.position = stage + Vector3(3.2, 0.1, -3.0)
+	wake_world.add_child(walker)
+	await get_tree().process_frame
+	for m2 in mobs + [walker]:
+		m2.set_physics_process(false)
+	player.global_position = stage + Vector3(0, 0.2, 6.0)
+	player.rotation_degrees = Vector3(0, 0, 0)
+	player.get_node("CameraPivot").rotation_degrees = Vector3(-6, 0, 0)
+	var vis: GDScript = load("res://scripts/enemy_visuals.gd")
+	for k in range(60):
+		for m3 in mobs:
+			nav.apply_movement(m3, Vector3(1, 0, 0), 2.0, 1.0 / 60.0)
+			vis.play_state(m3, "walk")
+		nav.apply_movement(walker, Vector3(0, 0, 1), 2.0, 1.0 / 60.0)
+		vis.play_state(walker, "walk")
+		await get_tree().physics_frame
+	await _save_shot("v06_mobs_facing.png")
+	var facing_report := []
+	for m4 in mobs + [walker]:
+		facing_report.append(str(nav.model_world_forward(m4)))
+	print("SHOT06 mob forward vectors (want +X for 3, +Z for last): ", facing_report)
+	for m5 in mobs + [walker]:
+		m5.queue_free()
+	# 7. Предвестие босса в чате + бой
+	GameState.boss_next_mine = false
+	GameState.on_block_mined(0.0)
+	var arena := Vector3(-8.0, 0.0, 14.0)
+	player.global_position = arena + Vector3(0, 0.2, 9.0)
+	player.rotation_degrees = Vector3(0, 0, 0)
+	player.get_node("CameraPivot").rotation_degrees = Vector3(-14, 0, 0)
+	await _wait(0.3)
+	await _save_shot("v06_chat_omen.png")
+	var boss_script: GDScript = load("res://scripts/block_mother.gd")
+	var boss: Node3D = boss_script.spawn_near(wake_world, Vector3i(int(arena.x) - 4, 0, int(arena.z) - 2))
+	GameState.add_item("sword", "Меч", 1)
+	for si in range(GameState.ITEM_SLOT_COUNT):
+		if str(GameState.item_slots[si].get("id", "")) == "sword":
+			GameState.select_item_slot(si)
+			break
+	var shots := {"air": false, "wave": false}
+	var t0 := Time.get_ticks_msec()
+	while is_instance_valid(boss) and Time.get_ticks_msec() - t0 < 25000:
+		GameState.heal_player_full()
+		player.global_position = Vector3(boss.global_position.x, player.global_position.y, boss.global_position.z + 9.0)
+		player.global_position.y = 0.1
+		var st := str(boss.STATE_NAMES[boss.state])
+		if st == "AIR" and boss.get("_air_t") > 0.45 and not shots["air"]:
+			shots["air"] = true
+			await _save_shot("v06_boss_slam_shadow.png")
+			boss.take_damage(200)
+		elif st == "STAGGER" and boss.phase >= 2 and boss._waves.size() > 0 and not shots["wave"]:
+			await _wait(0.25)
+			shots["wave"] = true
+			await _save_shot("v06_boss_shockwave.png")
+			break
+		await get_tree().physics_frame
+	if is_instance_valid(boss):
+		for bl in get_tree().get_nodes_in_group("blockling"):
+			bl.queue_free()
+		boss._start_scatter()
+		await _wait(boss.SCATTER_TIME + 0.15)
+		player.global_position += Vector3(0, 0, 4.5)
+		await _wait(0.3)
+		await _save_shot("v06_boss_teleport_marker.png")
+		await _wait(1.2)
+		boss.hp = 200
+		boss.take_damage(60)
+		await _wait(2.0)
+		GameState.heal_player_full()
+		boss._start_rain(player)
+		player.get_node("CameraPivot").rotation_degrees = Vector3(-8, 0, 0)
+		player.global_position += Vector3(0, 0, 4.0)
+		await _wait(0.75)
+		await _save_shot("v06_boss_brick_rain.png")
+		await _wait(1.6)
+		boss._stagger_len = 3.0
+		boss._set_crack_glow(true)
+		boss._enter(boss.S.STAGGER)
+		await _wait(0.2)
+		await _save_shot("v06_boss_vulnerable.png")
+		print("SHOT06 boss log ", boss.debug_snapshot())
 	get_tree().quit(0)
 
 

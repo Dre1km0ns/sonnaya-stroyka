@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://scripts/voxel_world.gd" id="1_vox"]
 [ext_resource type="Script" path="res://scripts/bed_interactable.gd" id="2_bed"]
@@ -26,18 +26,6 @@ emission_energy_multiplier = 0.6
 
 [sub_resource type="SphereShape3D" id="SphereShape_reag"]
 radius = 0.35
-
-[sub_resource type="BoxMesh" id="BoxMesh_tree"]
-size = Vector3(0.6, 2.5, 0.6)
-
-[sub_resource type="StandardMaterial3D" id="Mat_tree"]
-albedo_color = Color(0.35, 0.28, 0.2, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_canopy"]
-size = Vector3(2.2, 1.4, 2.2)
-
-[sub_resource type="StandardMaterial3D" id="Mat_canopy"]
-albedo_color = Color(0.4, 0.55, 0.35, 1)
 
 [node name="WakeWorld" type="Node3D"]
 
@@ -116,26 +104,6 @@ surface_material_override/0 = SubResource("Mat_reag")
 
 [node name="Collision" type="CollisionShape3D" parent="Reagent4"]
 shape = SubResource("SphereShape_reag")
-
-[node name="Tree1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 1.25, -4)
-mesh = SubResource("BoxMesh_tree")
-surface_material_override/0 = SubResource("Mat_tree")
-
-[node name="Canopy" type="MeshInstance3D" parent="Tree1"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
-mesh = SubResource("BoxMesh_canopy")
-surface_material_override/0 = SubResource("Mat_canopy")
-
-[node name="Tree2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 1.25, 5)
-mesh = SubResource("BoxMesh_tree")
-surface_material_override/0 = SubResource("Mat_tree")
-
-[node name="Canopy" type="MeshInstance3D" parent="Tree2"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
-mesh = SubResource("BoxMesh_canopy")
-surface_material_override/0 = SubResource("Mat_canopy")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 12, 0)

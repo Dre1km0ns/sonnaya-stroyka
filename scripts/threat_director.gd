@@ -13,6 +13,7 @@ var player: CharacterBody3D
 var awake_time: float = 0.0
 var _spawn_budget: int = 3
 const MAX_ENEMIES := 7
+const NIGHT_SPAWN_FACTOR := 0.6
 var _next_spawn_at: float = 45.0
 var _unstable_cd: float = 18.0
 var _enemy_script: GDScript
@@ -113,11 +114,15 @@ func _process(delta: float) -> void:
 
 	# Дальше от кровати / дольше не спишь → больше шовников
 	var target := 3 + int(awake_time / 50.0) + int(dist / 35.0)
+	# v0.6: ночь (фаза «Ночь» 24-минутных суток) — на одного Шовника больше и спавн чаще.
+	var night := GameState.is_night()
+	if night:
+		target += 1
 	target = mini(target, MAX_ENEMIES)
 	while _count_all_enemies() < MAX_ENEMIES and _count_enemies() < target and awake_time >= _next_spawn_at:
 		var elite := _count_enemies() >= 5 or dist > 50.0
 		_spawn_one(elite)
-		_next_spawn_at = awake_time + maxf(20.0, 55.0 - awake_time * 0.05)
+		_next_spawn_at = awake_time + maxf(20.0, 55.0 - awake_time * 0.05) * (NIGHT_SPAWN_FACTOR if night else 1.0)
 		GameState.set_hint("Шов расползается… ещё Шовник%s!" % ("-тяжёлый" if elite else ""))
 
 	if _unstable_cd <= 0.0 and dist > 8.0:

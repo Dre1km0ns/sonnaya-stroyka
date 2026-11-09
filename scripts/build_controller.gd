@@ -8,6 +8,10 @@ var _place_cooldown := 0.0
 var _hand_root: Node3D = null
 var _pickaxe_view: Node3D = null
 var _sword_view: Node3D = null
+const SWORD_DAMAGE := 10
+const SWORD_COOLDOWN := 0.45
+const SWORD_REACH := 2.6
+var last_sword_hits := 0
 
 
 func setup(p: CharacterBody3D, dream_layer: Node3D) -> void:
@@ -46,7 +50,7 @@ func _process(delta: float) -> void:
 		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
 			if GameState.selected_is("sword"):
 				_try_sword()
-				_place_cooldown = 0.45
+				_place_cooldown = SWORD_COOLDOWN
 			elif GameState.selected_is("torch"):
 				_try_place_torch()
 				_place_cooldown = 0.16
@@ -229,9 +233,10 @@ func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 func _finish_mine(cell: Vector3i, kind: String) -> void:
 	_spawn_block_pickup(cell, kind)
 	var host := _wake_world()
-	if host and not GameState.peaceful:
+	# v0.6: решение о боссе брошено на прошлом блоке (и объявлено в чате) — спавним сейчас.
+	if GameState.on_block_mined() and host:
 		var boss_script: GDScript = load("res://scripts/block_mother.gd")
-		boss_script.try_spawn_from_mine(host, cell)
+		boss_script.spawn_near(host, cell)
 
 
 func _wake_voxels() -> Node3D:
@@ -330,21 +335,22 @@ func _try_sword() -> void:
 			continue
 		if "visible" in n and not bool(n.visible):
 			continue
-		var to: Vector3 = (n as Node3D).global_position - origin
-		var dist := to.length()
-		if dist > 2.6 or dist < 0.05:
+		var center: Vector3 = (n as Node3D).global_position
+		if n.has_method("hit_center"):
+			center = n.hit_center()
+		var to: Vector3 = center - origin
+		var r: float = float(n.get("hit_radius")) if "hit_radius" in n else 0.0
+		var dist := to.length() - r
+		if dist > SWORD_REACH or to.length() < 0.05:
 			continue
-		var dir := to.normalized()
+		var flat := Vector3(to.x, 0.0, to.z)
+		var dir := flat.normalized() if flat.length() > 0.05 else forward
 		if dir.dot(forward) < 0.15:
 			continue
 		if n.has_method("take_damage"):
-			n.take_damage(10)
+			n.take_damage(SWORD_DAMAGE)
 			hit += 1
-	if GameState.has_method("set_hint"):
-		if hit > 0:
-			GameState.set_hint("Меч: попаданий %d (−10 HP)." % hit)
-		else:
-			GameState.set_hint("Меч: мимо.")
+	last_sword_hits = hit
 
 
 func _play_sword_swing() -> void:

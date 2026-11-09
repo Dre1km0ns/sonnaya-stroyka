@@ -285,6 +285,47 @@ static func apply_movement(body: CharacterBody3D, want_dir: Vector3, speed: floa
 	body.velocity.x = chosen.x * speed
 	body.velocity.z = chosen.z * speed
 	body.move_and_slide()
+	if not body.has_meta("face_lock"):
+		var flat := Vector3(body.velocity.x, 0.0, body.velocity.z)
+		if flat.length() > 0.15:
+			face_dir(body, flat, delta)
+
+
+## v0.6: модели Quaternius смотрят вдоль +Z (проверено скриншотом). Поворачиваем только узел Model,
+## плавно (угловая скорость ~10 рад/с), чтобы мобы шли «лицом», а не боком.
+const MODEL_FORWARD_YAW := 0.0
+const TURN_RATE := 10.0
+
+
+static func yaw_for(dir: Vector3) -> float:
+	return atan2(dir.x, dir.z) + MODEL_FORWARD_YAW
+
+
+static func face_dir(body: Node3D, dir: Vector3, delta: float, rate: float = TURN_RATE) -> void:
+	var model := body.get_node_or_null("Model") as Node3D
+	if model == null:
+		return
+	dir.y = 0.0
+	if dir.length() < 0.01:
+		return
+	# Модель — дочерний узел тела: переводим мировое направление в локальное (тело могло быть повёрнуто).
+	var local := body.global_transform.basis.inverse() * dir
+	var target := yaw_for(local)
+	var k := clampf(1.0 - exp(-rate * delta), 0.0, 1.0)
+	model.rotation.y = lerp_angle(model.rotation.y, target, k)
+
+
+static func face_point(body: Node3D, point: Vector3, delta: float, rate: float = TURN_RATE) -> void:
+	face_dir(body, point - body.global_position, delta, rate)
+
+
+static func model_world_forward(body: Node3D) -> Vector3:
+	var model := body.get_node_or_null("Model") as Node3D
+	if model == null:
+		return Vector3.ZERO
+	var f := model.global_transform.basis.z
+	f.y = 0.0
+	return f.normalized()
 
 
 static func follow_target(body: CharacterBody3D, target: Vector3, speed: float, delta: float, cache: Dictionary) -> Vector3:

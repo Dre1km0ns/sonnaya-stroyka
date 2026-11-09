@@ -16,6 +16,9 @@ const ITEMS := {
 	"ground": {"name": "Грунт", "stack": 64},
 	"drift": {"name": "Дрейф-блок", "stack": 64},
 	"mouth": {"name": "Рот", "stack": 64},
+	"log": {"name": "Бревно", "stack": 64},
+	"leaves": {"name": "Листва", "stack": 64},
+	"planks": {"name": "Доски", "stack": 64},
 }
 
 ## Особые предметы: только вертикальная полоса справа. key -> поле GameState.

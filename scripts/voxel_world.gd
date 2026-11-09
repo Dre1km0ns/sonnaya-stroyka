@@ -12,6 +12,7 @@ const COLOR_WAKE_MOUTH := Color(0.75, 0.25, 0.35) # рот — мутация
 const COLOR_DREAM := Color(0.55, 0.48, 0.85)      # индиго
 const COLOR_DREAM_ANCHORED := Color(0.98, 0.72, 0.55) # персик шов
 const COLOR_DREAM_PEACH := Color(0.95, 0.70, 0.62)
+const BlockTex := preload("res://scripts/block_tex.gd")
 
 
 func _ready() -> void:
@@ -86,45 +87,26 @@ func refresh_block(cell: Vector3i, data: Dictionary) -> void:
 
 
 func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
+	## v0.6: пиксельные текстуры из общего атласа (BlockTex) вместо однотонных цветов.
 	var mi := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3.ONE * (block_size * 0.98)
-	mi.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.roughness = 0.85
-	mat.metallic = 0.0
 	var kind: String = str(data.get("kind", "drift"))
 	var anchored: bool = bool(data.get("anchored", false))
 	var mutant: bool = bool(data.get("mutant", false)) or kind == "mouth"
+	var tex_kind := kind
+	var size := Vector3.ONE * (block_size * 0.98)
+	var tint := Color(1, 1, 1)
 	if kind == "torch":
-		mat.albedo_color = Color(0.42, 0.26, 0.12)
-		box.size = Vector3(0.12, 0.72, 0.12)
+		size = Vector3(0.12, 0.72, 0.12)
 	elif kind == "beacon":
-		mat.albedo_color = Color(0.30, 0.34, 0.42)
-		box.size = Vector3(0.8, 0.5, 0.8)
-	elif kind == "workbench":
-		mat.albedo_color = Color(0.46, 0.30, 0.18)
-		mat.emission_enabled = true
-		mat.emission = Color(0.6, 0.35, 0.15) * 0.25
-	elif kind == "hill":
-		mat.albedo_color = Color(0.48, 0.55, 0.40)
-	elif kind == "ruin":
-		mat.albedo_color = Color(0.46, 0.38, 0.31)
-	elif kind == "ground":
-		mat.albedo_color = Color(0.55, 0.62, 0.48)
-	elif is_dream_layer:
-		if anchored:
-			mat.albedo_color = COLOR_DREAM_ANCHORED
-			mat.emission_enabled = true
-			mat.emission = Color(1.0, 0.6, 0.35) * 0.35
-		else:
-			mat.albedo_color = COLOR_DREAM if kind == "drift" else COLOR_DREAM_PEACH
-	else:
-		mat.albedo_color = COLOR_WAKE_MOUTH if mutant else COLOR_WAKE
-		if mutant:
-			mat.emission_enabled = true
-			mat.emission = Color(0.9, 0.2, 0.3) * 0.4
-	mi.material_override = mat
+		size = Vector3(0.8, 0.5, 0.8)
+	elif kind == "drift" or kind == "":
+		if is_dream_layer:
+			tex_kind = "drift_anchored" if anchored else "drift_dream"
+		elif mutant:
+			tex_kind = "mouth"
+	elif mutant:
+		tex_kind = "mouth"
+	mi.mesh = BlockTex.cube_mesh(tex_kind, size, is_dream_layer, tint)
 	mi.position = cell_to_world(cell)
 	add_child(mi)
 	_meshes[cell] = mi
@@ -187,12 +169,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "workbench":
 		# Столешница — дочерний узел блока: враг/кирка снимают верстак целиком.
 		var top := MeshInstance3D.new()
-		var top_box := BoxMesh.new()
-		top_box.size = Vector3(1.16, 0.14, 1.16)
-		top.mesh = top_box
-		var tmat := StandardMaterial3D.new()
-		tmat.albedo_color = Color(0.58, 0.38, 0.22)
-		top.material_override = tmat
+		top.mesh = BlockTex.cube_mesh("workbench", Vector3(1.16, 0.14, 1.16))
 		top.position = Vector3(0, 0.50, 0)
 		mi.add_child(top)
 

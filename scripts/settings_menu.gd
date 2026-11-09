@@ -50,6 +50,12 @@ func _build() -> void:
 	note.add_theme_font_size_override("font_size", 14)
 	note.add_theme_color_override("font_color", Color(0.75, 0.75, 0.82))
 	box.add_child(note)
+	var keys := Button.new()
+	keys.name = "Keybinds"
+	keys.text = "Управление (переназначить клавиши)…"
+	keys.custom_minimum_size = Vector2(0, 42)
+	keys.pressed.connect(_open_keybinds)
+	box.add_child(keys)
 	var done := Button.new()
 	done.name = "Done"
 	done.text = "Готово"
@@ -97,7 +103,20 @@ func _add_check(box: VBoxContainer, key: String, label: String, on: bool) -> voi
 	_rows[key] = c
 
 
+var _keybinds: Control = null
+
+
+func _open_keybinds() -> void:
+	var kb_script: GDScript = load("res://scripts/keybind_menu.gd")
+	_keybinds = kb_script.new()
+	_keybinds.process_mode = Node.PROCESS_MODE_ALWAYS
+	_keybinds.closed.connect(func() -> void: _keybinds = null)
+	add_child(_keybinds)
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if _keybinds != null and is_instance_valid(_keybinds):
+		return
 	if event.is_action_pressed("ui_cancel"):
 		closed.emit()
 		queue_free()
