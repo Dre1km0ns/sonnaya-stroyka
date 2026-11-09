@@ -18,7 +18,7 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
-	if _want_shots07():
+	if _want_shots07() or _want_inventory_mockup():
 		GameState.begin_world("Скриншоты v0.7", "", "6767676767", GameState.DEV_SEED, true)
 	elif _want_shots06():
 		GameState.begin_world("Скриншоты v0.6", "", "6767676767", GameState.DEV_SEED, false)
@@ -69,7 +69,9 @@ func _ready() -> void:
 		player.global_position = player.global_position
 	if not GameState.player_died.is_connected(_on_player_died):
 		GameState.player_died.connect(_on_player_died)
-	if _want_shots07():
+	if _want_inventory_mockup():
+		call_deferred("_capture_inventory_mockup")
+	elif _want_shots07():
 		call_deferred("_capture_v07")
 	elif _want_shots06():
 		call_deferred("_capture_v06")
@@ -158,6 +160,10 @@ func _spawn_saved_graves() -> void:
 		_spawn_grave(int(gr["id"]))
 
 
+func _want_inventory_mockup() -> bool:
+	return "--mock-inventory" in OS.get_cmdline_user_args()
+
+
 func _want_shots07() -> bool:
 	return "--shots07" in OS.get_cmdline_user_args()
 
@@ -204,7 +210,7 @@ func _start_music() -> void:
 func _want_shots() -> bool:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
-	return "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
+	return _want_inventory_mockup() or "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
 
 
 func _want_shots05() -> bool:
@@ -986,4 +992,23 @@ func _capture_v07() -> void:
 	respawn()
 	await _wait(0.4)
 	print("SHOT07 report ", report)
+	get_tree().quit(0)
+
+
+func _capture_inventory_mockup() -> void:
+	await _wait(2.0)
+	GameState.day_time = 840.0
+	_v7_goto(Vector3(6.5, 0.1, 9.5))
+	_look_at_point(Vector3(2, 1.0, 10), Vector3(6.5, 0.1, 9.5))
+	var inv = get_tree().get_first_node_in_group("inventory_ui")
+	inv.open()
+	await _wait(0.5)
+	await _save_shot("mock_inv_wake.png")
+	inv.close()
+	switcher.enter_dream()
+	await _wait(0.6)
+	inv.open()
+	await _wait(0.5)
+	await _save_shot("mock_inv_dream.png")
+	inv.close()
 	get_tree().quit(0)

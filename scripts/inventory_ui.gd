@@ -3,6 +3,7 @@ extends Control
 ## ЛКМ — взять/положить/поменять стак, ПКМ — взять половину / положить один, Shift+ЛКМ — перенос хотбар↔рюкзак.
 
 const SlotView := preload("res://scripts/slot_view.gd")
+const ArmorPlaceholder := preload("res://scripts/armor_placeholder.gd")
 const ItemDB := preload("res://scripts/item_db.gd")
 
 var _open := false
@@ -82,20 +83,53 @@ func _build() -> void:
 		var s := _make_slot(i)
 		s.set_key_hint(str(i + 1))
 		hot.add_child(s)
-	# Справа — особые предметы (только просмотр + выбор якоря кликом).
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 4)
-	row.add_child(right)
+	# Якоря остаются рабочими: горизонтально под хотбаром в обоих мирах.
+	var special_box := VBoxContainer.new()
+	special_box.name = "AnchorsRow"
+	special_box.add_theme_constant_override("separation", 4)
+	left.add_child(special_box)
 	var cap := Label.new()
 	cap.text = "Якоря / маяки"
 	cap.add_theme_font_size_override("font_size", 13)
-	right.add_child(cap)
+	special_box.add_child(cap)
+	var special_row := HBoxContainer.new()
+	special_row.add_theme_constant_override("separation", 4)
+	special_box.add_child(special_row)
 	for sp in ItemDB.SPECIAL:
 		var sv: Panel = SlotView.new()
 		sv.index = int(sp["anchor"])
 		sv.slot_clicked.connect(_on_special_clicked)
-		right.add_child(sv)
+		special_row.add_child(sv)
 		_specials.append([sv, str(sp["id"])])
+	# Броня — только неинтерактивный макет, без экипировки и хранилища.
+	var right := VBoxContainer.new()
+	right.name = "ArmorAndPouch"
+	right.add_theme_constant_override("separation", 4)
+	row.add_child(right)
+	var armor_cap := Label.new()
+	armor_cap.text = "Броня"
+	armor_cap.add_theme_font_size_override("font_size", 13)
+	right.add_child(armor_cap)
+	for armor_name in ["Шлем", "Нагрудник", "Поножи", "Ботинки"]:
+		var armor_row := HBoxContainer.new()
+		armor_row.add_theme_constant_override("separation", 8)
+		right.add_child(armor_row)
+		var empty_slot: Panel = SlotView.new()
+		empty_slot.name = "ArmorSlot" + str(armor_row.get_index())
+		empty_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		armor_row.add_child(empty_slot)
+		var silhouette := ArmorPlaceholder.new()
+		silhouette.kind = armor_row.get_index() - 1
+		silhouette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		silhouette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		empty_slot.add_child(silhouette)
+		var armor_label := Label.new()
+		armor_label.text = armor_name
+		armor_label.add_theme_font_size_override("font_size", 13)
+		armor_row.add_child(armor_label)
+	var pouch_gap := Control.new()
+	pouch_gap.custom_minimum_size.y = 8
+	right.add_child(pouch_gap)
 	var pcap := Label.new()
 	pcap.text = "Кошель (общий)"
 	pcap.add_theme_font_size_override("font_size", 13)
