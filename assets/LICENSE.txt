@@ -41,3 +41,20 @@ https://creativecommons.org/publicdomain/zero/1.0/
 - music.mp3      — Явь (существующий трек)
 - dream_ost.mp3  — Сон («lofi Good Niiight», reflektpro8)
 - boss_ost.mp3   — босс «Мать блоков» (новый саундтрек)
+- anaconda_ost.mp3 — босс «Анаконда» (v0.7, трек предоставлен пользователем проекта;
+  сконвертирован из WAV в MP3 192 kbps, зациклен в игре)
+
+Звуки боссов v0.7 (assets/audio/*.ogg)
+--------------------------------------
+Источник: «Monster Sound Effects Pack» by Ogrebane, OpenGameArt.org
+  https://opengameart.org/content/monster-sound-effects-pack
+  Лицензия: CC0 1.0 Universal
+Обработка (ffmpeg: понижение тона, эхо, фильтры):
+- mother_roar.ogg     ← monster-6.wav
+- mother_growl.ogg    ← monster-8.wav
+- anaconda_roar.ogg   ← monster-1.wav + monster-10.wav
+- anaconda_rumble.ogg ← monster-6.wav
+
+Модель хилки (assets/models/potion_heal.glb)
+--------------------------------------------
+- «Potion» — Pixor library, CC0 1.0 (public domain). «Made with Pixor».

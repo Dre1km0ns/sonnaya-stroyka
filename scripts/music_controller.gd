@@ -7,6 +7,11 @@ const FADE_SEC := 0.85
 const PATH_WAKE := "res://assets/audio/music.mp3"
 const PATH_DREAM := "res://assets/audio/dream_ost.mp3"
 const PATH_BOSS := "res://assets/audio/boss_ost.mp3"
+const PATH_ANACONDA := "res://assets/audio/anaconda_ost.mp3"
+## v0.7: если живы оба босса — играет тема Анаконды (ночной бой под землёй, она редкая и опаснее);
+## Мать блоков возвращает свою тему, как только Анаконда уйдёт или умрёт.
+const POLL_SEC := 0.5
+var _poll_t: float = 0.0
 
 var _a: AudioStreamPlayer
 var _b: AudioStreamPlayer
@@ -50,7 +55,24 @@ func _load_stream(path: String) -> AudioStream:
 	return stream as AudioStream
 
 
+func anaconda_active() -> bool:
+	if not is_inside_tree():
+		return false
+	for a in get_tree().get_nodes_in_group("anaconda"):
+		if is_instance_valid(a) and not a.is_queued_for_deletion():
+			if a.has_method("is_fight_active") and not a.is_fight_active():
+				continue
+			return true
+	return false
+
+
+func current_key() -> String:
+	return _want
+
+
 func _desired() -> String:
+	if GameState != null and not GameState.is_dream() and anaconda_active():
+		return "anaconda"
 	if GameState != null and bool(GameState.get("boss_alive")):
 		return "boss"
 	if GameState != null and GameState.is_dream():
@@ -59,6 +81,8 @@ func _desired() -> String:
 
 
 func _path_for(key: String) -> String:
+	if key == "anaconda":
+		return PATH_ANACONDA
 	if key == "boss":
 		return PATH_BOSS
 	if key == "dream":
@@ -103,6 +127,13 @@ func crossfade_to(key: String) -> void:
 
 
 func _process(delta: float) -> void:
+	# Опрос: Анаконда может появиться, когда Мать уже жива (boss_changed тогда не срабатывает).
+	_poll_t -= delta
+	if _poll_t <= 0.0:
+		_poll_t = POLL_SEC
+		var want := _desired()
+		if want != _want:
+			crossfade_to(want)
 	if not _fading:
 		return
 	_fade_t = minf(1.0, _fade_t + delta / FADE_SEC)

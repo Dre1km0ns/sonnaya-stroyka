@@ -12,6 +12,7 @@ var _held_from: int = -1
 var _held_view: Control
 var _title: Label
 var _specials: Array = []
+var _pouch: Array = []
 
 
 func _ready() -> void:
@@ -95,6 +96,20 @@ func _build() -> void:
 		sv.slot_clicked.connect(_on_special_clicked)
 		right.add_child(sv)
 		_specials.append([sv, str(sp["id"])])
+	var pcap := Label.new()
+	pcap.text = "Кошель (общий)"
+	pcap.add_theme_font_size_override("font_size", 13)
+	right.add_child(pcap)
+	var pgrid := GridContainer.new()
+	pgrid.columns = 2
+	pgrid.add_theme_constant_override("h_separation", 4)
+	pgrid.add_theme_constant_override("v_separation", 4)
+	right.add_child(pgrid)
+	for pid in ["reagent1", "reagent2", "reagent3", "dust"]:
+		var pv: Panel = SlotView.new()
+		pv.mouse_filter = Control.MOUSE_FILTER_PASS
+		pgrid.add_child(pv)
+		_pouch.append([pv, pid])
 	var help := Label.new()
 	help.text = "ЛКМ — взять/положить   ПКМ — половина/один   Shift+ЛКМ — перенос   I / Tab / Esc — закрыть"
 	help.add_theme_font_size_override("font_size", 12)
@@ -215,7 +230,10 @@ func _on_special_clicked(anchor_index: int, _button: int, _shift: bool) -> void:
 func _refresh() -> void:
 	if not visible:
 		return
-	_title.text = "Инвентарь" + ("   [DEV-сид: всё бесконечно]" if GameState.dev_mode else "")
+	_title.text = ("Инвентарь сна" if GameState.is_dream() else "Инвентарь яви") + ("   [DEV-сид: всё бесконечно]" if GameState.dev_mode else "")
+	for pp in _pouch:
+		var pcnt: int = GameState.count_item(str(pp[1]))
+		pp[0].set_item(str(pp[1]), pcnt, false, pcnt >= GameState.INF_COUNT, true)
 	for i in range(_slots.size()):
 		var s = _slots[i]
 		if s == null:

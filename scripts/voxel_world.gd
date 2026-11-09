@@ -106,7 +106,12 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 			tex_kind = "mouth"
 	elif mutant:
 		tex_kind = "mouth"
-	mi.mesh = BlockTex.cube_mesh(tex_kind, size, is_dream_layer, tint)
+	if kind == "bed":
+		mi.mesh = BlockTex.bed_mesh(1.0)
+	elif kind == "lathe":
+		mi.mesh = BlockTex.lathe_mesh()
+	else:
+		mi.mesh = BlockTex.cube_mesh(tex_kind, size, is_dream_layer, tint)
 	mi.position = cell_to_world(cell)
 	add_child(mi)
 	_meshes[cell] = mi
@@ -182,6 +187,9 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "workbench":
 		shape.size = Vector3(block_size, block_size * 1.2, block_size)
 		body.position = mi.position + Vector3(0, 0.10, 0)
+	elif kind == "bed":
+		shape.size = Vector3(block_size, 0.56, block_size)
+		body.position = mi.position + Vector3(0, -0.22, 0)
 	else:
 		shape.size = Vector3.ONE * block_size
 	col.shape = shape
@@ -193,6 +201,11 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		body.add_to_group("workbench")
 	if kind == "torch":
 		body.add_to_group("torch")
+	if kind == "bed":
+		body.add_to_group("bed")
+		body.add_to_group("placed_bed")
+	if kind == "lathe":
+		body.add_to_group("lathe")
 	if kind == "beacon":
 		body.add_to_group("beacon")
 	add_child(body)

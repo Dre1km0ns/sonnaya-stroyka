@@ -39,6 +39,15 @@ var _vuln_label: Label
 var _last_chat_text := ""
 var _last_chat_time := -100.0
 var _time := 0.0
+## v0.7
+var _hp_text: Label
+var _heal_slot: Panel
+var _heal_cd_label: Label
+var _heal_cd_shade: ColorRect
+var _bed_prompt: PanelContainer
+var _bed_prompt_label: Label
+var pillow_ui: Control
+var death_menu: Control
 
 
 func _ready() -> void:
@@ -60,6 +69,14 @@ func _ready() -> void:
 	var inv_script: GDScript = load("res://scripts/inventory_ui.gd")
 	inventory = inv_script.new()
 	$Root.add_child(inventory)
+	_build_heal_indicator()
+	_build_bed_prompt()
+	var pil_script: GDScript = load("res://scripts/pillow_ui.gd")
+	pillow_ui = pil_script.new()
+	$Root.add_child(pillow_ui)
+	var death_script: GDScript = load("res://scripts/death_menu.gd")
+	death_menu = death_script.new()
+	$Root.add_child(death_menu)
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
 	GameState.clarity_changed.connect(_on_clarity)
@@ -259,6 +276,133 @@ func _build_hearts() -> void:
 		_hearts.append(t)
 
 
+func _build_heal_indicator() -> void:
+	## v0.7: «HP 74/100» + ячейка хилки1 (кол-во, клавиша, затемнение-кулдаун 15 с).
+	var root: Control = $Root
+	var w := 9 * 52 + 8 * 4
+	_hp_text = Label.new()
+	_hp_text.name = "HPText"
+	_hp_text.anchor_left = 0.5
+	_hp_text.anchor_right = 0.5
+	_hp_text.anchor_top = 1.0
+	_hp_text.anchor_bottom = 1.0
+	_hp_text.offset_left = -w / 2.0 + 262
+	_hp_text.offset_right = -w / 2.0 + 440
+	_hp_text.grow_horizontal = Control.GROW_DIRECTION_END
+	_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_hp_text.offset_top = -94.0
+	_hp_text.offset_bottom = -70.0
+	_hp_text.add_theme_font_size_override("font_size", 15)
+	_hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_hp_text.add_theme_constant_override("outline_size", 5)
+	root.add_child(_hp_text)
+	_heal_slot = SlotView.new()
+	_heal_slot.name = "HealSlot"
+	_heal_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_heal_slot.anchor_left = 0.5
+	_heal_slot.anchor_right = 0.5
+	_heal_slot.anchor_top = 1.0
+	_heal_slot.anchor_bottom = 1.0
+	_heal_slot.offset_left = w / 2.0 + 14
+	_heal_slot.offset_right = w / 2.0 + 66
+	_heal_slot.offset_top = -62.0
+	_heal_slot.offset_bottom = -10.0
+	root.add_child(_heal_slot)
+	_heal_cd_shade = ColorRect.new()
+	_heal_cd_shade.color = Color(0, 0, 0, 0.6)
+	_heal_cd_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_heal_cd_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_heal_slot.add_child(_heal_cd_shade)
+	_heal_cd_label = Label.new()
+	_heal_cd_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_heal_cd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_heal_cd_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_heal_cd_label.add_theme_font_size_override("font_size", 18)
+	_heal_cd_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_heal_cd_label.add_theme_constant_override("outline_size", 6)
+	_heal_cd_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_heal_slot.add_child(_heal_cd_label)
+
+
+func _update_heal_indicator() -> void:
+	if _heal_slot == null:
+		return
+	var dream := GameState.is_dream()
+	_heal_slot.visible = not dream
+	var n: int = GameState.count_item("heal1")
+	_heal_slot.set_item("heal1", n, false, n >= GameState.INF_COUNT, true)
+	_heal_slot.set_key_hint(_key("use_heal", "H"))
+	var cd: float = float(GameState.heal_cd)
+	_heal_cd_shade.visible = cd > 0.0
+	_heal_cd_shade.anchor_top = 1.0 - clampf(cd / float(GameState.HEAL_COOLDOWN), 0.0, 1.0)
+	_heal_cd_shade.offset_top = 0
+	_heal_cd_label.text = ("%d" % int(ceil(cd))) if cd > 0.0 else ""
+	var regen: float = GameState.regen_delay_left()
+	var hp: int = GameState.player_hp
+	var tail := ""
+	if hp < GameState.PLAYER_MAX_HP and hp > 0:
+		tail = "  реген %ds" % int(ceil(regen)) if regen > 0.0 else "  +1/с"
+	_hp_text.text = "HP %d/%d%s" % [hp, GameState.PLAYER_MAX_HP, tail]
+	_hp_text.add_theme_color_override("font_color", Color(1.0, 0.5, 0.45) if hp <= 30 else Color(1, 1, 1))
+
+
+func heal_indicator_state() -> Dictionary:
+	return {"visible": _heal_slot != null and _heal_slot.visible, "cd_text": _heal_cd_label.text if _heal_cd_label else "",
+		"hp_text": _hp_text.text if _hp_text else ""}
+
+
+func _build_bed_prompt() -> void:
+	## v0.7: наведение на кровать в яви → вопрос «под подушкой».
+	var root: Control = $Root
+	_bed_prompt = PanelContainer.new()
+	_bed_prompt.name = "BedPrompt"
+	_bed_prompt.anchor_left = 0.5
+	_bed_prompt.anchor_right = 0.5
+	_bed_prompt.anchor_top = 0.5
+	_bed_prompt.anchor_bottom = 0.5
+	_bed_prompt.offset_left = -230
+	_bed_prompt.offset_right = 230
+	_bed_prompt.offset_top = 40
+	_bed_prompt.offset_bottom = 120
+	_bed_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.10, 0.16, 0.88)
+	sb.border_color = Color(0.85, 0.7, 0.5)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	_bed_prompt.add_theme_stylebox_override("panel", sb)
+	_bed_prompt_label = Label.new()
+	_bed_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bed_prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bed_prompt_label.add_theme_font_size_override("font_size", 16)
+	_bed_prompt.add_child(_bed_prompt_label)
+	_bed_prompt.visible = false
+	root.add_child(_bed_prompt)
+
+
+func _update_bed_prompt() -> void:
+	if _bed_prompt == null:
+		return
+	var show := false
+	if not GameState.is_dream() and not GameState.ui_blocked():
+		for sw in get_tree().get_nodes_in_group("world_switcher"):
+			if sw.has_method("aimed_bed") and sw.aimed_bed() != null:
+				show = true
+	_bed_prompt.visible = show
+	if show:
+		var n: int = GameState.pillow_count("heal1")
+		_bed_prompt_label.text = "Вы хотите проверить, что находится под подушкой?\n[%s] Да   ·   [%s] Лечь спать (сон)%s" % [
+			_key("pillow_check", "Y"), _key("interact", "E"), ("   · там что-то лежит (%d)" % n) if n > 0 else ""]
+
+
+func bed_prompt_visible() -> bool:
+	return _bed_prompt != null and _bed_prompt.visible
+
+
 func _on_hp(hp: int, max_hp: int) -> void:
 	var full: Texture2D = load("res://assets/icons/ui_heart_full.png")
 	var half: Texture2D = load("res://assets/icons/ui_heart_half.png")
@@ -393,6 +537,8 @@ func _on_world(is_dream: bool) -> void:
 	var cap := get_node_or_null("Root/ClarityCaption")
 	if cap:
 		cap.visible = is_dream
+	# v0.7: у сна и яви разные инвентари — хотбар перерисовываем при смене мира.
+	_refresh_inv()
 
 
 func _on_clarity(value: float, max_value: float) -> void:
@@ -474,13 +620,15 @@ func _process(delta: float) -> void:
 	if _phase_t <= 0.0:
 		_phase_t = 0.5
 		_update_phase_label()
+	_update_heal_indicator()
+	_update_bed_prompt()
 	_debug_t += delta
 	if _debug_label.visible and _debug_t > 0.25:
 		_debug_t = 0.0
 		_update_debug()
 	if _boss_wrap == null:
 		return
-	var bosses: Array = get_tree().get_nodes_in_group("block_mother") if get_tree() else []
+	var bosses: Array = get_tree().get_nodes_in_group("boss") if get_tree() else []
 	var live: Node = null
 	for b in bosses:
 		if is_instance_valid(b) and int(b.get("hp")) > 0:
@@ -496,7 +644,11 @@ func _process(delta: float) -> void:
 	_boss_bar.value = hp
 	var ph := int(live.get("phase")) if "phase" in live else 1
 	var vuln := bool(live.call("is_vulnerable")) if live.has_method("is_vulnerable") else false
-	_boss_label.text = "Мать блоков · фаза %d   %d / %d%s" % [ph, hp, mx, "   — УЯЗВИМА!" if vuln else ""]
+	var title := str(live.call("boss_title")) if live.has_method("boss_title") else "Мать блоков"
+	var extra := "   — УЯЗВИМА!" if vuln else ""
+	if live.has_method("boss_hint"):
+		extra = str(live.call("boss_hint"))
+	_boss_label.text = "%s · фаза %d   %d / %d%s" % [title, ph, hp, mx, extra]
 	_boss_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3) if vuln else Color(1, 1, 1))
 
 

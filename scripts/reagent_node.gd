@@ -134,14 +134,14 @@ func collect() -> void:
 		var cap := 100
 		if "REAGENT_CAP" in GameState:
 			cap = int(GameState.REAGENT_CAP)
-		GameState.set_hint("%s: счётчик полный (%d)." % [GameState.reagent_type_name(reagent_type), cap])
+		GameState.set_hint("%s: счётчик полный (%d)." % [GameState.reagent_type_name(reagent_type), cap], false)
 		return
 	collected = true
 	if GameState.has_method("mark_reagent_collected"):
 		GameState.mark_reagent_collected(world_id)
 	GameState.set_hint("Собран %s (+%d). Всего: %d" % [
 		GameState.reagent_type_name(reagent_type), added, GameState.get_reagent_count(reagent_type)
-	])
+	], false)
 	visible = false
 	collision_layer = 0
 	queue_free()

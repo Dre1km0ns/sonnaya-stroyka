@@ -4,7 +4,9 @@ extends RefCounted
 
 const TILES := ["grass_top", "grass_side", "dirt", "stone", "brick", "brick_mossy", "log_side", "log_top",
 	"leaves", "sand", "water", "dream_top", "dream_side", "dream_dirt", "drift", "drift_dream",
-	"drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch"]
+	"drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch",
+	"bedrock", "nest", "egg", "bed_top", "bed_side", "deep_stone", "grave", "lathe_top", "lathe_side", "blanket", "mattress",
+	"blade2", "scale", "scale_head"]
 
 static var _mat: ShaderMaterial = null
 static var _water: Dictionary = {}
@@ -59,6 +61,30 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("dirt"))
 		"stone":
 			return _all(tile("stone"))
+		"deep_stone":
+			return _all(tile("deep_stone"))
+		"bedrock":
+			return _all(tile("bedrock"))
+		"nest":
+			return _all(tile("nest"))
+		"egg":
+			return _all(tile("egg"))
+		"bed":
+			return _f(tile("bed_side"), tile("bed_top"), tile("planks"))
+		"blanket":
+			return _all(tile("blanket"))
+		"mattress":
+			return _all(tile("mattress"))
+		"lathe":
+			return _f(tile("lathe_side"), tile("lathe_top"), tile("planks"))
+		"grave":
+			return _all(tile("grave"))
+		"blade2":
+			return _all(tile("blade2"))
+		"scale":
+			return _all(tile("scale"))
+		"scale_head":
+			return [tile("scale"), tile("scale"), tile("scale"), tile("scale"), tile("scale"), tile("scale_head")]
 		"ruin":
 			if dream:
 				return _all(tile("dream_brick"))
@@ -176,4 +202,62 @@ static func cube_mesh(kind: String, size: Vector3 = Vector3.ONE, dream: bool = f
 	emit_box(st, -size * 0.5, size, tint, 0, faces_for(kind, dream, true, 1), true)
 	var m := stream_to_mesh(st)
 	_cubes[key] = m
+	return m
+
+
+static func bed_mesh(length: float = 1.0) -> ArrayMesh:
+	## v0.7: процедурная кровать (рама из досок, матрас, красное одеяло, подушка, изголовье по -Z).
+	## Центр по XZ в нуле, низ на y=-0.5 (как у куба-блока). length — вдоль Z (спавн-кровать = 2).
+	var key := "bed|%s" % str(length)
+	if _cubes.has(key):
+		return _cubes[key]
+	var st := new_stream()
+	var w := 0.96
+	var l := length - 0.04
+	var z0 := -l * 0.5
+	var white := Color(1, 1, 1)
+	emit_box(st, Vector3(-w * 0.5, -0.5, z0), Vector3(w, 0.26, l), white, 0, faces_for("planks"), true)
+	for lx in [-w * 0.5, w * 0.5 - 0.1]:
+		for lz in [z0, z0 + l - 0.1]:
+			emit_box(st, Vector3(lx, -0.5, lz), Vector3(0.1, 0.1, 0.1), white.darkened(0.2), 0, faces_for("log"), true)
+	emit_box(st, Vector3(-w * 0.5 + 0.03, -0.24, z0 + 0.03), Vector3(w - 0.06, 0.14, l - 0.06), white, 0, faces_for("mattress"), true)
+	var bl := l * 0.64
+	emit_box(st, Vector3(-w * 0.5 + 0.01, -0.12, z0 + l - bl), Vector3(w - 0.02, 0.07, bl), white, 0, faces_for("blanket"), true)
+	emit_box(st, Vector3(-w * 0.32, -0.12, z0 + 0.06), Vector3(w * 0.64, 0.12, minf(0.26, l * 0.22)), white, 0, faces_for("mattress"), true)
+	emit_box(st, Vector3(-w * 0.5, -0.5, z0 - 0.02), Vector3(w, 0.72, 0.08), white, 0, faces_for("planks"), true)
+	var m := stream_to_mesh(st)
+	_cubes[key] = m
+	return m
+
+
+static func lathe_mesh() -> ArrayMesh:
+	## v0.7: Станок — каменно-деревянный стол со шпинделем и диском.
+	if _cubes.has("lathe_mesh"):
+		return _cubes["lathe_mesh"]
+	var st := new_stream()
+	var white := Color(1, 1, 1)
+	emit_box(st, Vector3(-0.49, -0.5, -0.49), Vector3(0.98, 0.78, 0.98), white, 0, faces_for("lathe"), true)
+	emit_box(st, Vector3(-0.42, 0.28, -0.12), Vector3(0.18, 0.2, 0.24), white.darkened(0.1), 0, faces_for("stone"), true)
+	emit_box(st, Vector3(0.24, 0.28, -0.12), Vector3(0.18, 0.2, 0.24), white.darkened(0.1), 0, faces_for("stone"), true)
+	emit_box(st, Vector3(-0.24, 0.34, -0.04), Vector3(0.48, 0.08, 0.08), Color(0.75, 0.8, 0.9), 0, faces_for("beacon"), true)
+	emit_box(st, Vector3(-0.06, 0.24, -0.2), Vector3(0.12, 0.28, 0.4), white, 0, faces_for("stone"), true)
+	var m := stream_to_mesh(st)
+	_cubes["lathe_mesh"] = m
+	return m
+
+
+static func sword2_mesh() -> ArrayMesh:
+	## v0.7: Меч2 — кристаллический клинок (своя текстура blade2), латунная гарда, рукоять из бревна.
+	if _cubes.has("sword2_mesh"):
+		return _cubes["sword2_mesh"]
+	var st := new_stream()
+	var w := Color(1, 1, 1)
+	emit_box(st, Vector3(-0.05, 0.0, -0.025), Vector3(0.10, 0.18, 0.05), w, 0, faces_for("log"), true)
+	emit_box(st, Vector3(-0.06, -0.04, -0.03), Vector3(0.12, 0.05, 0.06), Color(1.0, 0.85, 0.4), 0, faces_for("egg"), true)
+	emit_box(st, Vector3(-0.17, 0.18, -0.035), Vector3(0.34, 0.06, 0.07), Color(1.0, 0.8, 0.3), 0, faces_for("torch"), true)
+	emit_box(st, Vector3(-0.055, 0.24, -0.02), Vector3(0.11, 0.62, 0.04), w, 0, faces_for("blade2"), true)
+	emit_box(st, Vector3(-0.035, 0.86, -0.018), Vector3(0.07, 0.12, 0.036), w, 0, faces_for("blade2"), true)
+	emit_box(st, Vector3(-0.015, 0.98, -0.015), Vector3(0.03, 0.06, 0.03), Color(0.9, 1.0, 1.0), 0, faces_for("blade2"), true)
+	var m := stream_to_mesh(st)
+	_cubes["sword2_mesh"] = m
 	return m

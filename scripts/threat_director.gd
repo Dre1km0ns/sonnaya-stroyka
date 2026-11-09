@@ -13,6 +13,12 @@ var player: CharacterBody3D
 var awake_time: float = 0.0
 var _spawn_budget: int = 3
 const MAX_ENEMIES := 7
+## v0.7: пока жив любой босс, обычных врагов (Шовники + призраки) не больше двух.
+const BOSS_ENEMY_CAP := 2
+
+
+func enemy_cap() -> int:
+	return BOSS_ENEMY_CAP if bool(GameState.get("boss_alive")) else MAX_ENEMIES
 const NIGHT_SPAWN_FACTOR := 0.6
 var _next_spawn_at: float = 45.0
 var _unstable_cd: float = 18.0
@@ -96,17 +102,27 @@ func apply_save_dict(d: Dictionary) -> void:
 	_ensure_ghosts()
 
 
+var _anaconda_t := 0.0
+
+
 func _process(delta: float) -> void:
 	if GameState.is_dream():
 		return
 	if player == null or wake_root == null:
 		return
+	_anaconda_t -= delta
+	if _anaconda_t <= 0.0:
+		_anaconda_t = 0.5
+		_tick_anaconda()
 	awake_time += delta
 	GameState.awake_time = awake_time
 	_unstable_cd = maxf(0.0, _unstable_cd - delta)
 	if not mobs_can_spawn():
 		return
 	_update_ghost_mode(delta)
+	if bool(GameState.get("boss_alive")):
+		_cull_to_cap()
+		return
 	_ensure_all_spawns()
 
 	var bed_pos := bed.global_position if bed else Vector3.ZERO
@@ -118,16 +134,49 @@ func _process(delta: float) -> void:
 	var night := GameState.is_night()
 	if night:
 		target += 1
-	target = mini(target, MAX_ENEMIES)
-	while _count_all_enemies() < MAX_ENEMIES and _count_enemies() < target and awake_time >= _next_spawn_at:
+	target = mini(target, enemy_cap())
+	while _count_all_enemies() < enemy_cap() and _count_enemies() < target and awake_time >= _next_spawn_at:
 		var elite := _count_enemies() >= 5 or dist > 50.0
 		_spawn_one(elite)
 		_next_spawn_at = awake_time + maxf(20.0, 55.0 - awake_time * 0.05) * (NIGHT_SPAWN_FACTOR if night else 1.0)
-		GameState.set_hint("Шов расползается… ещё Шовник%s!" % ("-тяжёлый" if elite else ""))
+		GameState.set_hint("Шов расползается… ещё Шовник%s!" % ("-тяжёлый" if elite else ""), false)
 
 	if _unstable_cd <= 0.0 and dist > 8.0:
 		_pulse_unstable_seam()
 		_unstable_cd = 14.0 + randf() * 10.0
+
+
+func _tick_anaconda() -> Node:
+	## v0.7: Анаконда — ночью у гнезда с яйцом (≤12 м) или если яйцо в кармане под землёй.
+	var chunks: Node = null
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if not bool(cm.get("is_dream_layer")) and not bool(cm.get("panorama_mode")):
+			chunks = cm
+	var script: GDScript = load("res://scripts/boss_anaconda.gd")
+	return script.try_spawn(wake_root, player, chunks)
+
+
+func _cull_to_cap() -> int:
+	## Босс появился — лишние обычные враги (самые дальние) рассеиваются.
+	var all: Array = []
+	for e in get_tree().get_nodes_in_group("seam_creature"):
+		if not e.is_queued_for_deletion():
+			all.append(e)
+	for g in get_tree().get_nodes_in_group("enemy_ghost"):
+		if not g.is_queued_for_deletion():
+			all.append(g)
+	var extra := all.size() - BOSS_ENEMY_CAP
+	if extra <= 0:
+		return 0
+	var ppos := player.global_position if player else Vector3.ZERO
+	all.sort_custom(func(a: Node, b: Node) -> bool:
+		return (a as Node3D).global_position.distance_squared_to(ppos) > (b as Node3D).global_position.distance_squared_to(ppos))
+	for i in range(extra):
+		var n: Node = all[i]
+		n.remove_from_group("seam_creature")
+		n.remove_from_group("enemy_ghost")
+		n.queue_free()
+	return extra
 
 
 func _ensure_base_spawns() -> void:
@@ -159,7 +208,7 @@ func _spawn_one(elite: bool) -> void:
 func _spawn_at(pos: Vector3, elite: bool) -> void:
 	if _enemy_script == null or wake_root == null:
 		return
-	if _count_all_enemies() >= MAX_ENEMIES:
+	if _count_all_enemies() >= enemy_cap():
 		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos
@@ -195,7 +244,7 @@ func _pulse_unstable_seam() -> void:
 		GameState.inventory_changed.emit()
 		GameState.set_hint("Нестабильный шов! Потеряно блоков яви: %d" % ripped)
 	else:
-		GameState.set_hint("Нестабильный шов дрожит… построек рядом нет.")
+		GameState.set_hint("Нестабильный шов дрожит… построек рядом нет.", false)
 
 
 func _update_ghost_mode(delta: float) -> void:
@@ -233,7 +282,7 @@ func _ensure_ghosts() -> void:
 func _spawn_ghost(kind: int, pos: Vector3, corner: Vector3) -> void:
 	if _ghost_script == null or wake_root == null:
 		return
-	if _count_all_enemies() >= MAX_ENEMIES:
+	if _count_all_enemies() >= enemy_cap():
 		return
 	var e: CharacterBody3D = _ghost_script.new()
 	e.position = pos

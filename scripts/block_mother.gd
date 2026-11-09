@@ -9,6 +9,10 @@ extends CharacterBody3D
 const _Vis := preload("res://scripts/enemy_visuals.gd")
 const _Nav := preload("res://scripts/enemy_navigation.gd")
 const BlockTex := preload("res://scripts/block_tex.gd")
+const Sfx := preload("res://scripts/sfx.gd")
+## v0.7 пассивка: +5 HP за каждый блок, который она сама сломала в бою (прыжком). Сама блоки не ищет.
+const HEAL_PER_BLOCK := 5
+var healed_from_blocks: int = 0
 
 enum S { SPAWN, IDLE, WINDUP, AIR, STAGGER, TRANSITION, SCATTER, MARKER, RAIN_WINDUP, RAIN, DEAD, LEAVING }
 const STATE_NAMES := ["SPAWN", "IDLE", "WINDUP", "AIR", "STAGGER", "TRANSITION", "SCATTER", "MARKER", "RAIN_WINDUP", "RAIN", "DEAD", "LEAVING"]
@@ -168,6 +172,7 @@ func _ready() -> void:
 		var tw := create_tween()
 		tw.tween_property(model, "scale", model.scale * 5.0, SPAWN_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	GameState.chat("Мать блоков собирается из камня! Беги из-под прыжков, бей в окна «УЯЗВИМА».", Color(1.0, 0.45, 0.4))
+	roar(true)
 
 
 func _on_world(is_dream: bool) -> void:
@@ -215,6 +220,29 @@ func take_damage(amount: int) -> void:
 	# Переход фаз прерывает «окно» сразу (на земле), в воздухе — после приземления.
 	if _pending_transition > 0 and state in [S.IDLE, S.STAGGER, S.WINDUP, S.RAIN_WINDUP]:
 		_start_transition()
+
+
+func heal_from_blocks(blocks: int) -> int:
+	## Пассивка: лечится, только пока бой идёт; не выше max_hp и не выше порога текущей фазы
+	## (чтобы лечением не «откатывать» уже пройденный переход).
+	if blocks <= 0 or state == S.DEAD or state == S.LEAVING:
+		return 0
+	var cap := max_hp
+	if phase == 2:
+		cap = P2_AT
+	elif phase == 3:
+		cap = P3_AT
+	var before := hp
+	hp = mini(cap, hp + HEAL_PER_BLOCK * blocks)
+	var got := hp - before
+	if got > 0:
+		healed_from_blocks += got
+		_Vis.update_hp_bar(self, hp, max_hp)
+	return got
+
+
+func roar(loud: bool = true) -> void:
+	Sfx.play3d(self, Sfx.MOTHER_ROAR if loud else Sfx.MOTHER_GROWL, 2.0 if loud else -2.0, 80.0, _rng.randf_range(0.92, 1.05))
 
 
 func _flash() -> void:
@@ -358,6 +386,7 @@ func _decide(player: CharacterBody3D, flat: Vector3) -> void:
 	if phase >= 3 and _rain_cd <= 0.0 and flat.length() < TP_RANGE:
 		_rain_cd = RAIN_CD
 		_enter(S.RAIN_WINDUP)
+		roar(true)
 		_Vis.play_state(self, "attack", true)
 		_squash(Vector3(1.0, 1.25, 1.0), RAIN_WINDUP)
 		return
@@ -448,6 +477,7 @@ func _land(player: CharacterBody3D) -> void:
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
 		if cm.has_method("absorb_trees_near") and not bool(cm.get("is_dream_layer")):
 			cm.call("absorb_trees_near", global_position, 4.5)   # прыжок сносит деревья
+			heal_from_blocks(int(cm.get("last_absorbed_blocks")))
 	_unsquash(0.06)
 	_squash(Vector3(1.3, 0.72, 1.3), 0.08)
 	get_tree().create_timer(0.12).timeout.connect(func() -> void:
@@ -730,6 +760,7 @@ func _start_transition() -> void:
 	get_tree().create_timer(TRANSITION_TIME * 0.6, false).timeout.connect(func() -> void:
 		if is_instance_valid(self) and state == S.TRANSITION:
 			_unsquash(0.3)
+			roar(true)
 			_roar_push())
 	var what := "Ударная волна: перепрыгивай оранжевое кольцо!" if phase == 2 else "Кирпичный дождь: уходи с красных теней!"
 	GameState.chat("Мать блоков в ярости — фаза %d. %s" % [phase, what], Color(1.0, 0.5, 0.35))
@@ -762,11 +793,14 @@ func _hurt(player: CharacterBody3D, amount: int, source: String, knock: float) -
 func _die() -> void:
 	_enter(S.DEAD)
 	_cleanup_fx()
+	roar(false)
+	if GameState.has_method("on_mother_killed"):
+		GameState.on_mother_killed()
 	GameState.reward_kill(true, "Мать блоков")
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)
-	GameState.chat("Мать блоков рассыпалась. Награда: 250 осыпи, %d реагент3, %d реагент2." % [REWARD_R3, REWARD_R2], Color(0.6, 1.0, 0.6))
+	GameState.chat("Мать блоков рассыпалась. Награда: 250 осыпи, %d реагент3, %d реагент2. Сутки она не вернётся." % [REWARD_R3, REWARD_R2], Color(0.6, 1.0, 0.6))
 	for m in get_tree().get_nodes_in_group("blockling"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()

@@ -33,13 +33,15 @@ const BINDABLE := [
 	["fly_down", "Вниз (полёт)", "key", KEY_CTRL],
 	["place_block", "Удар / поставить / использовать", "mouse", MOUSE_BUTTON_LEFT],
 	["remove_block", "Снять блок / копать", "mouse", MOUSE_BUTTON_RIGHT],
-	["interact", "Взаимодействие (кровать, подбор, верстак)", "key", KEY_E],
+	["interact", "Взаимодействие (кровать — сон, верстак, станок)", "key", KEY_E],
 	["open_inventory", "Инвентарь", "key", KEY_I],
 	["craft_nail", "Крафт (во сне)", "key", KEY_C],
 	["cycle_anchor", "Сменить якорь", "key", KEY_R],
 	["anchor_place", "Поставить якорь", "key", KEY_Q],
 	["place_beacon", "Поставить маяк", "key", KEY_G],
 	["wake_up", "Проснуться", "key", KEY_F],
+	["use_heal", "Выпить хилку1", "key", KEY_H],
+	["pillow_check", "Под подушку (у кровати)", "key", KEY_Y],
 	["toggle_fly", "Полёт во сне", "key", KEY_V],
 	["toggle_debug", "Отладка / FPS", "key", KEY_F3],
 	["quick_save", "Быстрое сохранение", "key", KEY_F5],
@@ -86,7 +88,9 @@ func load_settings() -> void:
 	if cfg.has_section("keybinds"):
 		for row in BINDABLE:
 			var a: String = row[0]
-			var v: Variant = cfg.get_value("keybinds", a, null)
+			if not cfg.has_section_key("keybinds", a):
+				continue
+			var v: Variant = cfg.get_value("keybinds", a, "")
 			if typeof(v) == TYPE_STRING:
 				var b := _parse_binding(str(v))
 				if not b.is_empty():

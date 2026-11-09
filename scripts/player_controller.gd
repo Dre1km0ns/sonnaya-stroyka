@@ -10,6 +10,11 @@ const MOUSE_SENS_MIN := 0.0002
 const MOUSE_SENS_MAX := 0.004
 const MOUSE_SENS_STEP := 0.0002
 const LAKE_SPEED_FACTOR := 0.4
+## v0.7: автоподбор ресурсов/блоков/кучек смерти в радиусе, плавание в текучей воде.
+const PICKUP_RADIUS := 1.7
+const SWIM_UP := 3.2
+var _pickup_t := 0.0
+var auto_picked := 0
 
 @onready var pivot: Node3D = $CameraPivot
 @onready var camera: Camera3D = $CameraPivot/Camera3D
@@ -103,7 +108,48 @@ func _physics_process(delta: float) -> void:
 			velocity.x = move_toward(velocity.x, 0.0, speed)
 			velocity.z = move_toward(velocity.z, 0.0, speed)
 
+	if not flying and _in_water():
+		# Плавание: медленнее тонем, прыжок — всплыть.
+		velocity.y = maxf(velocity.y, -2.0)
+		if Input.is_action_pressed("jump") and not GameState.ui_blocked():
+			velocity.y = SWIM_UP
 	move_and_slide()
+	_pickup_t -= delta
+	if _pickup_t <= 0.0:
+		_pickup_t = 0.1
+		auto_pickup()
+
+
+func auto_pickup() -> int:
+	## Ресурсы сами подбираются, когда игрок рядом (только в яви, только видимые).
+	if GameState.is_dream() or GameState.player_hp <= 0:
+		return 0
+	var n := 0
+	var me := global_position + Vector3(0, 0.6, 0)
+	for g in ["reagent", "pickup", "grave_pile"]:
+		for node in get_tree().get_nodes_in_group(g):
+			if not (node is Node3D) or not is_instance_valid(node) or node.is_queued_for_deletion():
+				continue
+			if not (node as Node3D).is_visible_in_tree():
+				continue
+			if "collected" in node and bool(node.collected):
+				continue
+			if (node as Node3D).global_position.distance_to(me) > PICKUP_RADIUS:
+				continue
+			if node.has_method("collect"):
+				node.collect()
+				n += 1
+	auto_picked += n
+	return n
+
+
+func _in_water() -> bool:
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if bool(cm.get("panorama_mode")) or bool(cm.get("is_dream_layer")):
+			continue
+		if cm.has_method("is_world_in_water") and cm.is_world_in_water(global_position + Vector3(0, 0.3, 0)):
+			return true
+	return false
 
 
 func get_look_ray() -> Dictionary:
@@ -122,7 +168,7 @@ func get_look_ray() -> Dictionary:
 func _move_factor() -> float:
 	if flying:
 		return 1.0
-	if _is_in_lake():
+	if _is_in_lake() or _in_water():
 		return LAKE_SPEED_FACTOR
 	return 1.0
 

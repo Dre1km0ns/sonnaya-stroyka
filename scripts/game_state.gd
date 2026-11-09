@@ -1,6 +1,7 @@
 extends Node
-## Глобальное состояние «Сонная стройка» v0.5: миры с сидом, инвентарь 9+27,
-## вертикальная полоса якорей/маяков, дев-сид 6767676767 (бесконечные ресурсы).
+## Глобальное состояние «Сонная стройка» v0.7: миры с сидом, ДВА инвентаря 9+27 (явь / сон),
+## общий «кошель» ресурсов (реагенты, осыпь), вертикальная полоса якорей/маяков,
+## «под подушкой» (хилки), смерть с выпадением, кулдаун босса, дев-сид 6767676767.
 
 const ItemDB := preload("res://scripts/item_db.gd")
 
@@ -18,6 +19,10 @@ signal chat_message(text: String, color: Color)
 signal player_hp_changed(hp: int, max_hp: int)
 signal player_died
 signal day_phase_changed(phase: String)
+signal heal_used(cd: float)
+signal terrain_cell_changed(cell: Vector3i)
+signal egg_taken(nest_id: String, cell: Vector3i)
+signal pillow_changed
 
 enum World { WAKE, DREAM }
 enum AnchorType { NAIL, WEDGE, ANCHOR3 }
@@ -35,13 +40,16 @@ const NAIL_CRAFT_DUST := 10
 const WEDGE_CRAFT_DUST := 100
 const ANCHOR3_CRAFT_DUST := 250
 const BEACON_CRAFT_DUST := 30
+const BED_CRAFT_DUST := 40
+const BED_CRAFT_R1 := 3
 ## Осыпь за убийство моба = 1/5 стоимости клина; босс «Мать блоков» даёт стоимость Якоря3.
 const DUST_PER_KILL := WEDGE_CRAFT_DUST / 5
 const DUST_PER_BOSS_KILL := ANCHOR3_CRAFT_DUST
 const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 30.0
-const MUTATION_CHANCE := 0.25
-const SAVE_FORMAT := 6
+const MUTATION_CHANCE := 0.07
+const NO_MUTATION_KINDS := ["workbench", "torch", "beacon", "bed", "lathe"]
+const SAVE_FORMAT := 7
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
@@ -60,6 +68,31 @@ var wedges: int = 1
 var anchors3: int = 0
 var beacons: int = 0
 var item_slots: Array = []
+## v0.7: раздельные инвентари яви и сна; item_slots указывает на инвентарь текущего мира.
+var inv_wake: Array = []
+var inv_dream: Array = []
+## Кошель (общий для обоих миров): реагенты и осыпь — валюта для якорей/крафта.
+var pouch: Dictionary = {"reagent1": 0, "reagent2": 0, "reagent3": 0, "dust": 0}
+## «Под подушкой»: 27 слотов, только забирать. Хилки, скрафченные во сне, кладутся сюда.
+const PILLOW_SIZE := 27
+var pillow: Array = []
+## Хилки: «хилка1» = 50 осыпи, +20 HP, кулдаун 15 с.
+const HEAL1_DUST := 50
+const HEAL1_AMOUNT := 20
+const HEAL_COOLDOWN := 15.0
+var heal_cd: float = 0.0
+## Босс «Мать блоков»: после убийства не появляется одни игровые сутки (24 мин).
+const MOTHER_COOLDOWN := 1440.0
+var mother_cooldown: float = 0.0
+## Анаконда: кулдауна после убийства НЕТ (её призывают яйцом); anaconda_seen — гнёзда, уже «разбуженные» этой ночью.
+var anaconda_seen: Dictionary = {}
+## Яйца Анаконды, уже взятые из гнёзд (id гнезда), и где игрок возрождается (последняя кровать).
+var collected_eggs: Dictionary = {}
+const DEFAULT_SPAWN := Vector3(0, 2, 6)
+var spawn_point: Vector3 = DEFAULT_SPAWN
+var graves: Array = [] # [{pos: Vector3, items: Array[{id,count}]}]
+var death_open: bool = false
+var _boss_count: int = 0
 var selected_slot: int = 0
 var dream_exit_count: int = 0
 var collected_reagent_ids: Dictionary = {}
@@ -111,7 +144,11 @@ var craft_menu_open: bool = false
 var inventory_open: bool = false
 var paused: bool = false
 var _night_flag: bool = false
-var boss_alive: bool = false
+var boss_alive: bool:
+	get:
+		return _boss_count > 0
+	set(v):
+		_boss_count = 1 if v else 0
 var last_mined_kind: String = ""
 var last_mined_cell: Vector3i = Vector3i.ZERO
 var block_stash: Dictionary = {}
@@ -122,10 +159,10 @@ const PHASE_DAY_END := 840.0
 const PHASE_EVENING_END := 1020.0
 const NEW_WORLD_TIME := 120.0
 const PHASE_NAMES := {"morning": "Утро", "day": "День", "evening": "Вечер", "night": "Ночь"}
-## Игрок (v0.6): HP нужен для босса. Обычные мобы по-прежнему воруют ресурсы.
+## Игрок (v0.7): HP 100, мобы бьют. Реген 1 HP/с, если 15 с не получал урона.
 const PLAYER_MAX_HP := 100
-const PLAYER_REGEN_DELAY := 4.0
-const PLAYER_REGEN_PER_SEC := 2.0
+const PLAYER_REGEN_DELAY := 15.0
+const PLAYER_REGEN_PER_SEC := 1.0
 const PLAYER_IFRAMES := 0.5
 const COMBO_WINDOW := 3.0
 const COMBO_CAP := 70
@@ -145,6 +182,8 @@ var world_seed_wake: int = 1337
 var world_seed_dream: int = 9001
 ## Снятые клетки процедурного террейна яви: Vector3i -> kind ("hill"/"ruin"/"ground").
 var removed_terrain: Dictionary = {}
+## Индекс снятых клеток по чанкам 16×16 (Vector2i → Array[Vector3i]) — генерации не нужно перебирать всё.
+var removed_by_chunk: Dictionary = {}
 
 
 func _init() -> void:
@@ -156,7 +195,9 @@ func _ready() -> void:
 
 
 func ui_blocked() -> bool:
-	return craft_menu_open or inventory_open or paused
+	return craft_menu_open or inventory_open or paused or death_open or pillow_open
+
+var pillow_open: bool = false
 
 
 # --- Сид и мир ---
@@ -206,6 +247,18 @@ func reset_state() -> void:
 	last_mined_cell = Vector3i.ZERO
 	block_stash = {}
 	removed_terrain = {}
+	removed_by_chunk = {}
+	pouch = {"reagent1": 0, "reagent2": 0, "reagent3": 0, "dust": 0}
+	heal_cd = 0.0
+	mother_cooldown = 0.0
+	anaconda_seen = {}
+	collected_eggs = {}
+	spawn_point = DEFAULT_SPAWN
+	graves = []
+	death_open = false
+	pillow_open = false
+	_boss_count = 0
+	_hp_regen_cd = 0.0
 	day_time = NEW_WORLD_TIME
 	player_hp = PLAYER_MAX_HP
 	_combo_log = []
@@ -213,6 +266,7 @@ func reset_state() -> void:
 	boss_next_mine = false
 	_phase = ""
 	_init_default_slots()
+	_init_pillow()
 
 
 func begin_world(wname: String, folder: String, stext: String, sv: int, is_peaceful: bool = false) -> void:
@@ -233,20 +287,45 @@ func is_dev() -> bool:
 	return dev_mode
 
 
+const DEV_WAKE_ITEMS := ["pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
+	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth"]
+const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
+
+
 func _fill_dev_inventory() -> void:
-	## Дев-сид: по стаку всего, количество бесконечное (∞, не уменьшается).
+	## Дев-сид: по стаку всего в обоих инвентарях, количество бесконечное (∞, не уменьшается).
 	_init_default_slots()
-	var ids := ["pickaxe", "sword", "torch", "workbench", "reagent1", "reagent2", "reagent3", "dust", "hill",
-		"ruin", "ground", "drift", "mouth", "log", "planks", "leaves"]
-	for i in range(ids.size()):
-		item_slots[i] = {"id": ids[i], "name": ItemDB.display_name(ids[i]), "count": 1}
+	for i in range(DEV_WAKE_ITEMS.size()):
+		inv_wake[i] = {"id": DEV_WAKE_ITEMS[i], "name": ItemDB.display_name(DEV_WAKE_ITEMS[i]), "count": 1}
+	for j in range(DEV_DREAM_ITEMS.size()):
+		inv_dream[j] = {"id": DEV_DREAM_ITEMS[j], "name": ItemDB.display_name(DEV_DREAM_ITEMS[j]), "count": 1}
 	inventory_changed.emit()
 
 
+static func _new_slots(n: int) -> Array:
+	var out: Array = []
+	for i in range(n):
+		out.append({"id": "", "name": "", "count": 0})
+	return out
+
+
 func _init_default_slots() -> void:
-	item_slots = []
-	for i in range(ITEM_SLOT_COUNT):
-		item_slots.append(_empty_slot())
+	inv_wake = _new_slots(ITEM_SLOT_COUNT)
+	inv_dream = _new_slots(ITEM_SLOT_COUNT)
+	_bind_inventory()
+
+
+func _bind_inventory() -> void:
+	## item_slots — ссылка на массив инвентаря текущего мира (оба инвентаря живут независимо).
+	item_slots = inv_dream if current_world == World.DREAM else inv_wake
+
+
+func inventory_for(dream: bool) -> Array:
+	return inv_dream if dream else inv_wake
+
+
+func _init_pillow() -> void:
+	pillow = _new_slots(PILLOW_SIZE)
 
 
 func _empty_slot() -> Dictionary:
@@ -254,12 +333,15 @@ func _empty_slot() -> Dictionary:
 
 
 func _ensure_inventory() -> void:
-	if item_slots.size() != ITEM_SLOT_COUNT:
-		var old := item_slots.duplicate(true)
-		_init_default_slots()
-		for i in range(mini(old.size(), ITEM_SLOT_COUNT)):
-			if typeof(old[i]) == TYPE_DICTIONARY:
-				item_slots[i] = old[i]
+	if inv_wake.size() != ITEM_SLOT_COUNT:
+		inv_wake = _new_slots(ITEM_SLOT_COUNT)
+	if inv_dream.size() != ITEM_SLOT_COUNT:
+		inv_dream = _new_slots(ITEM_SLOT_COUNT)
+	if pillow.size() != PILLOW_SIZE:
+		_init_pillow()
+	var want: Array = inv_dream if current_world == World.DREAM else inv_wake
+	if not is_same(item_slots, want):
+		_bind_inventory()
 
 
 func reagent_type_name(type_id: int) -> String:
@@ -269,7 +351,13 @@ func reagent_type_name(type_id: int) -> String:
 
 # --- Инвентарь 9+27 ---
 
+func is_pouch_id(id: String) -> bool:
+	return pouch.has(id)
+
+
 func raw_count(id: String) -> int:
+	if pouch.has(id):
+		return int(pouch[id])
 	var n := 0
 	for s in item_slots:
 		if str(s.get("id", "")) == id:
@@ -297,6 +385,14 @@ func add_item_count(id: String, count: int) -> int:
 	if ItemDB.is_special(id):
 		_add_special(id, count)
 		return count
+	if pouch.has(id):
+		var room := count
+		if id != "dust":
+			room = mini(count, maxi(0, REAGENT_CAP - int(pouch[id])))
+		pouch[id] = int(pouch[id]) + room
+		if room > 0:
+			inventory_changed.emit()
+		return room
 	var left := count
 	var cap := ItemDB.max_stack(id)
 	for i in range(ITEM_SLOT_COUNT):
@@ -327,6 +423,10 @@ func remove_item(id: String, amount: int = 1) -> bool:
 		return true
 	if raw_count(id) < amount:
 		return false
+	if pouch.has(id):
+		pouch[id] = int(pouch[id]) - amount
+		inventory_changed.emit()
+		return true
 	var left := amount
 	# Сначала с конца инвентаря, чтобы хотбар оставался.
 	for i in range(ITEM_SLOT_COUNT - 1, -1, -1):
@@ -348,6 +448,11 @@ func _set_item_total(id: String, value: int, emit: bool = true) -> void:
 	if dev_mode:
 		return
 	var cur := raw_count(id)
+	if pouch.has(id):
+		pouch[id] = maxi(0, value if id == "dust" else mini(value, REAGENT_CAP))
+		if emit:
+			inventory_changed.emit()
+		return
 	if value > cur:
 		add_item_count(id, value - cur)
 	elif value < cur:
@@ -569,6 +674,9 @@ func add_item(id: String, item_name: String, count: int = 1) -> int:
 	if ItemDB.is_special(id):
 		_add_special(id, count)
 		return 0
+	if pouch.has(id):
+		add_item_count(id, count)
+		return 0
 	var cap := ItemDB.max_stack(id)
 	var target := -1
 	for i in range(ITEM_SLOT_COUNT):
@@ -645,6 +753,11 @@ func recipe_defs() -> Array:
 		{"id": "torch", "name": "Факел", "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
 		{"id": "sword", "name": "Меч", "where": "workbench", "reagent1": 5, "reagent2": 2, "item": "sword", "item_name": "Меч"},
 		{"id": "planks", "name": "Доски ×4", "where": "workbench", "log": 1, "item": "planks", "item_name": "Доски", "count": 4},
+		# v0.7
+		{"id": "bed", "name": "Кровать", "where": "dream", "dust": BED_CRAFT_DUST, "reagent1": BED_CRAFT_R1, "item": "bed", "item_name": "Кровать"},
+		{"id": "heal1", "name": "хилка1 (под подушку)", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1"},
+		{"id": "lathe", "name": "Станок", "where": "workbench", "items": {"workbench": 1}, "reagent3": 7, "item": "lathe", "item_name": "Станок"},
+		{"id": "sword2", "name": "Меч2 (улучшить Меч)", "where": "lathe", "items": {"sword": 1}, "reagent1": 2, "reagent2": 2, "reagent3": 2, "item": "sword2", "item_name": "Меч2"},
 	]
 
 
@@ -661,10 +774,13 @@ func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
 	var where := str(rec.get("where", "anywhere"))
 	var dreaming := bool(ctx.get("is_dream", is_dream()))
 	var bench := bool(ctx.get("at_workbench", false))
-	# Верстак показывает только верстачные рецепты (без якорей).
+	var lathe := bool(ctx.get("at_lathe", false))
+	# Станок — только свои рецепты; верстак — только верстачные (без якорей и без станка).
+	if lathe:
+		return where == "lathe"
 	if bench:
 		return where == "workbench"
-	if where == "workbench":
+	if where == "workbench" or where == "lathe":
 		return false
 	if where == "dream":
 		return dreaming
@@ -692,6 +808,10 @@ func can_afford_recipe(rec: Dictionary) -> bool:
 		return false
 	if count_item("log") < int(rec.get("log", 0)):
 		return false
+	var need: Dictionary = rec.get("items", {})
+	for iid in need.keys():
+		if count_item(str(iid)) < int(need[iid]):
+			return false
 	return true
 
 
@@ -707,6 +827,9 @@ func recipe_cost_text(rec: Dictionary) -> String:
 		parts.append("%d %s" % [int(rec.get("reagent3", 0)), reagent_type_name(3)])
 	if int(rec.get("log", 0)) > 0:
 		parts.append("%d бревно" % int(rec.get("log", 0)))
+	var need: Dictionary = rec.get("items", {})
+	for iid in need.keys():
+		parts.insert(0, "%d %s" % [int(need[iid]), ItemDB.display_name(str(iid))])
 	return ", ".join(parts) if not parts.is_empty() else "бесплатно"
 
 
@@ -776,8 +899,11 @@ func mine_wake_block(cell: Vector3i) -> bool:
 	wake_blocks.erase(cell)
 	last_mined_kind = kind
 	last_mined_cell = cell
+	if kind == "bed" and Vector3i(floori(spawn_point.x), floori(spawn_point.y - 1.6), floori(spawn_point.z)) == cell:
+		spawn_point = DEFAULT_SPAWN
+	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
-	set_hint("Кирка: выпал блок «%s»." % block_display_name(kind))
+	set_hint("Кирка: выпал блок «%s»." % block_display_name(kind), false)
 	return true
 
 
@@ -793,17 +919,53 @@ func remove_terrain_cell_silent(cell: Vector3i, kind: String) -> bool:
 	if removed_terrain.has(cell):
 		return false
 	removed_terrain[cell] = kind
+	_index_removed(cell)
+	terrain_cell_changed.emit(cell)
 	return true
+
+
+static func chunk_of_cell(cell: Vector3i) -> Vector2i:
+	return Vector2i(floori(float(cell.x) / 16.0), floori(float(cell.z) / 16.0))
+
+
+func _index_removed(cell: Vector3i) -> void:
+	var ck := chunk_of_cell(cell)
+	if not removed_by_chunk.has(ck):
+		removed_by_chunk[ck] = []
+	(removed_by_chunk[ck] as Array).append(cell)
+
+
+func removed_in_chunk(ck: Vector2i) -> Array:
+	return removed_by_chunk.get(ck, [])
+
+
+
+func _rebuild_removed_index() -> void:
+	removed_by_chunk = {}
+	for c in removed_terrain.keys():
+		_index_removed(c)
+
+
+const BEDROCK_Y := -31
 
 
 func remove_terrain_cell(cell: Vector3i, kind: String) -> bool:
 	if removed_terrain.has(cell):
 		return false
+	if kind == "bedrock" or cell.y <= BEDROCK_Y:
+		set_hint("Бедрок не ломается — глубже копать нельзя.", false)
+		return false
 	var k := kind if kind != "" else "hill"
 	removed_terrain[cell] = k
 	last_mined_kind = k
 	last_mined_cell = cell
-	set_hint("Кирка: выпал блок «%s»." % block_display_name(k))
+	_index_removed(cell)
+	if k == "egg":
+		var nid := "nest:%d,%d,%d" % [cell.x, cell.y, cell.z]
+		collected_eggs[nid] = true
+		egg_taken.emit(nid, cell)
+	terrain_cell_changed.emit(cell)
+	set_hint("Кирка: выпал блок «%s»." % block_display_name(k), false)
 	return true
 
 
@@ -826,6 +988,16 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 		spend_typed_reagent(3, int(rec.get("reagent3", 0)))
 	if int(rec.get("log", 0)) > 0 and not dev_mode:
 		remove_item("log", int(rec.get("log", 0)))
+	var need: Dictionary = rec.get("items", {})
+	if not dev_mode:
+		for iid in need.keys():
+			remove_item(str(iid), int(need[iid]))
+	var to_pillow := str(rec.get("pillow", ""))
+	if to_pillow != "":
+		add_to_pillow(to_pillow, int(rec.get("count", 1)))
+		inventory_changed.emit()
+		set_hint("Скрафчено: %s — лежит под подушкой кровати в яви." % str(rec.get("name", rid)))
+		return true
 	var gives := str(rec.get("gives", ""))
 	if gives == "nails":
 		nails += 1
@@ -874,6 +1046,10 @@ static func clock_text(t: float) -> String:
 	return "%02d:%02d" % [hh, mm]
 
 
+func night_index() -> int:
+	return floori(day_time / DAY_CYCLE)
+
+
 func day_phase() -> String:
 	return phase_at(day_time)
 
@@ -907,6 +1083,10 @@ func chat(text: String, color: Color = Color(1, 1, 1)) -> void:
 func _process(delta: float) -> void:
 	_clock += delta
 	_iframes = maxf(0.0, _iframes - delta)
+	if heal_cd > 0.0:
+		heal_cd = maxf(0.0, heal_cd - delta)
+	if mother_cooldown > 0.0:
+		mother_cooldown = maxf(0.0, mother_cooldown - delta)
 	if player_hp < PLAYER_MAX_HP and player_hp > 0:
 		_hp_regen_cd -= delta
 		if _hp_regen_cd <= 0.0:
@@ -949,9 +1129,159 @@ func damage_player(amount: int, source: String = "", ignore_iframes: bool = fals
 		_iframes = PLAYER_IFRAMES
 	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
 	if player_hp <= 0:
-		chat("Ты погиб%s. Возрождение у кровати." % ((" (" + source + ")") if source != "" else ""), Color(1.0, 0.45, 0.4))
 		player_died.emit()
 	return dmg
+
+
+func regen_delay_left() -> float:
+	return maxf(0.0, _hp_regen_cd)
+
+
+# --- Хилки и «под подушкой» (v0.7) ---
+
+func add_to_pillow(id: String, count: int) -> int:
+	var left := count
+	var cap := ItemDB.max_stack(id)
+	for i in range(pillow.size()):
+		if left <= 0:
+			break
+		var sl: Dictionary = pillow[i]
+		if str(sl.get("id", "")) == id and int(sl.get("count", 0)) < cap:
+			var add := mini(left, cap - int(sl["count"]))
+			sl["count"] = int(sl["count"]) + add
+			left -= add
+	for j in range(pillow.size()):
+		if left <= 0:
+			break
+		if str(pillow[j].get("id", "")) == "":
+			var add2 := mini(left, cap)
+			pillow[j] = {"id": id, "name": ItemDB.display_name(id), "count": add2}
+			left -= add2
+	pillow_changed.emit()
+	return count - left
+
+
+func pillow_count(id: String) -> int:
+	var n := 0
+	for sl in pillow:
+		if str(sl.get("id", "")) == id:
+			n += int(sl.get("count", 0))
+	return n
+
+
+func take_from_pillow(i: int) -> bool:
+	## Только забирать: весь стак слота уходит в инвентарь яви (что не влезло — остаётся).
+	if i < 0 or i >= pillow.size():
+		return false
+	var sl: Dictionary = pillow[i]
+	var id := str(sl.get("id", ""))
+	var n := int(sl.get("count", 0))
+	if id == "" or n <= 0:
+		return false
+	var saved := item_slots
+	item_slots = inv_wake
+	var got := add_item_count(id, n)
+	item_slots = saved
+	if got <= 0:
+		set_hint("Инвентарь яви полон.", false)
+		return false
+	if got >= n:
+		pillow[i] = _empty_slot()
+	else:
+		sl["count"] = n - got
+	pillow_changed.emit()
+	inventory_changed.emit()
+	return true
+
+
+func can_use_heal() -> bool:
+	return heal_cd <= 0.0 and player_hp > 0 and player_hp < PLAYER_MAX_HP and count_item("heal1") > 0
+
+
+func use_heal() -> bool:
+	if heal_cd > 0.0:
+		set_hint("хилка1: перезарядка %.0f с" % ceilf(heal_cd), false)
+		return false
+	if player_hp <= 0 or player_hp >= PLAYER_MAX_HP:
+		set_hint("HP и так полное.", false)
+		return false
+	if count_item("heal1") <= 0:
+		set_hint("Нет хилок. Крафт во сне (50 осыпи) → под подушкой кровати.", false)
+		return false
+	consume_item("heal1", 1)
+	player_hp = mini(PLAYER_MAX_HP, player_hp + HEAL1_AMOUNT)
+	heal_cd = HEAL_COOLDOWN
+	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
+	heal_used.emit(HEAL_COOLDOWN)
+	set_hint("хилка1: +%d HP" % HEAL1_AMOUNT, false)
+	return true
+
+
+# --- Смерть (v0.7): выпадает всё, кроме гвоздей/якорей/маяков ---
+
+func collect_death_drop() -> Array:
+	## Забирает из инвентаря яви и кошеля всё, что выпадает. Дев-сид — ничего (ресурсы бесконечны).
+	var out: Array = []
+	if dev_mode:
+		return out
+	for i in range(inv_wake.size()):
+		var sl: Dictionary = inv_wake[i]
+		if str(sl.get("id", "")) != "" and int(sl.get("count", 0)) > 0:
+			out.append({"id": str(sl["id"]), "count": int(sl["count"])})
+			inv_wake[i] = _empty_slot()
+	for pid in pouch.keys():
+		if int(pouch[pid]) > 0:
+			out.append({"id": str(pid), "count": int(pouch[pid])})
+			pouch[pid] = 0
+	for k in block_stash.keys():
+		if int(block_stash[k]) > 0:
+			out.append({"id": str(k), "count": int(block_stash[k])})
+	block_stash = {}
+	inventory_changed.emit()
+	return out
+
+
+var _grave_seq: int = 0
+
+
+func add_grave(pos: Vector3, items: Array) -> int:
+	if items.is_empty():
+		return -1
+	_grave_seq += 1
+	graves.append({"id": _grave_seq, "pos": pos, "items": items.duplicate(true)})
+	return _grave_seq
+
+
+func grave_index(gid: int) -> int:
+	for i in range(graves.size()):
+		if int(graves[i].get("id", -1)) == gid:
+			return i
+	return -1
+
+
+func pickup_grave(gid: int) -> int:
+	## Подбирает кучку: всё, что влезло. Возвращает число подобранных предметов.
+	var idx := grave_index(gid)
+	if idx < 0:
+		return 0
+	var g: Dictionary = graves[idx]
+	var rest: Array = []
+	var got_total := 0
+	var saved := item_slots
+	item_slots = inv_wake
+	for it in g["items"]:
+		var n := int(it["count"])
+		var got := add_item_count(str(it["id"]), n)
+		got_total += got
+		if got < n:
+			rest.append({"id": str(it["id"]), "count": n - got})
+	item_slots = saved
+	if rest.is_empty():
+		graves.remove_at(idx)
+	else:
+		g["items"] = rest
+	inventory_changed.emit()
+	return got_total
 
 
 func heal_player_full() -> void:
@@ -970,6 +1300,10 @@ func boss_spawn_chance() -> float:
 func on_block_mined(rng_value: float = -1.0) -> bool:
 	## Вызывается после каждого добытого блока. true → босс появляется СЕЙЧАС (решение было брошено
 	## на прошлом блоке и объявлено в чате). Затем бросаем решение на следующий блок.
+	## v0.7: после убийства Мать не появляется одни игровые сутки (mother_cooldown).
+	if mother_cooldown > 0.0:
+		boss_next_mine = false
+		return false
 	var spawn_now := false
 	if boss_next_mine and not boss_alive and not peaceful:
 		spawn_now = true
@@ -983,10 +1317,16 @@ func on_block_mined(rng_value: float = -1.0) -> bool:
 
 
 func set_boss_alive(on: bool) -> void:
-	if boss_alive == on:
-		return
-	boss_alive = on
-	boss_changed.emit(on)
+	## Счётчик живых боссов (Мать + Анаконда могут жить одновременно).
+	var was := _boss_count > 0
+	_boss_count = maxi(0, _boss_count + (1 if on else -1))
+	if was != (_boss_count > 0):
+		boss_changed.emit(_boss_count > 0)
+
+
+func on_mother_killed() -> void:
+	mother_cooldown = MOTHER_COOLDOWN
+	boss_next_mine = false
 
 
 func block_display_name(kind: String) -> String:
@@ -1017,17 +1357,40 @@ func block_display_name(kind: String) -> String:
 			return "Листва"
 		"planks":
 			return "Доски"
+		"stone":
+			return "Камень"
+		"sand":
+			return "Песок"
+		"nest":
+			return "Гнездо"
+		"bed":
+			return "Кровать"
+		"lathe":
+			return "Станок"
+		"bedrock":
+			return "Бедрок"
+		"heal1":
+			return "хилка1"
+		"anaconda_egg":
+			return "Яйцо Анаконды"
+		"sword2":
+			return "Меч2"
 		_:
 			return "Блок"
 
 
 func is_placeable_block(id: String) -> bool:
-	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks"]
+	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
+		"stone", "sand", "nest", "bed", "lathe"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
 	if amount <= 0:
 		return
+	if kind == "egg":
+		kind = "anaconda_egg"
+	elif kind == "deep_stone":
+		kind = "stone"
 	if ItemDB.is_special(kind):
 		_add_special(kind, amount)
 		return
@@ -1053,6 +1416,7 @@ func place_wake_block(cell: Vector3i, kind: String) -> bool:
 	if wake_blocks.has(cell):
 		return false
 	wake_blocks[cell] = {"kind": kind, "mutant": false}
+	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
 	return true
 
@@ -1061,8 +1425,8 @@ func is_dream() -> bool:
 	return current_world == World.DREAM
 
 
-func set_hint(text: String) -> void:
-	if text != last_hint and not text.begins_with("Слот") and not text.begins_with("Чувствительность"):
+func set_hint(text: String, to_chat: bool = true) -> void:
+	if to_chat and text != last_hint and not text.begins_with("Слот") and not text.begins_with("Чувствительность"):
 		chat(text)
 	last_hint = text
 	hint_changed.emit(text)
@@ -1203,6 +1567,7 @@ func try_place_anchor(origin: Vector3i) -> bool:
 
 func enter_dream() -> void:
 	current_world = World.DREAM
+	_bind_inventory()
 	clarity = CLARITY_MAX
 	awake_time = 0.0
 	clarity_changed.emit(clarity, CLARITY_MAX)
@@ -1212,7 +1577,7 @@ func enter_dream() -> void:
 
 func resolve_wake() -> Dictionary:
 	## Переносит новые якоря в явь с тем же Vector3i (высота совпадает).
-	## Незаякоренные блоки сна остаются — стройку можно продолжать в следующих сессиях.
+	## v0.7: после пробуждения ВСЕ поставленные во сне блоки исчезают — в следующий сон строить заново.
 	var transferred := 0
 	var dust_gained := 0
 	var mutations := 0
@@ -1231,7 +1596,7 @@ func resolve_wake() -> Dictionary:
 		var data: Dictionary = dream_blocks[cell]
 		var kind := str(data.get("kind", "drift"))
 		var mutant := false
-		if kind != "workbench" and kind != "torch" and kind != "beacon" and randf() < MUTATION_CHANCE:
+		if not (kind in NO_MUTATION_KINDS) and randf() < MUTATION_CHANCE:
 			mutant = true
 			mutations += 1
 			kind = "mouth"
@@ -1243,14 +1608,17 @@ func resolve_wake() -> Dictionary:
 
 	dust += dust_gained
 	pending_anchors.clear()
+	var wiped := dream_blocks.size()
+	dream_blocks.clear()
 	current_world = World.WAKE
+	_bind_inventory()
 	dream_exit_count += 1
 	clarity = CLARITY_MAX
 	clarity_changed.emit(clarity, CLARITY_MAX)
 	inventory_changed.emit()
 	world_changed.emit(false)
 	wake_resolved.emit(transferred, dust_gained, mutations)
-	var msg := "Пробуждение: +%d блоков в явь (сон сохранён)" % transferred
+	var msg := "Пробуждение: +%d блоков в явь (сон рассеялся: %d блок(ов))" % [transferred, wiped]
 	if mutations > 0:
 		msg += ", мутаций: %d (блок «рот»)" % mutations
 	set_hint(msg)
@@ -1299,7 +1667,7 @@ func reward_kill(is_boss: bool = false, who: String = "") -> int:
 	if not dev_mode:
 		add_item_count("dust", amount)
 	var prefix := (who + " повержен: ") if who != "" else ""
-	set_hint("%s+%d осыпи" % [prefix, amount])
+	set_hint("%s+%d осыпи" % [prefix, amount], is_boss)
 	toast.emit("%s+%d осыпи" % [prefix, amount])
 	return amount
 
@@ -1327,9 +1695,16 @@ func to_save_dict() -> Dictionary:
 		"day_time": day_time,
 		"selected_anchor": int(selected_anchor),
 		"selected_slot": selected_slot,
-		"item_slots": item_slots.duplicate(true),
+		"item_slots": inv_wake.duplicate(true),
+		"inv_dream": inv_dream.duplicate(true),
+		"pillow": pillow.duplicate(true),
 		"reagent_counts": [raw_count("reagent1"), raw_count("reagent2"), raw_count("reagent3")],
 		"dust": raw_count("dust"),
+		"mother_cooldown": mother_cooldown,
+		"heal_cd": heal_cd,
+		"collected_eggs": collected_eggs.keys(),
+		"spawn_point": [spawn_point.x, spawn_point.y, spawn_point.z],
+		"graves": _graves_to_json(),
 		"block_stash": block_stash.duplicate(),
 		"dream_exit_count": dream_exit_count,
 		"collected_reagent_ids": collected_reagent_ids.keys(),
@@ -1370,13 +1745,33 @@ func apply_save_dict(data: Dictionary) -> void:
 	selected_anchor = clampi(int(data.get("selected_anchor", 0)), 0, 2) as AnchorType
 	dream_exit_count = int(data.get("dream_exit_count", data.get("wake_count", 0)))
 	selected_slot = clampi(int(data.get("selected_slot", 0)), 0, HOTBAR_SIZE - 1)
+	current_world = World.WAKE
 	_init_default_slots()
+	_init_pillow()
+	pouch = {"reagent1": 0, "reagent2": 0, "reagent3": 0, "dust": 0}
 	var slots: Variant = data.get("item_slots", null)
-	if fmt >= 5 and typeof(slots) == TYPE_ARRAY:
+	if fmt >= 7 and typeof(slots) == TYPE_ARRAY:
+		_slots_into(slots, inv_wake)
+		_slots_into(data.get("inv_dream", []), inv_dream)
+		_slots_into(data.get("pillow", []), pillow)
+		var rc7: Variant = data.get("reagent_counts", [])
+		if typeof(rc7) == TYPE_ARRAY:
+			for i7 in range(mini(REAGENT_TYPE_COUNT, rc7.size())):
+				pouch["reagent%d" % (i7 + 1)] = clampi(int(rc7[i7]), 0, REAGENT_CAP)
+		pouch["dust"] = maxi(0, int(data.get("dust", 0)))
+	elif fmt >= 5 and typeof(slots) == TYPE_ARRAY:
+		# v0.5–0.6: один инвентарь → инвентарь яви; реагенты/осыпь из слотов → кошель.
+		var dev_was5 := dev_mode
+		dev_mode = false
 		for i in range(mini(slots.size(), ITEM_SLOT_COUNT)):
 			var s: Variant = slots[i]
 			if typeof(s) == TYPE_DICTIONARY and str(s.get("id", "")) != "" and int(s.get("count", 0)) > 0:
-				item_slots[i] = {"id": str(s["id"]), "name": str(s.get("name", "")), "count": int(s["count"])}
+				var sid5 := str(s["id"])
+				if pouch.has(sid5):
+					add_item_count(sid5, int(s["count"]))
+				else:
+					inv_wake[i] = {"id": sid5, "name": str(s.get("name", "")), "count": int(s["count"])}
+		dev_mode = dev_was5
 	else:
 		# Сейв v4 и старше: 5 слотов + отдельные счётчики реагентов/осыпи. Якоря уходят в полосу.
 		var dev_was := dev_mode
@@ -1414,13 +1809,29 @@ func apply_save_dict(data: Dictionary) -> void:
 	dream_blocks = _blocks_from_json(data.get("dream_blocks", {}))
 	pending_anchors = _anchors_from_json(data.get("pending_anchors", []))
 	removed_terrain = _cells_kind_from_json(data.get("removed_terrain", {}))
+	_rebuild_removed_index()
 	boss_next_mine = bool(data.get("boss_next_mine", false))
+	mother_cooldown = maxf(0.0, float(data.get("mother_cooldown", 0.0)))
+	anaconda_seen = {}
+	heal_cd = maxf(0.0, float(data.get("heal_cd", 0.0)))
+	collected_eggs = {}
+	var ce: Variant = data.get("collected_eggs", [])
+	if typeof(ce) == TYPE_ARRAY:
+		for e in ce:
+			collected_eggs[str(e)] = true
+	var sp: Variant = data.get("spawn_point", null)
+	spawn_point = Vector3(float(sp[0]), float(sp[1]), float(sp[2])) if typeof(sp) == TYPE_ARRAY and sp.size() >= 3 else DEFAULT_SPAWN
+	_graves_from_json(data.get("graves", []))
+	_boss_count = 0
+	death_open = false
+	pillow_open = false
 	player_hp = clampi(int(data.get("player_hp", PLAYER_MAX_HP)), 1, PLAYER_MAX_HP)
 	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
 	if dev_mode:
 		_ensure_dev_items()
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
+	_bind_inventory()
 	clarity_changed.emit(clarity, CLARITY_MAX)
 	inventory_changed.emit()
 	world_changed.emit(is_dream())
@@ -1428,12 +1839,61 @@ func apply_save_dict(data: Dictionary) -> void:
 
 func _ensure_dev_items() -> void:
 	var any := false
-	for s in item_slots:
+	for s in inv_wake:
 		if str(s.get("id", "")) != "":
 			any = true
 			break
 	if not any:
 		_fill_dev_inventory()
+	# v0.7: в старых дев-сейвах нет новых предметов — докладываем.
+	for id in DEV_WAKE_ITEMS:
+		_dev_ensure(inv_wake, id)
+	for id2 in DEV_DREAM_ITEMS:
+		_dev_ensure(inv_dream, id2)
+
+
+func _dev_ensure(inv: Array, id: String) -> void:
+	for s in inv:
+		if str(s.get("id", "")) == id:
+			return
+	for i in range(inv.size()):
+		if str(inv[i].get("id", "")) == "":
+			inv[i] = {"id": id, "name": ItemDB.display_name(id), "count": 1}
+			return
+
+
+func _slots_into(src: Variant, dst: Array) -> void:
+	if typeof(src) != TYPE_ARRAY:
+		return
+	for i in range(mini(src.size(), dst.size())):
+		var s: Variant = src[i]
+		if typeof(s) == TYPE_DICTIONARY and str(s.get("id", "")) != "" and int(s.get("count", 0)) > 0:
+			dst[i] = {"id": str(s["id"]), "name": str(s.get("name", "")), "count": int(s["count"])}
+
+
+func _graves_to_json() -> Array:
+	var out: Array = []
+	for g in graves:
+		var p: Vector3 = g["pos"]
+		out.append({"pos": [p.x, p.y, p.z], "items": (g["items"] as Array).duplicate(true)})
+	return out
+
+
+func _graves_from_json(src: Variant) -> void:
+	graves = []
+	if typeof(src) != TYPE_ARRAY:
+		return
+	for g in src:
+		if typeof(g) != TYPE_DICTIONARY:
+			continue
+		var pa: Array = g.get("pos", [0, 0, 0])
+		var items: Array = []
+		for it in g.get("items", []):
+			if typeof(it) == TYPE_DICTIONARY and int(it.get("count", 0)) > 0:
+				items.append({"id": str(it.get("id", "")), "count": int(it["count"])})
+		if not items.is_empty() and pa.size() >= 3:
+			_grave_seq += 1
+			graves.append({"id": _grave_seq, "pos": Vector3(float(pa[0]), float(pa[1]), float(pa[2])), "items": items})
 
 
 func _ensure_anchor3_slot() -> void:

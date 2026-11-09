@@ -25,6 +25,7 @@ const KNOCKBACK := 6.5
 
 @export var kind: int = Kind.ENEMY1
 
+const HIT_DAMAGE := 5
 var home: Vector3 = Vector3.ZERO
 var corner: Vector3 = Vector3.ZERO
 var frozen: bool = false
@@ -255,13 +256,14 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	if push.length() < 0.01:
 		push = Vector3(1, 0, 0)
 	player.velocity += Vector3(push.x, 0.3, push.z).normalized() * KNOCKBACK
+	GameState.damage_player(HIT_DAMAGE, kind_name())
 	var stolen := GameState.steal_resource_hardcore(1)
 	if stolen.begins_with("dust"):
-		GameState.set_hint("%s выхватил осыпь!" % kind_name())
+		GameState.set_hint("%s выхватил осыпь!" % kind_name(), false)
 	elif stolen.begins_with("reagent"):
-		GameState.set_hint("%s сорвал реагент!" % kind_name())
+		GameState.set_hint("%s сорвал реагент!" % kind_name(), false)
 	else:
-		GameState.set_hint("%s толкает — карман пуст." % kind_name())
+		GameState.set_hint("%s толкает — карман пуст." % kind_name(), false)
 
 
 func _on_night_look(night: bool) -> void:

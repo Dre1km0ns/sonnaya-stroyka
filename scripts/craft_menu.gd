@@ -3,6 +3,7 @@ extends Control
 
 var _open: bool = false
 var _at_workbench: bool = false
+var _at_lathe: bool = false
 var _selected: int = 0
 var _recipes: Array = []
 var _title: Label
@@ -46,7 +47,7 @@ func _build() -> void:
 	add_child(center)
 	var panel := PanelContainer.new()
 	panel.name = "Panel"
-	panel.custom_minimum_size = Vector2(560, 460)
+	panel.custom_minimum_size = Vector2(700, 460)
 	center.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 22)
@@ -96,12 +97,36 @@ func _build() -> void:
 
 func open_general() -> void:
 	_at_workbench = false
+	_at_lathe = false
 	_show()
 
 
 func open_workbench() -> void:
 	_at_workbench = true
+	_at_lathe = false
 	_show()
+
+
+func open_lathe() -> void:
+	## v0.7: Станок — свой список рецептов (без верстачных).
+	_at_workbench = false
+	_at_lathe = true
+	_show()
+
+
+func station() -> String:
+	return "lathe" if _at_lathe else ("workbench" if _at_workbench else "")
+
+
+func visible_recipe_ids() -> Array:
+	var out: Array = []
+	for r in _recipes:
+		out.append(str(r.get("id", "")))
+	return out
+
+
+func _ctx() -> Dictionary:
+	return {"is_dream": GameState.is_dream(), "at_workbench": _at_workbench, "at_lathe": _at_lathe}
 
 
 func toggle() -> void:
@@ -114,6 +139,7 @@ func toggle() -> void:
 func close() -> void:
 	_open = false
 	_at_workbench = false
+	_at_lathe = false
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if GameState:
@@ -141,8 +167,8 @@ func _rebuild() -> void:
 	for ch in _list.get_children():
 		ch.queue_free()
 	_rows.clear()
-	_title.text = "Верстак" if _at_workbench else "Крафт"
-	var ctx := {"is_dream": GameState.is_dream(), "at_workbench": _at_workbench}
+	_title.text = "Станок" if _at_lathe else ("Верстак" if _at_workbench else "Крафт")
+	var ctx := _ctx()
 	_recipes = GameState.get_visible_recipes(ctx)
 	if _recipes.is_empty():
 		_status.text = "Нет доступных рецептов."
@@ -156,6 +182,7 @@ func _rebuild() -> void:
 		btn.toggle_mode = true
 		btn.button_pressed = i == _selected
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		var mark := "можно" if can else "не хватает"
 		btn.text = "%d. %s  —  %s  [%s]" % [i + 1, str(rec.get("name", "?")), GameState.recipe_cost_text(rec), mark]
 		btn.disabled = false
@@ -188,7 +215,7 @@ func _craft_selected() -> void:
 	if _recipes.is_empty():
 		return
 	var rec: Dictionary = _recipes[_selected]
-	var ctx := {"is_dream": GameState.is_dream(), "at_workbench": _at_workbench}
+	var ctx := _ctx()
 	if GameState.craft_recipe(str(rec.get("id", "")), ctx):
 		_rebuild()
 

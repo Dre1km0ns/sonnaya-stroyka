@@ -1,5 +1,6 @@
 extends Node3D
-## Бесконечный чанковый мир (Явь или Сон), v0.5.
+## Бесконечный чанковый мир (Явь или Сон), v0.7: 30 уровней вниз + бедрок (y=-31), пещеры со входами,
+## гнёзда Анаконды (в пещерах и закрытые купола), текучая вода (клеточный автомат как в Minecraft).
 ## Оптимизация: каждый чанк = 1 общий меш террейна (вершинные цвета, скрытые грани не рисуются)
 ## + 1 меш воды + 1 StaticBody3D с коробками коллизии без отдельных узлов.
 ## Чанки догружаются постепенно (бюджет времени на кадр), радиус — из настроек.
@@ -30,12 +31,12 @@ var _pending: Array[Vector2i] = []
 var _center: Vector2i = Vector2i(999999, 999999)
 var _has_seed: bool = false
 
-const LAKE_DEPTH := 1.25
+const LAKE_DEPTH := 1.0
 const LAKE_SURFACE_Y := -0.08
 const FIELD_REAGENT_RATE := 0.2
 const RUIN_HASH_THRESHOLD := 0.95
 const RUIN_CLUSTER_TARGET := 3
-const HILL_MAX := 4
+const HILL_MAX := 6
 const FRAME_BUDGET_USEC := 4000
 
 static var _mat_cache: Dictionary = {}
@@ -60,6 +61,9 @@ func _ready() -> void:
 	if GameState and GameState.has_signal("world_changed"):
 		if not GameState.world_changed.is_connected(_on_world_changed):
 			GameState.world_changed.connect(_on_world_changed)
+	if not is_dream_layer and GameState.has_signal("terrain_cell_changed"):
+		if not GameState.terrain_cell_changed.is_connected(water_notify):
+			GameState.terrain_cell_changed.connect(water_notify)
 	var gsets := get_node_or_null("/root/GameSettings")
 	if gsets and gsets.has_signal("settings_changed"):
 		gsets.settings_changed.connect(_on_settings_changed)
@@ -82,6 +86,11 @@ func setup(player: Node3D, world_seed: int = 1337) -> void:
 	_player = player
 	if _has_seed and world_seed != _seed:
 		clear_all()
+	if world_seed != _seed or not _has_seed:
+		_lake_plan_cache.clear()
+		_cave_sys_cache.clear()
+		_carve_cache.clear()
+		_nest_cache.clear()
 	_seed = world_seed
 	_has_seed = true
 	_center = Vector2i(999999, 999999)
@@ -119,15 +128,19 @@ func chunk_origin(coord: Vector2i) -> Vector3:
 
 
 func height_at(wx: int, wz: int) -> int:
-	## Редкие холмы, до 4 уровней. Зависит от сида мира.
+	## Редкие холмы, v0.7 — до 6 уровней (чуть выше). Зависит от сида мира.
 	if absi(wx) <= 14 and absi(wz) <= 14:
 		return 0
 	var n := _value_noise(float(wx) * 0.07, float(wz) * 0.07)
+	if n > 0.93:
+		return 6
 	if n > 0.88:
+		return 5
+	if n > 0.82:
 		return 4
-	if n > 0.80:
+	if n > 0.75:
 		return 3
-	if n > 0.70:
+	if n > 0.67:
 		return 2
 	if n > 0.58:
 		return 1
@@ -137,7 +150,7 @@ func height_at(wx: int, wz: int) -> int:
 func walk_height_at(wx: int, wz: int) -> int:
 	## Высота для навигации: генерируемый холм минус снятые клетки сверху.
 	var h := height_at(wx, wz)
-	while h > 0 and is_cell_removed(wx, h - 1, wz):
+	while h > 0 and (is_cell_removed(wx, h - 1, wz) or is_carved(Vector3i(wx, h - 1, wz))):
 		h -= 1
 	return h
 
@@ -157,16 +170,39 @@ func rebuild_chunk(coord: Vector2i) -> void:
 
 
 func rebuild_chunk_at_world(wx: int, wz: int) -> void:
-	rebuild_chunk(world_to_chunk(Vector3(float(wx), 0.0, float(wz))))
+	## v0.7: грани подземных клеток рисует чанк воздушной клетки — на границе чанка пересобираем и соседа.
+	var c := world_to_chunk(Vector3(float(wx), 0.0, float(wz)))
+	rebuild_chunk(c)
+	var lx := wx - c.x * chunk_size
+	var lz := wz - c.y * chunk_size
+	if lx == 0 and _loaded.has(c + Vector2i(-1, 0)):
+		rebuild_chunk(c + Vector2i(-1, 0))
+	if lx == chunk_size - 1 and _loaded.has(c + Vector2i(1, 0)):
+		rebuild_chunk(c + Vector2i(1, 0))
+	if lz == 0 and _loaded.has(c + Vector2i(0, -1)):
+		rebuild_chunk(c + Vector2i(0, -1))
+	if lz == chunk_size - 1 and _loaded.has(c + Vector2i(0, 1)):
+		rebuild_chunk(c + Vector2i(0, 1))
 
 
 func terrain_kind_at(cell: Vector3i) -> String:
-	## «hill» / «ruin» / «ground» / "" — что за клетка террейна (для кирки).
+	## «hill» / «ruin» / «ground» / «stone» / «bedrock» / «nest» / «egg» / "" — что за клетка террейна (для кирки).
 	var coord := world_to_chunk(Vector3(cell.x, 0, cell.z))
 	if _solid_by_chunk.has(coord):
 		var d: Dictionary = _solid_by_chunk[coord]
 		if d.has(cell):
 			return str(d[cell])
+	if cell.y < 0 and not is_dream_layer:
+		if cell.y < BEDROCK_Y:
+			return ""
+		if cell.y == BEDROCK_Y:
+			return "bedrock"
+		var ek := _extra_solid_kind(cell)
+		if ek != "":
+			return "" if is_cell_removed(cell.x, cell.y, cell.z) else ek
+		if _ug_solid(cell):
+			return depth_kind(cell.y)
+		return ""
 	if cell.y == -1 and _loaded.has(coord) and not is_world_in_lake(Vector3(cell.x + 0.5, 0, cell.z + 0.5)):
 		if not is_cell_removed(cell.x, -1, cell.z):
 			return "ground"
@@ -191,11 +227,15 @@ func find_first_terrain(kind: String) -> Vector3i:
 
 func mine_terrain_at(cell: Vector3i, kind: String = "") -> bool:
 	var k := kind
+	if cell.y <= BEDROCK_Y or k == "bedrock":
+		return false
 	if k == "":
 		k = terrain_kind_at(cell)
+		if k == "bedrock":
+			return false
 		if k == "":
 			if cell.y < 0:
-				k = "ground"
+				k = depth_kind(cell.y)
 			elif height_at(cell.x, cell.z) > cell.y:
 				k = "hill"
 			else:
@@ -247,6 +287,8 @@ func _process(delta: float) -> void:
 		_tick = 0.0
 		_update_chunks(false)
 	_drain_pending()
+	if not is_dream_layer and not panorama_mode:
+		_water_process(delta)
 
 
 func _drain_pending() -> void:
@@ -395,6 +437,10 @@ func _unload_chunk(coord: Vector2i) -> void:
 		_walls_by_chunk.erase(coord)
 	_ruin_centers.erase(coord)
 	_trees_by_chunk.erase(coord)
+	_water_unload_chunk(coord)
+	if _carve_cache.size() > 600:
+		_carve_cache.clear()
+		_nest_cache.clear()
 	if is_instance_valid(node):
 		node.queue_free()
 
@@ -433,12 +479,16 @@ func _load_chunk(coord: Vector2i) -> void:
 	_plan_hills(coord, occupied, solids)
 	if not is_dream_layer:
 		_plan_trees(coord, occupied, solids)
+	_plan_nest_blocks(coord, solids)
 	_solid_by_chunk[coord] = solids
 	_build_chunk_geometry(root, coord, lake_cells, solids)
+	var fresh := not _loaded.has(coord)
 	_loaded[coord] = root
 	if not panorama_mode:
 		_sync_physics_tree(root, _physics_active())
 		_check_orphan_leaves(coord)
+		if not is_dream_layer:
+			_water_on_chunk_loaded(coord, lake_cells, fresh)
 
 
 func _value_noise(x: float, z: float) -> float:
@@ -625,7 +675,7 @@ func _plan_hills(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> v
 				continue
 			occupied[cell] = occupied.get(cell, "hill")
 			for y in range(h):
-				if is_cell_removed(wx, y, wz):
+				if is_cell_removed(wx, y, wz) or is_carved(Vector3i(wx, y, wz)):
 					continue
 				solids[Vector3i(wx, y, wz)] = "hill"
 
@@ -676,7 +726,7 @@ func _plan_trees(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> v
 			continue
 		if occupied.has(b) or height_at(wx, wz) != 0:
 			continue
-		if is_cell_removed(wx, -1, wz):
+		if is_cell_removed(wx, -1, wz) or is_carved(Vector3i(wx, -1, wz)) or is_carved(Vector3i(wx, -2, wz)):
 			continue
 		var h: int = int(t["h"])
 		var logs: Array = []
@@ -765,11 +815,15 @@ func _check_orphan_leaves(coord: Vector2i) -> void:
 			_decay_queue[c] = _clock + LEAF_DECAY_MIN + randf() * LEAF_DECAY_SPREAD
 	
 
+var last_absorbed_blocks: int = 0
+
+
 func absorb_trees_near(center: Vector3, radius: float) -> int:
 	## Мать блоков расчищает арену: брёвна деревьев рядом исчезают, листва затем опадает.
 	if is_dream_layer:
 		return 0
 	var n := 0
+	last_absorbed_blocks = 0
 	var touched: Dictionary = {}
 	for k in _trees_by_chunk.keys():
 		for t in _trees_by_chunk[k]:
@@ -780,7 +834,8 @@ func absorb_trees_near(center: Vector3, radius: float) -> int:
 				continue
 			for raw in t["logs"]:
 				var c: Vector3i = raw
-				GameState.remove_terrain_cell_silent(c, "log")
+				if GameState.remove_terrain_cell_silent(c, "log"):
+					last_absorbed_blocks += 1
 			touched[k] = true
 			n += 1
 	for k2 in touched.keys():
@@ -839,12 +894,14 @@ func _neighbor_solid(solids: Dictionary, c: Vector3i) -> bool:
 	if solids.has(c):
 		return true
 	if c.y < 0:
-		return c.y == -1 and not _lake_world_cells.has(Vector2i(c.x, c.z)) and not is_cell_removed(c.x, -1, c.z)
+		if is_dream_layer:
+			return c.y == -1 and not _lake_world_cells.has(Vector2i(c.x, c.z))
+		return _ug_solid(c)
 	# Соседний чанк: холмы — чистая функция от сида (руины не касаются края чанка).
 	var coord := world_to_chunk(Vector3(c.x, 0, c.z))
 	if _solid_by_chunk.has(coord):
 		return (_solid_by_chunk[coord] as Dictionary).has(c)
-	return c.y < height_at(c.x, c.z) and not is_cell_removed(c.x, c.y, c.z) and not _world_is_lake_cell(c.x, c.z)
+	return c.y < height_at(c.x, c.z) and not is_cell_removed(c.x, c.y, c.z) and not _world_is_lake_cell(c.x, c.z) and not is_carved(c)
 
 
 const _FACES := [
@@ -898,32 +955,34 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 	var ground_tiles: Array = BlockTex.faces_for("ground", is_dream_layer, true)
 	var dirt_tiles: Array = BlockTex.faces_for("ground", is_dream_layer, false)
 	var bed_tiles: Array = BlockTex.faces_for("sand") if not is_dream_layer else dirt_tiles
-	# Пол: полосы вдоль X с одинаковым тегом, верх + боковины.
-	for lz in range(chunk_size):
-		var x := 0
-		while x < chunk_size:
-			var tag := _ground_tag(coord, x, lz, lake_cells)
-			var x0 := x
-			while x < chunk_size and _ground_tag(coord, x, lz, lake_cells) == tag:
-				x += 1
-			var width := x - x0
-			var top_y := 0.0
-			if tag == "lake":
-				top_y = -LAKE_DEPTH
-			elif tag == "pit":
-				top_y = -1.0
-			var thickness := 1.0 if top_y < -0.01 else (LAKE_DEPTH + 1.0)
-			var mn := Vector3(float(x0), top_y - thickness, float(lz))
-			var sz := Vector3(float(width), thickness, 1.0)
-			if tag == "ground":
-				# Верхний блок — трава, ниже — земля (на срезах у озёр и ям).
-				BlockTex.emit_box(st, Vector3(float(x0), top_y - 1.0, float(lz)), Vector3(float(width), 1.0, 1.0), base_col, 1 << 3, ground_tiles)
-				BlockTex.emit_box(st, mn, Vector3(float(width), thickness - 1.0, 1.0), base_col, (1 << 3) | (1 << 2), dirt_tiles)
-			elif tag == "lake":
-				BlockTex.emit_box(st, mn, sz, base_col.darkened(0.08), 1 << 3, bed_tiles)
-			else:
-				BlockTex.emit_box(st, mn, sz, base_col.darkened(0.1), 1 << 3, dirt_tiles)
-			_add_box_shape(body, mn + sz * 0.5, sz)
+	if is_dream_layer or panorama_mode:
+		# Сон/панорама: прежний тонкий пол (полосы вдоль X), глубины нет.
+		for lz in range(chunk_size):
+			var x := 0
+			while x < chunk_size:
+				var tag := _ground_tag(coord, x, lz, lake_cells)
+				var x0 := x
+				while x < chunk_size and _ground_tag(coord, x, lz, lake_cells) == tag:
+					x += 1
+				var width := x - x0
+				var top_y := 0.0
+				if tag == "lake":
+					top_y = -LAKE_DEPTH
+				elif tag == "pit":
+					top_y = -1.0
+				var thickness := 1.0 if top_y < -0.01 else (LAKE_DEPTH + 1.0)
+				var mn := Vector3(float(x0), top_y - thickness, float(lz))
+				var sz := Vector3(float(width), thickness, 1.0)
+				if tag == "ground":
+					BlockTex.emit_box(st, Vector3(float(x0), top_y - 1.0, float(lz)), Vector3(float(width), 1.0, 1.0), base_col, 1 << 3, ground_tiles)
+					BlockTex.emit_box(st, mn, Vector3(float(width), thickness - 1.0, 1.0), base_col, (1 << 3) | (1 << 2), dirt_tiles)
+				elif tag == "lake":
+					BlockTex.emit_box(st, mn, sz, base_col.darkened(0.08), 1 << 3, bed_tiles)
+				else:
+					BlockTex.emit_box(st, mn, sz, base_col.darkened(0.1), 1 << 3, dirt_tiles)
+				_add_box_shape(body, mn + sz * 0.5, sz)
+	else:
+		_build_underground(st, body, coord, lake_cells, base_col, ground_tiles)
 	# Кубы холмов, руин, деревьев: рисуем только открытые грани.
 	var origin := chunk_origin(coord)
 	var dirs := [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
@@ -942,6 +1001,8 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 		var exposed := not (mask & (1 << 2))
 		if kind == "hill" and c.y < height_at(c.x, c.z) - 2:
 			kind = "stone"
+		elif kind == "nest" or kind == "egg":
+			col = Color(1, 1, 1)
 		var tiles: Array = BlockTex.faces_for(kind, is_dream_layer, exposed, variant)
 		var mn := Vector3(c) - origin
 		BlockTex.emit_box(st, mn, Vector3.ONE, col, mask, tiles)
@@ -966,7 +1027,9 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 			i += 1
 			var lp := Vector3(float(ck2.x) - origin.x, float(y0), float(ck2.y) - origin.z)
 			var sz2 := Vector3(1.0, float(y1 - y0 + 1), 1.0)
-			_add_box_shape(body, lp + sz2 * 0.5, sz2)
+			var oid := _add_box_shape(body, lp + sz2 * 0.5, sz2)
+			if y0 < 0:
+				body.set_meta("solid_owner_%d" % oid, true)
 	if (st["v"] as PackedVector3Array).size() > 0:
 		var mi := MeshInstance3D.new()
 		mi.name = "TerrainMesh"
@@ -976,12 +1039,13 @@ func _build_chunk_geometry(root: Node3D, coord: Vector2i, lake_cells: Dictionary
 		_build_water(root, lake_cells)
 
 
-func _add_box_shape(body: StaticBody3D, center: Vector3, size: Vector3) -> void:
+func _add_box_shape(body: StaticBody3D, center: Vector3, size: Vector3) -> int:
 	var shape := BoxShape3D.new()
 	shape.size = size
 	var owner_id := body.create_shape_owner(body)
 	body.shape_owner_add_shape(owner_id, shape)
 	body.shape_owner_set_transform(owner_id, Transform3D(Basis.IDENTITY, center))
+	return owner_id
 
 
 func _build_water(root: Node3D, lake_cells: Dictionary) -> void:
@@ -1103,14 +1167,22 @@ func _try_spawn_reagent_at(root: Node3D, coord: Vector2i, occupied: Dictionary, 
 	return true
 
 
+var _lake_plan_cache: Dictionary = {}
+
+
 func _world_is_lake_cell(wx: int, wz: int) -> bool:
 	if _lake_world_cells.has(Vector2i(wx, wz)):
 		return true
 	var c := Vector2i(floori(float(wx) / float(chunk_size)), floori(float(wz) / float(chunk_size)))
-	if _loaded.has(c) or not chunk_has_lake(c):
+	if not chunk_has_lake(c):
 		return false
-	var planned := _plan_lake(c)
-	return planned.has(Vector2i(wx - c.x * chunk_size, wz - c.y * chunk_size))
+	if _lakes_by_chunk.has(c):
+		return false
+	if not _lake_plan_cache.has(c):
+		if _lake_plan_cache.size() > 256:
+			_lake_plan_cache.clear()
+		_lake_plan_cache[c] = _plan_lake(c)
+	return (_lake_plan_cache[c] as Dictionary).has(Vector2i(wx - c.x * chunk_size, wz - c.y * chunk_size))
 
 
 func _on_world_changed(_is_dream: bool) -> void:
@@ -1167,8 +1239,8 @@ func collect_collision_issues() -> Array:
 			if shp == null:
 				continue
 			var mn: Vector3 = xf.origin - shp.size * 0.5 + origin
-			if mn.y < -0.01:
-				continue # пол
+			if mn.y < -0.01 and not body.has_meta("solid_owner_%d" % owner_id):
+				continue # пол / подземная толща
 			for x in range(roundi(shp.size.x)):
 				for y in range(roundi(shp.size.y)):
 					for z in range(roundi(shp.size.z)):
@@ -1221,3 +1293,777 @@ func _count_all(n: Node) -> int:
 	for ch in n.get_children():
 		c += _count_all(ch)
 	return c
+
+
+# ================================================================ v0.7: глубина, пещеры, гнёзда, вода
+
+const BEDROCK_Y := -31
+const MIN_DIG_Y := -30
+## Входы в пещеры — ~5% чанков (как руины). Глухие тоннели — ещё ~6%, их находят только копая.
+const CAVE_ENTRANCE_THRESHOLD := 0.95
+const CAVE_DEEP_THRESHOLD := 0.94
+## Гнёзда Анаконды ≈ в 3 раза реже руин: доля входных пещер с гнездом + закрытые купола.
+const CAVE_NEST_CHANCE := 0.22
+const DOME_THRESHOLD := 0.9925
+const CAVE_REACH_CHUNKS := 3
+## Дев-сид: гарантированная пещера с гнездом у спавна (вход ~16 м, гнездо ~24 м).
+const DEV_NEST_FLOOR := Vector3i(21, -8, 11)
+const DEV_CAVE_PATH := [Vector3(16.5, 0.4, 2.5), Vector3(17.5, -1.2, 4.0), Vector3(19.0, -3.4, 5.8), Vector3(20.2, -5.4, 8.0), Vector3(21.2, -6.6, 10.2)]
+
+var _cave_sys_cache: Dictionary = {}  # Vector2i src -> Array[system]
+var _carve_cache: Dictionary = {}     # Vector2i -> Dictionary{Vector3i: true}
+var _nest_cache: Dictionary = {}      # Vector2i -> Dictionary{Vector3i: "nest"/"egg"}
+
+
+static func depth_kind(y: int) -> String:
+	if y <= BEDROCK_Y:
+		return "bedrock"
+	return "ground" if y >= -3 else "stone"
+
+
+func _caves_enabled() -> bool:
+	return not is_dream_layer and not panorama_mode
+
+
+func _dev_nest_enabled() -> bool:
+	return _caves_enabled() and GameState != null and bool(GameState.dev_mode)
+
+
+func _rng_for(src: Vector2i, salt: int) -> RandomNumberGenerator:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([_seed, src.x, src.y, salt])
+	return r
+
+
+func cave_systems_from(src: Vector2i) -> Array:
+	## Детерминированные (по сиду) пещерные системы, которые «начинаются» в чанке src.
+	if _cave_sys_cache.has(src):
+		return _cave_sys_cache[src]
+	var out: Array = []
+	if _caves_enabled():
+		var near_spawn := maxi(absi(src.x), absi(src.y)) <= 1
+		if src == Vector2i(1, 0) and _dev_nest_enabled():
+			out.append(_gen_dev_cave())
+		if not near_spawn:
+			out.append_array(_gen_systems_for(src))
+	_cave_sys_cache[src] = out
+	return out
+
+
+func _gen_systems_for(src: Vector2i) -> Array:
+	var out: Array = []
+	var blocked := chunk_has_lake(src) or chunk_has_ruin(src)
+	if not blocked and _chunk_hash(src, 41) > CAVE_ENTRANCE_THRESHOLD:
+		out.append(_gen_worm(src, true, _chunk_hash(src, 43) < CAVE_NEST_CHANCE))
+	elif _chunk_hash(src, 53) > CAVE_DEEP_THRESHOLD:
+		out.append(_gen_worm(src, false, false))
+	if _chunk_hash(src, 47) > DOME_THRESHOLD:
+		out.append(_gen_dome(src))
+	return out
+
+
+func _gen_worm(src: Vector2i, entrance: bool, with_nest: bool) -> Dictionary:
+	var r := _rng_for(src, 7)
+	var lx := r.randi_range(3, 12)
+	var lz := r.randi_range(3, 12)
+	var wx := src.x * chunk_size + lx
+	var wz := src.y * chunk_size + lz
+	var pos: Vector3
+	if entrance:
+		pos = Vector3(float(wx) + 0.5, float(height_at(wx, wz)) + 0.4, float(wz) + 0.5)
+	else:
+		pos = Vector3(float(wx) + 0.5, r.randf_range(-22.0, -8.0), float(wz) + 0.5)
+	var yaw := r.randf() * TAU
+	var pitch := -0.62 if entrance else r.randf_range(-0.15, 0.15)
+	var target_y := r.randf_range(-22.0, -9.0)
+	var steps := r.randi_range(28, 42)
+	var shapes: Array = []
+	for i in range(steps):
+		var rad := r.randf_range(1.45, 2.1)
+		if entrance and i < 3:
+			rad = 1.7
+		shapes.append({"t": "s", "c": pos, "r": rad})
+		var dir := Vector3(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw))
+		pos += dir * 1.1
+		yaw += r.randf_range(-0.32, 0.32)
+		if pos.y > target_y + 1.0:
+			pitch = lerpf(pitch, -0.62, 0.25)
+		elif pos.y < target_y - 1.0:
+			pitch = lerpf(pitch, 0.3, 0.25)
+		else:
+			pitch = lerpf(pitch, r.randf_range(-0.12, 0.12), 0.4)
+		pos.y = clampf(pos.y, -25.0, 8.0)
+	var sys := {"kind": "entrance" if entrance else "deep", "shapes": shapes, "entrance": (shapes[0] as Dictionary)["c"], "nest": {}, "src": src}
+	if with_nest:
+		_add_nest(sys, pos, "cave", 5.0)
+	_finish_aabb(sys)
+	return sys
+
+
+func _gen_dome(src: Vector2i) -> Dictionary:
+	## Закрытый купол: полость-полусфера с гнездом и яйцом, без связи с поверхностью. Находят, копая.
+	var r := _rng_for(src, 13)
+	var wx := src.x * chunk_size + r.randi_range(4, 11)
+	var wz := src.y * chunk_size + r.randi_range(4, 11)
+	var fy := r.randi_range(-24, -13)
+	var sys := {"kind": "dome", "shapes": [], "entrance": Vector3.ZERO, "nest": {}, "src": src}
+	_add_nest(sys, Vector3(float(wx) + 0.5, float(fy) + 1.0, float(wz) + 0.5), "dome", 6.5)
+	_finish_aabb(sys)
+	return sys
+
+
+func _gen_dev_cave() -> Dictionary:
+	var shapes: Array = []
+	for i in range(DEV_CAVE_PATH.size() - 1):
+		var a: Vector3 = DEV_CAVE_PATH[i]
+		var b: Vector3 = DEV_CAVE_PATH[i + 1]
+		var n := maxi(1, int(ceil(a.distance_to(b) / 0.7)))
+		for k in range(n):
+			shapes.append({"t": "s", "c": a.lerp(b, float(k) / float(n)), "r": 1.75})
+	var sys := {"kind": "entrance", "shapes": shapes, "entrance": DEV_CAVE_PATH[0], "nest": {}, "src": Vector2i(1, 0), "dev": true}
+	_add_nest(sys, Vector3(float(DEV_NEST_FLOOR.x) + 0.5, float(DEV_NEST_FLOOR.y) + 1.0, float(DEV_NEST_FLOOR.z) + 0.5), "cave", 5.0)
+	_finish_aabb(sys)
+	return sys
+
+
+func _add_nest(sys: Dictionary, at: Vector3, kind: String, radius: float) -> void:
+	var fy := clampi(floori(at.y) - 1, -26, -6)
+	var cx := floori(at.x)
+	var cz := floori(at.z)
+	var center := Vector3(float(cx) + 0.5, float(fy), float(cz) + 0.5)
+	(sys["shapes"] as Array).append({"t": "dome", "c": center, "r": radius, "h": radius * 0.72})
+	var egg := Vector3i(cx, fy + 1, cz)
+	sys["nest"] = {"id": "nest:%d,%d,%d" % [egg.x, egg.y, egg.z], "egg": egg, "floor_y": fy, "center": center, "kind": kind, "radius": radius}
+
+
+func _finish_aabb(sys: Dictionary) -> void:
+	var mn := Vector3(INF, INF, INF)
+	var mx := Vector3(-INF, -INF, -INF)
+	for sh in sys["shapes"]:
+		var c: Vector3 = sh["c"]
+		var rr: float = float(sh["r"]) + 1.0
+		mn = mn.min(c - Vector3(rr, rr, rr))
+		mx = mx.max(c + Vector3(rr, rr, rr))
+	sys["min"] = mn
+	sys["max"] = mx
+
+
+func _carve_allowed(c: Vector3i) -> bool:
+	if c.y < MIN_DIG_Y + 1:
+		return false
+	if absi(c.x) <= 12 and absi(c.z) <= 12 and c.y >= -6:
+		return false   # стартовая площадка и кровать — без провалов
+	var ck := Vector2i(floori(float(c.x) / float(chunk_size)), floori(float(c.z) / float(chunk_size)))
+	if c.y >= -3 and chunk_has_lake(ck):
+		return false   # озёра не протекают в пещеры
+	if c.y >= 0 and chunk_has_ruin(ck):
+		return false
+	return true
+
+
+func _carved_cells(coord: Vector2i) -> Dictionary:
+	if _carve_cache.has(coord):
+		return _carve_cache[coord]
+	var out: Dictionary = {}
+	var nests: Dictionary = {}
+	if _caves_enabled():
+		var x0 := coord.x * chunk_size
+		var z0 := coord.y * chunk_size
+		var x1 := x0 + chunk_size
+		var z1 := z0 + chunk_size
+		for sx in range(coord.x - CAVE_REACH_CHUNKS, coord.x + CAVE_REACH_CHUNKS + 1):
+			for sz in range(coord.y - CAVE_REACH_CHUNKS, coord.y + CAVE_REACH_CHUNKS + 1):
+				for sys in cave_systems_from(Vector2i(sx, sz)):
+					var mn: Vector3 = sys["min"]
+					var mx: Vector3 = sys["max"]
+					if mx.x < x0 or mn.x > x1 or mx.z < z0 or mn.z > z1:
+						continue
+					for sh in sys["shapes"]:
+						_rasterize(sh, x0, z0, x1, z1, out)
+					var nest: Dictionary = sys["nest"]
+					if not nest.is_empty():
+						var egg: Vector3i = nest["egg"]
+						for dx in range(-1, 2):
+							for dz in range(-1, 2):
+								var nc := Vector3i(egg.x + dx, egg.y - 1, egg.z + dz)
+								if nc.x >= x0 and nc.x < x1 and nc.z >= z0 and nc.z < z1:
+									nests[nc] = "nest"
+						if egg.x >= x0 and egg.x < x1 and egg.z >= z0 and egg.z < z1:
+							nests[egg] = "egg"
+		for nc2 in nests.keys():
+			out.erase(nc2)
+	_carve_cache[coord] = out
+	_nest_cache[coord] = nests
+	return out
+
+
+func _rasterize(sh: Dictionary, x0: int, z0: int, x1: int, z1: int, out: Dictionary) -> void:
+	var c: Vector3 = sh["c"]
+	var r: float = float(sh["r"])
+	var ax := maxi(x0, floori(c.x - r))
+	var bx := mini(x1 - 1, floori(c.x + r))
+	var az := maxi(z0, floori(c.z - r))
+	var bz := mini(z1 - 1, floori(c.z + r))
+	if ax > bx or az > bz:
+		return
+	if str(sh["t"]) == "dome":
+		var h: float = float(sh["h"])
+		var fy := int(c.y)
+		for x in range(ax, bx + 1):
+			for z in range(az, bz + 1):
+				var dx := float(x) + 0.5 - c.x
+				var dz := float(z) + 0.5 - c.z
+				for y in range(fy, fy + int(ceil(h)) + 1):
+					var dy := (float(y - fy) + 0.5) / h * r
+					if dx * dx + dz * dz + dy * dy <= r * r:
+						var cell := Vector3i(x, y, z)
+						if _carve_allowed(cell):
+							out[cell] = true
+		return
+	var ay := floori(c.y - r)
+	var by := floori(c.y + r)
+	for x2 in range(ax, bx + 1):
+		for z2 in range(az, bz + 1):
+			var ex := float(x2) + 0.5 - c.x
+			var ez := float(z2) + 0.5 - c.z
+			var top := height_at(x2, z2)
+			for y2 in range(ay, mini(by, top - 1) + 1):
+				var ey := (float(y2) + 0.5 - c.y) * 1.15
+				if ex * ex + ey * ey + ez * ez <= r * r:
+					var cell2 := Vector3i(x2, y2, z2)
+					if _carve_allowed(cell2):
+						out[cell2] = true
+
+
+func is_carved(c: Vector3i) -> bool:
+	if not _caves_enabled():
+		return false
+	var ck := Vector2i(floori(float(c.x) / float(chunk_size)), floori(float(c.z) / float(chunk_size)))
+	return _carved_cells(ck).has(c)
+
+
+func _extra_solid_kind(c: Vector3i) -> String:
+	## Блоки гнёзд (гнездо/яйцо) — генерируемые «солиды» под землёй.
+	if not _caves_enabled():
+		return ""
+	var ck := Vector2i(floori(float(c.x) / float(chunk_size)), floori(float(c.z) / float(chunk_size)))
+	_carved_cells(ck)
+	var d: Dictionary = _nest_cache.get(ck, {})
+	if not d.has(c):
+		return ""
+	if str(d[c]) == "egg" and GameState != null and GameState.collected_eggs.has("nest:%d,%d,%d" % [c.x, c.y, c.z]):
+		return ""
+	return str(d[c])
+
+
+func _ug_solid(c: Vector3i) -> bool:
+	## Подземная клетка (y<0) твёрдая? Ниже бедрока — «твёрдо» (граней не нужно).
+	if c.y < BEDROCK_Y:
+		return true
+	if c.y == BEDROCK_Y:
+		return true
+	if c.y >= 0:
+		return false
+	if is_cell_removed(c.x, c.y, c.z):
+		return false
+	if _extra_solid_kind(c) != "":
+		return true
+	if is_carved(c):
+		return false
+	var ck := Vector2i(floori(float(c.x) / float(chunk_size)), floori(float(c.z) / float(chunk_size)))
+	if _carve_cache.has(ck) and (_nest_cache.get(ck, {}) as Dictionary).has(c):
+		return false   # яйцо забрано
+	if c.y == -1 and _world_is_lake_cell(c.x, c.z):
+		return false
+	return true
+
+
+func _plan_nest_blocks(coord: Vector2i, solids: Dictionary) -> void:
+	if not _caves_enabled():
+		return
+	_carved_cells(coord)
+	var d: Dictionary = _nest_cache.get(coord, {})
+	for k in d.keys():
+		var c: Vector3i = k
+		if is_cell_removed(c.x, c.y, c.z):
+			continue
+		if _extra_solid_kind(c) == "":
+			continue
+		solids[c] = str(d[c])
+
+
+func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
+	if n.y <= BEDROCK_Y:
+		return BlockTex.faces_for("bedrock")
+	if lake_col and n.y == -2:
+		return BlockTex.faces_for("sand")
+	if n.y == -1:
+		return BlockTex.faces_for("ground", false, true)
+	if n.y >= -3:
+		return BlockTex.faces_for("dirt")
+	if n.y <= -16:
+		return BlockTex.faces_for("deep_stone")
+	return BlockTex.faces_for("stone")
+
+
+func underground_air_cells(coord: Vector2i, lake_cells: Dictionary = {}) -> Dictionary:
+	## Воздух под землёй в чанке: снятые игроком клетки, пещеры, вода озёр (y=-1).
+	var air: Dictionary = {}
+	for raw in GameState.removed_in_chunk(coord):
+		var c: Vector3i = raw
+		if c.y < 0 and c.y > BEDROCK_Y:
+			air[c] = true
+	for k in _carved_cells(coord).keys():
+		var c2: Vector3i = k
+		if c2.y < 0:
+			air[c2] = true
+	for k2 in lake_cells.keys():
+		var l: Vector2i = k2
+		air[Vector3i(coord.x * chunk_size + l.x, -1, coord.y * chunk_size + l.y)] = true
+	# Забранное яйцо — тоже воздух.
+	var nd: Dictionary = _nest_cache.get(coord, {})
+	for k3 in nd.keys():
+		var e: Vector3i = k3
+		if str(nd[e]) == "egg" and _extra_solid_kind(e) == "" and not air.has(e):
+			air[e] = true
+	return air
+
+
+func _build_underground(st: Dictionary, body: StaticBody3D, coord: Vector2i, lake_cells: Dictionary, base_col: Color, ground_tiles: Array) -> void:
+	var origin := chunk_origin(coord)
+	var air := underground_air_cells(coord, lake_cells)
+	# 1) Трава сверху (y=0) — где верхняя клетка грунта цела.
+	for lz in range(chunk_size):
+		var x := 0
+		while x < chunk_size:
+			var solid := _ug_solid(Vector3i(coord.x * chunk_size + x, -1, coord.y * chunk_size + lz))
+			var x0 := x
+			while x < chunk_size and _ug_solid(Vector3i(coord.x * chunk_size + x, -1, coord.y * chunk_size + lz)) == solid:
+				x += 1
+			if solid:
+				BlockTex.emit_box(st, Vector3(float(x0), -1.0, float(lz)), Vector3(float(x - x0), 1.0, 1.0), base_col, 63 & ~(1 << 2), ground_tiles)
+	# 2) Грани подземных клеток, смотрящие в воздух (пещеры, ямы, дно озёр).
+	var dirs := [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
+	var col_air: Dictionary = {}
+	for k in air.keys():
+		var a: Vector3i = k
+		var ck := Vector2i(a.x, a.z)
+		if not col_air.has(ck):
+			col_air[ck] = []
+		(col_air[ck] as Array).append(a.y)
+		for fi in range(6):
+			var n: Vector3i = a + dirs[fi]
+			if n.y >= 0 or n.y < BEDROCK_Y:
+				continue
+			if air.has(n) or not _ug_solid(n):
+				continue
+			if _extra_solid_kind(n) != "":
+				continue
+			var opp: int = fi ^ 1
+			var shade := 1.0 + (_hash01(n.x * 7 + n.y * 13, n.z * 11 - n.y) - 0.5) * 0.10
+			if n.y < -8:
+				shade *= 0.92
+			var lake_col := _lake_world_cells.has(Vector2i(n.x, n.z)) or lake_cells.has(Vector2i(n.x - coord.x * chunk_size, n.z - coord.y * chunk_size))
+			BlockTex.emit_box(st, Vector3(n) - origin, Vector3.ONE, Color(shade, shade, shade), 63 & ~(1 << opp), _ug_tiles(n, lake_col))
+	# 3) Коллизия толщи: колонна = набор сплошных участков [-31..-1]; одинаковые соседние колонны склеиваем.
+	for lz2 in range(chunk_size):
+		var xs := 0
+		while xs < chunk_size:
+			var key := _column_key(col_air, coord, xs, lz2)
+			var xs0 := xs
+			while xs < chunk_size and _column_key(col_air, coord, xs, lz2) == key:
+				xs += 1
+			for run in _column_runs(col_air, coord, xs0, lz2):
+				var y0: int = run[0]
+				var y1: int = run[1]
+				var sz := Vector3(float(xs - xs0), float(y1 - y0 + 1), 1.0)
+				var mn := Vector3(float(xs0), float(y0), float(lz2))
+				_add_box_shape(body, mn + sz * 0.5, sz)
+
+
+func _column_key(col_air: Dictionary, coord: Vector2i, lx: int, lz: int) -> String:
+	var ck := Vector2i(coord.x * chunk_size + lx, coord.y * chunk_size + lz)
+	if not col_air.has(ck):
+		return "u"
+	var ys: Array = (col_air[ck] as Array).duplicate()
+	ys.sort()
+	return str(ys)
+
+
+func _column_runs(col_air: Dictionary, coord: Vector2i, lx: int, lz: int) -> Array:
+	var ck := Vector2i(coord.x * chunk_size + lx, coord.y * chunk_size + lz)
+	if not col_air.has(ck):
+		return [[BEDROCK_Y, -1]]
+	var holes: Dictionary = {}
+	for y in col_air[ck]:
+		holes[int(y)] = true
+	var runs: Array = []
+	var y := BEDROCK_Y
+	while y <= -1:
+		if holes.has(y):
+			y += 1
+			continue
+		var y0 := y
+		while y <= -1 and not holes.has(y):
+			y += 1
+		runs.append([y0, y - 1])
+	return runs
+
+
+# ---------------------------------------------------------------- гнёзда: поиск и статистика
+
+func nests_near(pos: Vector3, radius: float) -> Array:
+	## Все гнёзда (по сиду), чьи центры ближе radius к pos. [{id, egg, center, kind, taken}]
+	var out: Array = []
+	if not _caves_enabled():
+		return out
+	var c := world_to_chunk(pos)
+	var rc := int(ceil(radius / float(chunk_size))) + CAVE_REACH_CHUNKS
+	for sx in range(c.x - rc, c.x + rc + 1):
+		for sz in range(c.y - rc, c.y + rc + 1):
+			for sys in cave_systems_from(Vector2i(sx, sz)):
+				var n: Dictionary = sys["nest"]
+				if n.is_empty():
+					continue
+				var center: Vector3 = n["center"]
+				if center.distance_to(pos) > radius:
+					continue
+				var d := n.duplicate()
+				d["taken"] = GameState.collected_eggs.has(str(n["id"]))
+				d["system"] = str(sys["kind"])
+				d["entrance"] = sys["entrance"]
+				out.append(d)
+	return out
+
+
+func nearest_nest(pos: Vector3, radius: float = 200.0) -> Dictionary:
+	var best: Dictionary = {}
+	var bd := INF
+	for n in nests_near(pos, radius):
+		var d := (n["center"] as Vector3).distance_to(pos)
+		if d < bd:
+			bd = d
+			best = n
+	return best
+
+
+func generation_stats(radius_chunks: int) -> Dictionary:
+	## Частоты по чанкам (без загрузки мешей): руины, входы в пещеры, гнёзда (пещерные + купола).
+	var total := 0
+	var ruins := 0
+	var entrances := 0
+	var deep := 0
+	var nests_cave := 0
+	var nests_dome := 0
+	var nest_chunks := 0
+	for cx in range(-radius_chunks, radius_chunks + 1):
+		for cz in range(-radius_chunks, radius_chunks + 1):
+			var src := Vector2i(cx, cz)
+			if maxi(absi(cx), absi(cz)) <= 1:
+				continue
+			total += 1
+			if chunk_has_ruin(src):
+				ruins += 1
+			var had_nest := false
+			for sys in _gen_systems_for(src):
+				var k := str(sys["kind"])
+				if k == "entrance":
+					entrances += 1
+				elif k == "deep":
+					deep += 1
+				if not (sys["nest"] as Dictionary).is_empty():
+					had_nest = true
+					if k == "dome":
+						nests_dome += 1
+					else:
+						nests_cave += 1
+			if had_nest:
+				nest_chunks += 1
+	return {"chunks": total, "ruins": ruins, "entrances": entrances, "deep": deep,
+		"nests_cave": nests_cave, "nests_dome": nests_dome, "nest_chunks": nest_chunks,
+		"ruin_pct": 100.0 * float(ruins) / maxf(1.0, float(total)),
+		"entrance_pct": 100.0 * float(entrances) / maxf(1.0, float(total)),
+		"nest_pct": 100.0 * float(nests_cave + nests_dome) / maxf(1.0, float(total))}
+
+
+func floor_y_below(pos: Vector3, max_down: int = 40) -> float:
+	## Высота пола (верх твёрдой клетки) под точкой — для существ под землёй и в пещерах.
+	var x := floori(pos.x)
+	var z := floori(pos.z)
+	var y := floori(pos.y)
+	for i in range(max_down):
+		var c := Vector3i(x, y - i, z)
+		if _cell_solid_any(c):
+			return float(c.y + 1)
+	return float(BEDROCK_Y + 1)
+
+
+func _cell_solid_any(c: Vector3i) -> bool:
+	if GameState.wake_blocks.has(c):
+		return true
+	var ck := world_to_chunk(Vector3(c.x, 0, c.z))
+	if _solid_by_chunk.has(ck) and (_solid_by_chunk[ck] as Dictionary).has(c):
+		return true
+	if c.y < 0:
+		return _ug_solid(c)
+	if not _solid_by_chunk.has(ck):
+		return c.y < height_at(c.x, c.z) and not is_cell_removed(c.x, c.y, c.z) and not is_carved(c)
+	return false
+
+
+func is_cell_solid(c: Vector3i) -> bool:
+	return _cell_solid_any(c)
+
+
+# ---------------------------------------------------------------- текучая вода (клеточный автомат)
+
+const WATER_TICK := 0.25
+const WATER_BUDGET := 1500
+const WATER_MAX_CELLS := 12000
+const WATER_FULL := 8
+var _water: Dictionary = {}          # Vector3i -> level 1..8 (8 — полная/падающая)
+var _water_src: Dictionary = {}      # Vector3i -> true (озёрные источники)
+var _water_by_chunk: Dictionary = {} # Vector2i -> Dictionary{Vector3i: true}
+var _wq: Dictionary = {}
+var _water_t: float = 0.0
+var _water_dirty: Dictionary = {}
+var water_updates_total: int = 0
+
+
+func water_level(c: Vector3i) -> int:
+	if _water_src.has(c):
+		return WATER_FULL
+	return int(_water.get(c, 0))
+
+
+func water_cell_count() -> int:
+	return _water.size()
+
+
+func is_world_in_water(pos: Vector3) -> bool:
+	var c := Vector3i(floori(pos.x), floori(pos.y), floori(pos.z))
+	return _water.has(c) or _water_src.has(c) or is_world_in_lake(pos) and pos.y < 0.2
+
+
+func _water_open(c: Vector3i) -> bool:
+	if c.y < MIN_DIG_Y or c.y >= 0:
+		return false
+	var ck := world_to_chunk(Vector3(c.x, 0, c.z))
+	if not _loaded.has(ck):
+		return false
+	if GameState.wake_blocks.has(c):
+		return false
+	if (_solid_by_chunk.get(ck, {}) as Dictionary).has(c):
+		return false
+	return not _ug_solid(c)
+
+
+func _water_desired(c: Vector3i) -> int:
+	if _water_src.has(c):
+		return WATER_FULL
+	if not _water_open(c):
+		return 0
+	var up := c + Vector3i.UP
+	if _water.has(up) or _water_src.has(up):
+		return WATER_FULL
+	var best := 0
+	for d in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+		var n: Vector3i = c + d
+		var lvl := water_level(n)
+		if lvl <= 1:
+			continue
+		var below := n + Vector3i.DOWN
+		# Растекается только вода, стоящая на твёрдом (как в Minecraft); падающая вниз — не растекается.
+		if _water_src.has(n) or not _water_open(below) and not _water.has(below):
+			best = maxi(best, lvl - 1)
+	return best
+
+
+func water_notify(c: Vector3i) -> void:
+	if is_dream_layer or panorama_mode:
+		return
+	_wq[c] = true
+	for d in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+		_wq[c + d] = true
+
+
+func _water_set(c: Vector3i, lvl: int) -> void:
+	var ck := world_to_chunk(Vector3(c.x, 0, c.z))
+	if lvl <= 0:
+		_water.erase(c)
+		if _water_by_chunk.has(ck):
+			(_water_by_chunk[ck] as Dictionary).erase(c)
+	else:
+		_water[c] = lvl
+		if not _water_by_chunk.has(ck):
+			_water_by_chunk[ck] = {}
+		(_water_by_chunk[ck] as Dictionary)[c] = true
+	_water_dirty[ck] = true
+	# Грани соседних чанков (вода у границы)
+	var lx := c.x - ck.x * chunk_size
+	var lz := c.z - ck.y * chunk_size
+	if lx == 0:
+		_water_dirty[ck + Vector2i(-1, 0)] = true
+	elif lx == chunk_size - 1:
+		_water_dirty[ck + Vector2i(1, 0)] = true
+	if lz == 0:
+		_water_dirty[ck + Vector2i(0, -1)] = true
+	elif lz == chunk_size - 1:
+		_water_dirty[ck + Vector2i(0, 1)] = true
+
+
+func water_step() -> int:
+	## Один шаг автомата: обрабатываем очередь (снимок), изменения ставят соседей в следующий шаг.
+	if _wq.is_empty():
+		return 0
+	var batch: Array = _wq.keys()
+	_wq.clear()
+	if batch.size() > WATER_BUDGET:
+		for i in range(WATER_BUDGET, batch.size()):
+			_wq[batch[i]] = true
+		batch.resize(WATER_BUDGET)
+	var changed := 0
+	for raw in batch:
+		var c: Vector3i = raw
+		if _water_src.has(c):
+			continue
+		var want := _water_desired(c)
+		var have := int(_water.get(c, 0))
+		if want == have:
+			continue
+		if have == 0 and _water.size() >= WATER_MAX_CELLS:
+			continue
+		_water_set(c, want)
+		changed += 1
+		for d in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, -1, 0), Vector3i(0, 1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+			_wq[c + d] = true
+	water_updates_total += changed
+	return changed
+
+
+func water_settle(max_steps: int = 200) -> int:
+	## Для тестов: прогнать автомат до покоя.
+	var steps := 0
+	while not _wq.is_empty() and steps < max_steps:
+		water_step()
+		steps += 1
+	_rebuild_water_meshes()
+	return steps
+
+
+func _water_process(delta: float) -> void:
+	_water_t += delta
+	if _water_t < WATER_TICK:
+		return
+	_water_t = 0.0
+	water_step()
+	_rebuild_water_meshes()
+
+
+func _water_on_chunk_loaded(coord: Vector2i, lake_cells: Dictionary, _fresh: bool) -> void:
+	for k in lake_cells.keys():
+		var l: Vector2i = k
+		var c := Vector3i(coord.x * chunk_size + l.x, -1, coord.y * chunk_size + l.y)
+		_water_src[c] = true
+	# Источники рядом с вырытым/пещерой и вода у границы с соседями — в очередь.
+	var air := underground_air_cells(coord, {})
+	for k2 in air.keys():
+		var a: Vector3i = k2
+		for d in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+			var n: Vector3i = a + d
+			if _water_src.has(n) or _water.has(n):
+				_wq[a] = true
+				break
+	for k3 in lake_cells.keys():
+		var l2: Vector2i = k3
+		var c2 := Vector3i(coord.x * chunk_size + l2.x, -1, coord.y * chunk_size + l2.y)
+		for d2 in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+			var n2: Vector3i = c2 + d2
+			if not _water_src.has(n2) and air.has(n2):
+				_wq[n2] = true
+	for nb in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var wc: Dictionary = _water_by_chunk.get(coord + nb, {})
+		for k4 in wc.keys():
+			water_notify(k4)
+	_water_dirty[coord] = true
+
+
+func _water_unload_chunk(coord: Vector2i) -> void:
+	var wc: Dictionary = _water_by_chunk.get(coord, {})
+	for k in wc.keys():
+		_water.erase(k)
+	_water_by_chunk.erase(coord)
+	var x0 := coord.x * chunk_size
+	var z0 := coord.y * chunk_size
+	for k2 in _water_src.keys():
+		var c: Vector3i = k2
+		if c.x >= x0 and c.x < x0 + chunk_size and c.z >= z0 and c.z < z0 + chunk_size:
+			_water_src.erase(c)
+	_water_dirty.erase(coord)
+
+
+func _rebuild_water_meshes() -> void:
+	if _water_dirty.is_empty():
+		return
+	for ck in _water_dirty.keys():
+		if _loaded.has(ck):
+			_build_flow_water(ck)
+	_water_dirty.clear()
+
+
+func _build_flow_water(coord: Vector2i) -> void:
+	var root: Node3D = _loaded[coord]
+	if not is_instance_valid(root):
+		return
+	var old := root.get_node_or_null("FlowWater")
+	if old:
+		old.free()
+	var wc: Dictionary = _water_by_chunk.get(coord, {})
+	if wc.is_empty():
+		return
+	var origin := chunk_origin(coord)
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var dirs := [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
+	for k in wc.keys():
+		var c: Vector3i = k
+		var lvl := int(_water.get(c, 0))
+		if lvl <= 0:
+			continue
+		var full := _water.has(c + Vector3i.UP) or _water_src.has(c + Vector3i.UP)
+		var h := 1.0 if full else clampf(float(lvl) / float(WATER_FULL) * 0.92, 0.12, 0.92)
+		var mn := Vector3(c) - origin
+		for fi in range(6):
+			var n: Vector3i = c + dirs[fi]
+			if _water.has(n) or _water_src.has(n):
+				continue
+			if fi != 2 and _cell_solid_any(n):
+				continue
+			var f: Array = BlockTex.FACES[fi]
+			var nn: Vector3 = f[0]
+			var cs: Array = f[1]
+			var p: Array = []
+			for q in cs:
+				var v: Vector3 = q
+				p.append(mn + Vector3(v.x, v.y * h, v.z))
+			for idx in [0, 2, 1, 0, 3, 2]:
+				var pv: Vector3 = p[idx]
+				verts.append(pv)
+				norms.append(nn)
+				uvs.append(Vector2(pv.x + pv.y, pv.z + pv.y))
+	if verts.is_empty():
+		return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, BlockTex.water_material(false))
+	var mi := MeshInstance3D.new()
+	mi.name = "FlowWater"
+	mi.mesh = mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)

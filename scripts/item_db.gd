@@ -2,23 +2,32 @@ extends RefCounted
 ## v0.5: справочник предметов (имя, размер стака, иконка) и «особых» предметов
 ## для вертикальной полосы (якоря, маяки) — они не лежат в инвентаре.
 
+## v0.7: стак — 100 предметов (инструменты — 1). Реагенты и осыпь лежат в «кошеле» (общий для яви и сна).
 const ITEMS := {
-	"reagent1": {"name": "реагент1", "stack": 64},
-	"reagent2": {"name": "реагент2", "stack": 64},
-	"reagent3": {"name": "реагент3", "stack": 64},
-	"dust": {"name": "Осыпь", "stack": 999},
-	"workbench": {"name": "Верстак", "stack": 16},
+	"reagent1": {"name": "реагент1", "stack": 100},
+	"reagent2": {"name": "реагент2", "stack": 100},
+	"reagent3": {"name": "реагент3", "stack": 100},
+	"dust": {"name": "Осыпь", "stack": 100000},
+	"workbench": {"name": "Верстак", "stack": 100},
 	"pickaxe": {"name": "Кирка", "stack": 1},
 	"sword": {"name": "Меч", "stack": 1},
-	"torch": {"name": "Факел", "stack": 64},
-	"hill": {"name": "Холм", "stack": 64},
-	"ruin": {"name": "Руинный блок", "stack": 64},
-	"ground": {"name": "Грунт", "stack": 64},
-	"drift": {"name": "Дрейф-блок", "stack": 64},
-	"mouth": {"name": "Рот", "stack": 64},
-	"log": {"name": "Бревно", "stack": 64},
-	"leaves": {"name": "Листва", "stack": 64},
-	"planks": {"name": "Доски", "stack": 64},
+	"torch": {"name": "Факел", "stack": 100},
+	"hill": {"name": "Холм", "stack": 100},
+	"ruin": {"name": "Руинный блок", "stack": 100},
+	"ground": {"name": "Грунт", "stack": 100},
+	"drift": {"name": "Дрейф-блок", "stack": 100},
+	"mouth": {"name": "Рот", "stack": 100},
+	"log": {"name": "Бревно", "stack": 100},
+	"leaves": {"name": "Листва", "stack": 100},
+	"planks": {"name": "Доски", "stack": 100},
+	"stone": {"name": "Камень", "stack": 100},
+	"sand": {"name": "Песок", "stack": 100},
+	"nest": {"name": "Гнездо", "stack": 100},
+	"bed": {"name": "Кровать", "stack": 100},
+	"lathe": {"name": "Станок", "stack": 100},
+	"sword2": {"name": "Меч2", "stack": 1},
+	"heal1": {"name": "хилка1", "stack": 100},
+	"anaconda_egg": {"name": "Яйцо Анаконды", "stack": 100},
 }
 
 ## Особые предметы: только вертикальная полоса справа. key -> поле GameState.
@@ -51,7 +60,7 @@ static func display_name(id: String, fallback: String = "") -> String:
 static func max_stack(id: String) -> int:
 	if ITEMS.has(id):
 		return int(ITEMS[id]["stack"])
-	return 64
+	return 100
 
 
 static func icon(id: String) -> Texture2D:

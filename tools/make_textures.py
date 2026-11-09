@@ -12,7 +12,9 @@ os.makedirs(ICONS, exist_ok=True)
 
 TILES = ["grass_top", "grass_side", "dirt", "stone", "brick", "brick_mossy", "log_side", "log_top",
          "leaves", "sand", "water", "dream_top", "dream_side", "dream_dirt", "drift", "drift_dream",
-         "drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch"]
+         "drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch",
+         "bedrock", "nest", "egg", "bed_top", "bed_side", "deep_stone", "grave", "lathe_top", "lathe_side", "blanket", "mattress",
+         "blade2", "scale", "scale_head"]
 
 
 def rng(name):
@@ -300,6 +302,140 @@ def t_torch():
     return im
 
 
+# ---------------------------------------------------------------- v0.7
+def t_bedrock():
+    im = new(); r = rng("bedrock")
+    noise_fill(im, [(40, 40, 44), (58, 58, 62), (28, 28, 32), (74, 74, 78), (20, 20, 24)], r, [3, 3, 2, 1, 2])
+    return im
+
+
+def t_deep_stone():
+    im = new(); r = rng("deepstone")
+    noise_fill(im, [(88, 90, 98), (80, 82, 90), (98, 100, 108), (72, 74, 82)], r)
+    for _ in range(5):
+        x, y = r.randrange(15), r.randrange(15)
+        im.putpixel((x, y), (60, 62, 70, 255)); im.putpixel((x + 1, y), (60, 62, 70, 255))
+    return im
+
+
+def t_nest():
+    im = new(); r = rng("nest")
+    noise_fill(im, [(92, 70, 44), (110, 84, 52), (74, 56, 34), (128, 100, 64)], r)
+    for _ in range(9):
+        x, y = r.randrange(13), r.randrange(16)
+        for k in range(3):
+            im.putpixel((x + k, y), (150, 120, 76, 255))
+    for _ in range(4):
+        x, y = r.randrange(15), r.randrange(15)
+        im.putpixel((x, y), (226, 220, 200, 255))  # кости
+    return im
+
+
+def t_egg():
+    im = new(); r = rng("egg")
+    noise_fill(im, [(214, 206, 178), (200, 192, 164), (226, 220, 194)], r)
+    for _ in range(14):
+        x, y = r.randrange(16), r.randrange(16)
+        im.putpixel((x, y), r.choice([(96, 120, 70, 255), (70, 96, 60, 255), (130, 90, 60, 255)]))
+    return im
+
+
+def t_bed_top():
+    im = new(); r = rng("bedtop")
+    noise_fill(im, [(176, 46, 52), (164, 40, 46), (190, 56, 62)], r)
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, 15, 4], fill=(236, 232, 224, 255))
+    d.rectangle([2, 1, 13, 3], fill=(250, 248, 242, 255))
+    return im
+
+
+def t_bed_side():
+    im = t_planks()
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, 15, 6], fill=(176, 46, 52, 255))
+    d.line([0, 6, 15, 6], fill=(120, 30, 36, 255))
+    return im
+
+
+def t_grave():
+    im = new(); r = rng("grave")
+    noise_fill(im, [(120, 96, 70), (108, 86, 62), (132, 106, 78)], r)
+    d = ImageDraw.Draw(im)
+    d.rectangle([6, 2, 9, 13], fill=(220, 214, 200, 255))
+    d.rectangle([3, 5, 12, 7], fill=(220, 214, 200, 255))
+    return im
+
+
+
+def t_lathe_top():
+    im = t_stone()
+    d = ImageDraw.Draw(im)
+    d.rectangle([1, 1, 14, 14], outline=(70, 72, 82, 255))
+    d.ellipse([4, 4, 11, 11], fill=(150, 156, 170, 255), outline=(60, 62, 70, 255))
+    d.ellipse([6, 6, 9, 9], fill=(90, 210, 230, 255))
+    return im
+
+
+def t_lathe_side():
+    im = t_planks()
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, 15, 3], fill=(110, 112, 122, 255))
+    d.rectangle([3, 6, 12, 9], fill=(150, 156, 170, 255))
+    d.line([7, 9, 7, 14], fill=(90, 210, 230, 255))
+    d.rectangle([2, 13, 13, 15], fill=(70, 72, 82, 255))
+    return im
+
+
+def t_blanket():
+    im = new(); r = rng("blanket")
+    noise_fill(im, [(176, 46, 52), (164, 40, 46), (190, 56, 62)], r)
+    for y in (3, 8, 13):
+        for x in range(16):
+            im.putpixel((x, y), (214, 160, 70, 255))
+    return im
+
+
+def t_mattress():
+    im = new(); r = rng("mattress")
+    noise_fill(im, [(236, 232, 224), (226, 222, 212), (244, 242, 236)], r)
+    return im
+
+
+
+def t_blade2():
+    im = new(); r = rng("blade2")
+    for y in range(16):
+        for x in range(16):
+            t = (x + y) / 30.0
+            c = (int(70 + 120 * t), int(170 + 70 * t), int(200 + 50 * t))
+            if r.random() < 0.08:
+                c = (230, 250, 255)
+            im.putpixel((x, y), c + (255,))
+    d = ImageDraw.Draw(im)
+    d.line([0, 15, 15, 0], fill=(240, 255, 255, 255))
+    return im
+
+
+def t_scale():
+    im = new(); r = rng("scale")
+    noise_fill(im, [(62, 74, 40), (54, 64, 34), (72, 84, 46), (46, 54, 30)], r)
+    d = ImageDraw.Draw(im)
+    for yy in range(0, 16, 4):
+        off = 0 if (yy // 4) % 2 == 0 else 2
+        for xx in range(-2, 16, 4):
+            d.arc([xx + off, yy, xx + off + 4, yy + 4], 0, 180, fill=(34, 40, 22, 255))
+    return im
+
+
+def t_scale_head():
+    im = t_scale()
+    d = ImageDraw.Draw(im)
+    d.rectangle([2, 4, 5, 7], fill=(255, 150, 40, 255))
+    d.rectangle([10, 4, 13, 7], fill=(255, 150, 40, 255))
+    d.point([3, 5], fill=(20, 10, 0, 255)); d.point([11, 5], fill=(20, 10, 0, 255))
+    d.line([3, 12, 12, 12], fill=(120, 30, 30, 255))
+    return im
+
 GEN = {
     "grass_top": t_grass_top, "grass_side": t_grass_side, "dirt": t_dirt, "stone": t_stone,
     "brick": lambda: brick("brick", [(128, 116, 104), (118, 106, 94), (138, 126, 112), (110, 98, 88)], (78, 70, 62)),
@@ -310,6 +446,10 @@ GEN = {
     "drift_dream": t_drift_dream, "drift_anchored": t_drift_anchored, "mouth": t_mouth,
     "bench_top": t_bench_top, "bench_side": t_bench_side, "beacon": t_beacon, "planks": t_planks,
     "dream_brick": t_dream_brick, "torch": t_torch,
+    "bedrock": t_bedrock, "nest": t_nest, "egg": t_egg, "bed_top": t_bed_top, "bed_side": t_bed_side,
+    "deep_stone": t_deep_stone, "grave": t_grave,
+    "blade2": t_blade2, "scale": t_scale, "scale_head": t_scale_head,
+    "lathe_top": t_lathe_top, "lathe_side": t_lathe_side, "blanket": t_blanket, "mattress": t_mattress,
 }
 
 tiles = {}
@@ -406,6 +546,8 @@ SPR = {
     "reagent1": ["", "       l", "      lpP", "     lppPP", "     lppPP", "    lpppPPP", "    lpppPPP", "    lpppPPP", "     lppPP", "     lppPP", "      lpP", "       P"],
     "reagent2": ["", "", "    mmmmmm", "   mMmmmMmm", "  mmmmmmmmMm", "  mmMmmmmmmm", "   mmmmmmmm", "      hh", "      hh", "      hh", "     hhhh", "    GGGGGG"],
     "reagent3": ["", "", "  e      e", "  ee    eE", "  eEe  eEE", "   eEe eE", "   eeE eE  e", "    eEeE  eE", "  e eeEE eEE", "  eEeeEEeEE", "   kkkkkkkk", "  kkkkkkkkkk"],
+    "sword2": ["             cC", "            ccC", "           ccC", "          ccC", "         ccC", "        ccC", "  y    ccC", "   y  ccC", "    yccC", "    yyC", "   Py y", "  PP   y", " PP", "yP", "y"],
+    "anaconda_egg": ["", "      hh", "     hGhh", "    hhhhGh", "    hGhhhh", "   hhhhhGhh", "   hhGhhhhh", "   hhhhhhGh", "   hGhhhhhh", "    hhhGhh", "    hhhhhh", "     hhhh"],
     "unknown": ["", "    UUUUUU", "   U      U", "         U", "        U", "       U", "      U", "      U", "", "      U"],
 }
 
@@ -420,6 +562,12 @@ iso = {
     "leaves": ("leaves", "leaves", "leaves"),
     "planks": ("planks", "planks", "planks"),
     "dirt": ("dirt", "dirt", "dirt"),
+    "stone": ("stone", "stone", "stone"),
+    "sand": ("sand", "sand", "sand"),
+    "nest": ("nest", "nest", "nest"),
+    "bed": ("bed_top", "bed_side", "bed_side"),
+    "bedrock": ("bedrock", "bedrock", "bedrock"),
+    "lathe": ("lathe_top", "lathe_side", "lathe_side"),
 }
 for name, (t, l, rr) in iso.items():
     iso_cube(tiles[t], tiles[l], tiles[rr]).save(os.path.join(ICONS, name + ".png"))

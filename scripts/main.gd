@@ -18,7 +18,9 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
-	if _want_shots06():
+	if _want_shots07():
+		GameState.begin_world("Скриншоты v0.7", "", "6767676767", GameState.DEV_SEED, true)
+	elif _want_shots06():
 		GameState.begin_world("Скриншоты v0.6", "", "6767676767", GameState.DEV_SEED, false)
 	elif _want_shots05():
 		GameState.begin_world("Скриншоты", "", "6767676767", GameState.DEV_SEED, true)
@@ -62,9 +64,14 @@ func _ready() -> void:
 	if gsets:
 		gsets.settings_changed.connect(_apply_settings)
 	_start_music()
+	_spawn_saved_graves()
+	if loaded:
+		player.global_position = player.global_position
 	if not GameState.player_died.is_connected(_on_player_died):
 		GameState.player_died.connect(_on_player_died)
-	if _want_shots06():
+	if _want_shots07():
+		call_deferred("_capture_v07")
+	elif _want_shots06():
 		call_deferred("_capture_v06")
 	elif _want_shots05():
 		call_deferred("_capture_v05")
@@ -75,20 +82,84 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
-	print("Сонная стройка v0.6 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.7 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func _on_player_died() -> void:
-	## v0.6: смерть — возрождение у кровати с полным HP, штраф: до 3 ресурсов; босс уходит (как в Terraria).
+	## v0.7: смерть → кучка вещей на месте гибели (всё, кроме гвоздей/якорей/маяков) + меню смерти.
 	for b in get_tree().get_nodes_in_group("block_mother"):
 		if b.has_method("leave"):
 			b.leave("Мать блоков потеряла к тебе интерес и ушла под землю.")
-	var lost := GameState.steal_resource_hardcore(3)
-	player.global_position = Vector3(0, 2, 6)
+	for a in get_tree().get_nodes_in_group("anaconda"):
+		if a.has_method("leave"):
+			a.leave("Анаконда утащила добычу в глубину… и потеряла к тебе интерес.")
+	var at := player.global_position
+	var items: Array = GameState.collect_death_drop()
+	var n := 0
+	for it in items:
+		n += int(it["count"])
+	var gid := GameState.add_grave(at, items)
+	if gid >= 0:
+		_spawn_grave(gid)
+	last_death_drop = n
+	var info := "Вещи (%d шт.) лежат на месте гибели — подойди, чтобы подобрать.\nГвозди, клинья, якоря и маяки остались при тебе." % n if n > 0 else "Терять было нечего."
+	if GameState.dev_mode:
+		info = "DEV-сид: ресурсы бесконечны, ничего не выпало."
+	var hud := get_node_or_null("HUD")
+	if hud and "death_menu" in hud and hud.death_menu:
+		var dm: Control = hud.death_menu
+		if not dm.respawn_pressed.is_connected(respawn):
+			dm.respawn_pressed.connect(respawn)
+			dm.exit_pressed.connect(exit_world)
+		dm.open(info)
+		get_tree().paused = true
+	else:
+		respawn()
+
+
+var last_death_drop := 0
+
+
+func respawn() -> void:
+	get_tree().paused = false
+	var hud := get_node_or_null("HUD")
+	if hud and "death_menu" in hud and hud.death_menu:
+		hud.death_menu.close()
+	GameState.death_open = false
+	player.global_position = GameState.spawn_point
 	player.velocity = Vector3.ZERO
 	GameState.heal_player_full()
-	if lost != "none":
-		GameState.chat("Потеряно при смерти: %s" % lost, Color(1.0, 0.6, 0.5))
+
+
+func exit_world() -> void:
+	respawn()
+	if saver and saver.has_method("save_game"):
+		saver.save_game("death-exit")
+	GameState.paused = false
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+
+
+func _spawn_grave(gid: int) -> Node3D:
+	var idx := GameState.grave_index(gid)
+	if idx < 0:
+		return null
+	var script: GDScript = load("res://scripts/grave_pile.gd")
+	var g: Node3D = script.new()
+	g.configure(gid)
+	g.position = GameState.graves[idx]["pos"]
+	wake_world.add_child(g)
+	return g
+
+
+func _spawn_saved_graves() -> void:
+	for g in get_tree().get_nodes_in_group("grave_pile"):
+		g.queue_free()
+	for gr in GameState.graves:
+		_spawn_grave(int(gr["id"]))
+
+
+func _want_shots07() -> bool:
+	return "--shots07" in OS.get_cmdline_user_args()
 
 
 func _want_shots06() -> bool:
@@ -133,7 +204,7 @@ func _start_music() -> void:
 func _want_shots() -> bool:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
-	return "--shots" in args or "--shots05" in args or "--shots06" in args
+	return "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
 
 
 func _want_shots05() -> bool:
@@ -612,4 +683,307 @@ func _capture_shots() -> void:
 	if rf:
 		rf.store_string("\n".join(report))
 	print("SHOT report:\n", "\n".join(report))
+	get_tree().quit(0)
+
+
+# ---------------------------------------------------------------- v0.7 скриншоты
+
+func _v7_goto(pos: Vector3) -> void:
+	player.global_position = pos
+	player.velocity = Vector3.ZERO
+	wake_chunks._update_chunks(true)
+	wake_chunks.load_all_pending()
+
+
+func _v7_put(cell: Vector3i, kind: String) -> void:
+	if GameState.wake_blocks.has(cell):
+		return
+	if GameState.place_wake_block(cell, kind):
+		wake_voxels.add_block(cell, GameState.wake_blocks[cell])
+
+
+func _v7_dig(cells: Array) -> void:
+	var touched := {}
+	for raw in cells:
+		var c: Vector3i = raw
+		var k: String = wake_chunks.terrain_kind_at(c)
+		if k == "" or k == "air" or k == "bedrock":
+			continue
+		GameState.remove_terrain_cell_silent(c, k)
+		touched[Vector2i(floori(float(c.x) / 16.0), floori(float(c.z) / 16.0))] = c
+	for k2 in touched.keys():
+		var c2: Vector3i = touched[k2]
+		wake_chunks.rebuild_chunk_at_world(c2.x, c2.z)
+
+
+func _v7_select(id: String) -> void:
+	if GameState.count_item(id) <= 0:
+		GameState.add_item_count(id, 1)
+	for si in range(GameState.HOTBAR_SIZE):
+		if str(GameState.item_slots[si].get("id", "")) == id:
+			GameState.select_item_slot(si)
+			return
+	# Перекладываем в хотбар
+	for sj in range(GameState.item_slots.size()):
+		if str(GameState.item_slots[sj].get("id", "")) == id:
+			GameState.swap_slots(sj, 8)
+			GameState.select_item_slot(8)
+			return
+
+
+func _capture_v07() -> void:
+	DirAccess.make_dir_recursive_absolute("/workspace/shots")
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets:
+		gsets.set("render_distance", 4)
+	wake_chunks._apply_radius(4)
+	_v7_goto(GameState.DEFAULT_SPAWN)
+	var day := _day()
+	day.set_time(500.0)
+	threat.set_process(false)
+	var hud := get_node_or_null("HUD")
+	var report := {}
+	# 1. Вход в пещеру (дев-сид, 15–25 м от спавна)
+	var dn: Dictionary = wake_chunks.nearest_nest(GameState.DEFAULT_SPAWN, 40.0)
+	report["dev_nest"] = dn
+	var ent: Vector3 = dn.get("entrance", Vector3(16.5, 0.4, 2.5))
+	_v7_goto(Vector3(ent.x - 6.0, 3.0, ent.z - 6.5))
+	_look_at_point(ent + Vector3(0, -1.0, 0), Vector3(ent.x - 6.0, 3.2, ent.z - 6.5))
+	await _wait(1.0)
+	await _save_shot("v07_cave_entrance.png")
+	# 2. Пещера изнутри (факелы)
+	var path: Array = wake_chunks.DEV_CAVE_PATH
+	for i in range(1, path.size()):
+		var pp: Vector3 = path[i]
+		var fy: float = wake_chunks.floor_y_below(pp + Vector3(0, 0.5, 0), 6)
+		_v7_put(Vector3i(floori(pp.x), int(fy), floori(pp.z)), "torch")
+	var mid: Vector3 = path[1]
+	var mid_floor: float = wake_chunks.floor_y_below(mid + Vector3(0, 0.5, 0), 6)
+	_v7_goto(Vector3(mid.x, mid_floor + 0.05, mid.z))
+	_look_at_point(Vector3(dn["center"].x, dn["center"].y + 1.0, dn["center"].z), Vector3(mid.x, mid_floor + 0.05, mid.z))
+	await _wait(0.8)
+	await _save_shot("v07_cave_underground.png")
+	# 3. Гнездо дев-сида с яйцом
+	var nc: Vector3 = dn["center"]
+	_v7_put(Vector3i(floori(nc.x) - 2, int(nc.y), floori(nc.z) + 2), "torch")
+	_v7_put(Vector3i(floori(nc.x) + 2, int(nc.y), floori(nc.z) - 2), "torch")
+	var cam_from := Vector3(nc.x - 3.0, nc.y + 0.05, nc.z - 2.5)
+	_v7_goto(cam_from)
+	_look_at_point(Vector3(nc.x, nc.y + 0.4, nc.z), cam_from)
+	await _wait(0.8)
+	await _save_shot("v07_dev_nest_egg.png")
+	# 4. Анаконда с факелами (ночь, у гнезда)
+	day.set_time(1230.0)
+	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
+	var ana: Node3D = AS.spawn_at(wake_world, nc, str(dn.get("id", "dev")))
+	await _wait(0.3)
+	if ana:
+		ana.set_physics_process(false)
+		var ep := Vector3(nc.x + 2.2, nc.y + 2.0, nc.z + 0.5)
+		var emerge := Vector3(ep.x, wake_chunks.floor_y_below(ep, 8), ep.z)
+		ana._emerge = emerge
+		ana._enter(ana.S.STUNNED)
+		ana._stun_len = 99.0
+		for k in range(90):
+			ana._t = 0.0
+			ana.tick(1.0 / 30.0)
+			await get_tree().process_frame
+		var hc: Vector3 = ana.hit_center()
+		_v7_put(Vector3i(floori(hc.x) + 1, int(nc.y), floori(hc.z) + 1), "torch")
+		var af := Vector3(nc.x - 2.5, emerge.y + 0.05, nc.z - 3.2)
+		_v7_goto(af)
+		_look_at_point(hc + Vector3(0, -0.3, 0), af)
+		_v7_select("torch")
+		ana.hp = int(ana.MAX_HP * 0.8)
+		await _wait(0.5)
+		await _save_shot("v07_anaconda_torches.png")
+		report["anaconda"] = ana.debug_snapshot()
+		ana.leave("")
+	day.set_time(500.0)
+	await _wait(1.4)
+	# 5. Купол-гнездо после прокопа
+	var dome: Dictionary = {}
+	for n in wake_chunks.nests_near(Vector3(0, -10, 0), 420.0):
+		if str(n.get("system", "")) == "dome":
+			if dome.is_empty() or (n["center"] as Vector3).length() < (dome["center"] as Vector3).length():
+				dome = n
+	report["dome"] = dome
+	if not dome.is_empty():
+		var dc: Vector3 = dome["center"]
+		var sx := floori(dc.x) - 3
+		var sz := floori(dc.z) - 3
+		_v7_goto(Vector3(sx + 0.5, 3, sz + 0.5))
+		var shaft: Array = []
+		var top: int = wake_chunks.height_at(sx, sz)
+		for y in range(int(dc.y) + 1, top + 1):
+			for dx in range(0, 2):
+				for dz in range(0, 2):
+					shaft.append(Vector3i(sx + dx, y, sz + dz))
+		_v7_dig(shaft)
+		_v7_put(Vector3i(floori(dc.x) + 2, int(dc.y), floori(dc.z) + 1), "torch")
+		_v7_put(Vector3i(floori(dc.x) - 1, int(dc.y), floori(dc.z) + 3), "torch")
+		_v7_put(Vector3i(sx, int(dc.y) + 1, sz), "torch")
+		var from_d := Vector3(sx + 1.0, dc.y + 0.05, sz + 1.0)
+		_v7_goto(from_d)
+		_look_at_point(Vector3(dc.x, dc.y + 0.6, dc.z), from_d)
+		await _wait(0.8)
+		await _save_shot("v07_dome_nest_dug.png")
+	# 6. Бедрок: шахта 5×5 до y=-30
+	var bx := 40
+	var bz := 44
+	_v7_goto(Vector3(bx + 2.5, 3, bz + 2.5))
+	var pit: Array = []
+	for y2 in range(-30, wake_chunks.height_at(bx, bz) + 3):
+		for ix in range(5):
+			for iz in range(5):
+				pit.append(Vector3i(bx + ix, y2, bz + iz))
+	_v7_dig(pit)
+	_v7_put(Vector3i(bx, -30, bz), "torch")
+	_v7_put(Vector3i(bx + 4, -30, bz + 4), "torch")
+	_v7_put(Vector3i(bx + 4, -27, bz), "torch")
+	var bfrom := Vector3(bx + 1.0, -27.5, bz + 1.0)
+	_v7_goto(bfrom)
+	player.flying = true
+	_look_at_point(Vector3(bx + 3.5, -31.0, bz + 3.5), bfrom)
+	await _wait(0.8)
+	await _save_shot("v07_bedrock.png")
+	report["bedrock_kind"] = wake_chunks.terrain_kind_at(Vector3i(bx + 2, -31, bz + 2))
+	player.flying = false
+	# 7. Текущая вода: канава от озера
+	var edge := Vector3i.ZERO
+	var found := false
+	for r in range(1, 6):
+		if found:
+			break
+		for cx in range(-r, r + 1):
+			if found:
+				break
+			for cz in range(-r, r + 1):
+				if found or maxi(absi(cx), absi(cz)) != r:
+					continue
+				var ck := Vector2i(cx, cz)
+				if not wake_chunks.chunk_has_lake(ck):
+					continue
+				wake_chunks.ensure_chunk_loaded(ck)
+				for lx in range(16):
+					if found:
+						break
+					for lz in range(16):
+						var wx := cx * 16 + lx
+						var wz := cz * 16 + lz
+						if wake_chunks._world_is_lake_cell(wx, wz) and not wake_chunks._world_is_lake_cell(wx + 1, wz):
+							var ok := true
+							for k3 in range(1, 8):
+								if wake_chunks._world_is_lake_cell(wx + k3, wz) or wake_chunks.height_at(wx + k3, wz) != 0:
+									ok = false
+							if ok:
+								edge = Vector3i(wx, -1, wz)
+								found = true
+								break
+	report["water_edge"] = edge
+	if found:
+		_v7_goto(Vector3(edge.x + 4.5, 1, edge.z + 0.5))
+		var ch: Array = []
+		for k4 in range(1, 8):
+			ch.append(edge + Vector3i(k4, 0, 0))
+			if k4 >= 5:
+				ch.append(edge + Vector3i(k4, -1, 0))
+				ch.append(edge + Vector3i(k4, -2, 0))
+		ch.append(edge + Vector3i(4, 0, 1))
+		ch.append(edge + Vector3i(4, 0, 2))
+		_v7_dig(ch)
+		for c5 in ch:
+			wake_chunks.water_notify(c5)
+		await _wait(3.5)
+		var wfrom := Vector3(edge.x + 9.0, 2.6, edge.z + 4.0)
+		_look_at_point(Vector3(edge.x + 3.0, -1.0, edge.z + 0.5), wfrom)
+		await _wait(0.5)
+		await _save_shot("v07_water_flow.png")
+		report["water_cells"] = wake_chunks.water_cell_count()
+	# 8. Ночь — яркая луна
+	_v7_goto(GameState.DEFAULT_SPAWN)
+	day.set_time(1230.0)
+	var md: Vector3 = day.moon_dir()
+	_look_at_point(Vector3(30, 0, -30), Vector3(0, 9, 8))
+	await _wait(0.8)
+	await _save_shot("v07_night_moon.png")
+	day.set_time(500.0)
+	# 9. Кровать (поставленная) + вопрос «под подушкой»
+	var bedc := Vector3i(-8, 0, -6)
+	for rn in get_tree().get_nodes_in_group("reagent") + get_tree().get_nodes_in_group("pickup"):
+		if rn is Node3D and (rn as Node3D).global_position.distance_to(Vector3(-8, 0, -6)) < 9.0:
+			rn.queue_free()
+	_v7_put(bedc, "bed")
+	GameState.add_to_pillow("heal1", 3)
+	GameState.add_to_pillow("torch", 2)
+	var bfrom2 := Vector3(-7.5, 0.05, -3.4)
+	_v7_goto(bfrom2)
+	_look_at_point(Vector3(-7.5, -1.1, -5.6), bfrom2)
+	await _wait(0.6)
+	await _save_shot("v07_bed.png")
+	var la: Dictionary = player.get_look_ray()
+	print("SHOT07 bed aim ", la, " col_groups=", (la["collider"] as Node).get_groups() if la.get("hit", false) else [], " layer=", (la["collider"] as CollisionObject3D).collision_layer if la.get("hit", false) else -1)
+	report["bed_prompt"] = hud.bed_prompt_visible() if hud and hud.has_method("bed_prompt_visible") else false
+	await _save_shot("v07_pillow_prompt.png")
+	switcher.open_pillow()
+	await _wait(0.3)
+	await _save_shot("v07_pillow_chest.png")
+	for p in get_tree().get_nodes_in_group("pillow_ui"):
+		p.take(0)
+	await _wait(0.2)
+	await _save_shot("v07_pillow_taken.png")
+	for p2 in get_tree().get_nodes_in_group("pillow_ui"):
+		p2.close()
+	# 10. Хилка: перезарядка и HP
+	GameState.player_hp = 55
+	GameState.player_hp_changed.emit(55, 100)
+	GameState.add_item_count("heal1", 1)
+	GameState.use_heal()
+	await _wait(1.2)
+	await _save_shot("v07_heal_cooldown.png")
+	report["heal"] = hud.heal_indicator_state() if hud and hud.has_method("heal_indicator_state") else {}
+	# 11. Меч2 в руке
+	_v7_select("sword2")
+	_look_at_point(Vector3(8, 0.5, 20), Vector3(2, 1.0, 10))
+	await _wait(0.5)
+	await _save_shot("v07_sword2_hand.png")
+	# 12. Станок: модель и UI
+	var lc := Vector3i(-3, 0, 3)
+	_v7_put(lc, "lathe")
+	_v7_put(Vector3i(-5, 0, 3), "workbench")
+	var lfrom := Vector3(-3.5, 0.05, 6.4)
+	_look_at_point(Vector3(-3.5, 0.4, 3.5), lfrom)
+	await _wait(0.5)
+	await _save_shot("v07_lathe_model.png")
+	GameState.add_item_count("sword", 1)
+	for cm in get_tree().get_nodes_in_group("craft_menu"):
+		cm.open_lathe()
+	await _wait(0.3)
+	await _save_shot("v07_lathe_ui.png")
+	for cm2 in get_tree().get_nodes_in_group("craft_menu"):
+		cm2.close()
+	# 13. Инвентари яви и сна
+	if hud and hud.inventory:
+		hud.inventory.open()
+		await _wait(0.3)
+		await _save_shot("v07_inventory_wake.png")
+		hud.inventory.close()
+		switcher.enter_dream()
+		await _wait(0.6)
+		hud.inventory.open()
+		await _wait(0.3)
+		await _save_shot("v07_inventory_dream.png")
+		hud.inventory.close()
+		switcher.wake_up()
+		await _wait(0.6)
+	# 14. Меню смерти
+	_v7_goto(Vector3(6.5, 0.1, 9.5))
+	GameState.player_hp = 1
+	GameState._iframes = 0.0
+	GameState.damage_player(5, "test")
+	await _wait(0.5)
+	await _save_shot("v07_death_menu.png")
+	respawn()
+	await _wait(0.4)
+	print("SHOT07 report ", report)
 	get_tree().quit(0)

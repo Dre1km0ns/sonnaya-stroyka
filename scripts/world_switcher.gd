@@ -19,6 +19,7 @@ func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wa
 	bed = bed_node
 	wake_voxels = wake_vox
 	dream_voxels = dream_vox
+	add_to_group("world_switcher")
 	var we := get_tree().current_scene.get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if we:
 		_env = we.environment
@@ -37,6 +38,46 @@ func _process(delta: float) -> void:
 		wake_up()
 	if Input.is_action_just_pressed("interact"):
 		_try_interact()
+	if Input.is_action_just_pressed("pillow_check") and not GameState.is_dream() and aimed_bed() != null:
+		open_pillow()
+	if Input.is_action_just_pressed("use_heal") and not GameState.is_dream():
+		GameState.use_heal()
+
+
+const BED_REACH := 4.0
+
+
+func aimed_bed() -> Node:
+	## Кровать под прицелом (спавн-кровать или поставленная), не дальше BED_REACH.
+	if player == null or not player.has_method("get_look_ray"):
+		return null
+	var aim: Dictionary = player.get_look_ray()
+	if not aim.get("hit", false):
+		return null
+	var collider = aim["collider"]
+	if collider == null or not is_instance_valid(collider):
+		return null
+	var target: Node = collider
+	if not target.is_in_group("bed") and target.get_parent() != null and target.get_parent().is_in_group("bed"):
+		target = target.get_parent()
+	if not target.is_in_group("bed"):
+		return null
+	if (aim["position"] as Vector3).distance_to(player.global_position + Vector3(0, 1.4, 0)) > BED_REACH:
+		return null
+	return target
+
+
+func open_pillow() -> void:
+	for p in get_tree().get_nodes_in_group("pillow_ui"):
+		if p.has_method("open"):
+			p.open()
+
+
+func bed_spawn_point(bed_node: Node) -> Vector3:
+	if bed_node != null and bed_node.has_meta("voxel_cell"):
+		var c: Vector3i = bed_node.get_meta("voxel_cell")
+		return Vector3(float(c.x) + 0.5, float(c.y) + 1.1, float(c.z) + 0.5)
+	return GameState.DEFAULT_SPAWN
 
 
 func _try_interact() -> void:
@@ -56,6 +97,8 @@ func _try_interact() -> void:
 		if GameState.is_dream():
 			wake_up()
 		else:
+			# v0.7: спать можно у любой кровати — там же и проснёшься/возродишься.
+			GameState.spawn_point = bed_spawn_point(target)
 			enter_dream()
 		return
 	if (target.is_in_group("reagent") or target.is_in_group("pickup")) and target.has_method("collect"):
@@ -68,6 +111,11 @@ func _try_interact() -> void:
 			for menu in get_tree().get_nodes_in_group("craft_menu"):
 				if menu.has_method("open_workbench"):
 					menu.open_workbench()
+			return
+		if str(data.get("kind", "")) == "lathe" or collider.is_in_group("lathe"):
+			for menu2 in get_tree().get_nodes_in_group("craft_menu"):
+				if menu2.has_method("open_lathe"):
+					menu2.open_lathe()
 			return
 
 
@@ -100,7 +148,8 @@ func wake_up() -> void:
 		wake_voxels.call("_rebuild_from_state")
 	if dream_voxels and dream_voxels.has_method("_rebuild_from_state"):
 		dream_voxels.call("_rebuild_from_state")
-	player.global_position = Vector3(0, 2, 6)
+	player.global_position = GameState.spawn_point
+	player.velocity = Vector3.ZERO
 	if "flying" in player:
 		player.set("flying", false)
 	switched.emit(false)

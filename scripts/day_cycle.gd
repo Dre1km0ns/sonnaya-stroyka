@@ -13,7 +13,8 @@ var _sky_mat: ShaderMaterial = null
 var _sky_t: float = 0.0
 
 const SUN_MAX_ENERGY := 1.15
-const MOON_MAX_ENERGY := 0.32
+## v0.7: луна ярче — ночью без факелов видно силуэты мира.
+const MOON_MAX_ENERGY := 0.78
 const MOON_COLOR := Color(0.62, 0.72, 1.0)
 
 const DAY_TOP := Color(0.36, 0.58, 0.92)
@@ -23,7 +24,8 @@ const DUSK_HORIZON := Color(0.98, 0.56, 0.34)
 const NIGHT_TOP := Color(0.012, 0.018, 0.055)
 const NIGHT_HORIZON := Color(0.05, 0.065, 0.13)
 const DAY_AMBIENT := Color(0.66, 0.66, 0.64)
-const NIGHT_AMBIENT := Color(0.16, 0.19, 0.32)
+const NIGHT_AMBIENT := Color(0.30, 0.35, 0.52)
+const NIGHT_AMBIENT_ENERGY := 0.62
 
 
 func setup(sun: DirectionalLight3D, env: Environment, fill: OmniLight3D = null) -> void:
@@ -133,9 +135,9 @@ func apply_lighting() -> void:
 	if _env:
 		_env.background_mode = Environment.BG_SKY
 		_env.ambient_light_color = NIGHT_AMBIENT.lerp(DAY_AMBIENT.lerp(Color(0.75, 0.62, 0.55), warm * 0.6), day_k)
-		_env.ambient_light_energy = lerpf(0.42, 0.55, day_k)
+		_env.ambient_light_energy = lerpf(NIGHT_AMBIENT_ENERGY, 0.55, day_k)
 		_env.fog_light_color = hor
-		_env.fog_density = lerpf(0.010, 0.0022, day_k)
+		_env.fog_density = lerpf(0.0065, 0.0022, day_k)
 		_env.glow_intensity = lerpf(0.4, 0.25, day_k)
 		_env.background_color = hor
 	if _sky_mat:

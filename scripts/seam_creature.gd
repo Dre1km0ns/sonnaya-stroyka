@@ -18,6 +18,8 @@ const KNOCKBACK_ELITE := 10.0
 @export var wander_radius: float = 10.0
 @export var elite: bool = false
 
+const HIT_DAMAGE := 7
+const HIT_DAMAGE_ELITE := 11
 var home: Vector3 = Vector3.ZERO
 var frozen: bool = false
 var _steal_cd: float = 0.0
@@ -193,13 +195,15 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	# Обычный тоже больнее со временем яви (хардкор scarce)
 	if GameState.awake_time > 60.0:
 		amount = maxi(amount, 2)
+	# v0.7: мобы бьют игрока (i-frames и анти-комбо-кап — в GameState.damage_player).
+	GameState.damage_player(HIT_DAMAGE_ELITE if elite else HIT_DAMAGE, "Шовник")
 	var stolen := GameState.steal_resource_hardcore(amount)
 	if stolen.begins_with("dust"):
-		GameState.set_hint("Шовник вырвал осыпь (%s)!" % stolen)
+		GameState.set_hint("Шовник вырвал осыпь (%s)!" % stolen, false)
 	elif stolen == "reagent":
-		GameState.set_hint("Шовник сорвал реагент (−1)!")
+		GameState.set_hint("Шовник сорвал реагент (−1)!", false)
 	else:
-		GameState.set_hint("Шовник толкает — карман пуст, но удар есть.")
+		GameState.set_hint("Шовник толкает — карман пуст, но удар есть.", false)
 
 
 func _tick_block_attack(_delta: float) -> bool:
@@ -229,7 +233,7 @@ func _tick_block_attack(_delta: float) -> bool:
 	GameState.wake_blocks.erase(ripped)
 	GameState.dust += 1
 	GameState.inventory_changed.emit()
-	GameState.set_hint("Шовник разбил блок яви [%d,%d,%d]" % [ripped.x, ripped.y, ripped.z])
+	GameState.set_hint("Шовник разбил блок яви [%d,%d,%d]" % [ripped.x, ripped.y, ripped.z], false)
 	for vox in get_tree().get_nodes_in_group("voxel_world"):
 		if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
 			vox.remove_block(ripped)
