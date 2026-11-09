@@ -1724,6 +1724,15 @@ func _v08_checks() -> void:
 	_a(G.wake_blocks.has(Vector3i(1,0,2)),1686)
 	_a(G.wake_blocks[Vector3i(5,0,5)].get("legacy_compact",false) and G.wake_blocks[Vector3i(5,0,6)].kind=="stone",1687)
 	_a(G.destroy_wake_structure(Vector3i(5,0,5)) and G.wake_blocks.has(Vector3i(5,0,6)),1688)
+	var blocked_script := GDScript.new()
+	blocked_script.source_code = 'extends "res://scripts/threat_director.gd"\nvar calls := 0\nfunc mobs_can_spawn() -> bool: return true\nfunc _count_all_enemies() -> int: return 0\nfunc _count_enemies() -> int: return 0\nfunc _spawn_one(_elite: bool) -> void: calls += 1\n'
+	_a(blocked_script.reload()==OK,1689)
+	var blocked: Node = blocked_script.new()
+	root.add_child(blocked)
+	blocked.set_process(false)
+	blocked.apply_save_dict({"enemy_count":3})
+	_a(blocked.calls == 32,1690)
+	blocked.queue_free()
 	await process_frame
 	_v08_done = true
 	print("SMOKE: v0.8 checks done")

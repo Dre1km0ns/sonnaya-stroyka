@@ -109,7 +109,10 @@ func apply_save_dict(d: Dictionary) -> void:
 		return
 	# Добить до сохранённого числа врагов (сессия могла быть пустой)
 	var want := mini(MAX_ENEMIES, maxi(3, int(d.get("enemy_count", 3))))
-	while _count_all_enemies() < MAX_ENEMIES and _count_enemies() < want:
+	# Несколько маяков могут перекрыть всю зону спавна: загрузка не должна зависать.
+	var attempts := 0
+	while _count_all_enemies() < MAX_ENEMIES and _count_enemies() < want and attempts < 32:
+		attempts += 1
 		_spawn_one(false if _count_enemies() < 3 else true)
 	_ensure_ghosts()
 
