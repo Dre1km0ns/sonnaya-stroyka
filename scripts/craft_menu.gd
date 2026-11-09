@@ -194,6 +194,8 @@ func _craft_selected() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.paused or GameState.inventory_open:
+		return
 	if event.is_action_pressed("craft_nail"):
 		toggle()
 		get_viewport().set_input_as_handled()

@@ -36,9 +36,11 @@ func _process(delta: float) -> void:
 	_update_hand_tools()
 	if player == null or dream_voxels == null:
 		return
-	if GameState.craft_menu_open:
+	if GameState.ui_blocked():
 		ghost.visible = false
 		return
+	if Input.is_action_just_pressed("place_beacon"):
+		_try_place_beacon()
 	if not GameState.is_dream():
 		ghost.visible = false
 		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
@@ -157,23 +159,56 @@ func _try_mine_wake() -> void:
 					vox.remove_block(cell)
 			_finish_mine(cell, kind)
 		return
+	var hit_pos: Vector3 = aim.get("position", Vector3.ZERO)
+	var normal: Vector3 = aim.get("normal", Vector3.UP)
+	var inside: Vector3 = hit_pos - normal * 0.05
+	var gcell := Vector3i(floori(inside.x), floori(inside.y), floori(inside.z))
+	if collider.has_meta("terrain_chunk"):
+		# v0.5: один StaticBody на чанк — клетку определяем по точке попадания.
+		var cm := _wake_chunks()
+		if cm == null:
+			return
+		var kind: String = cm.terrain_kind_at(gcell)
+		if kind == "":
+			return
+		_mine_terrain_cell(gcell, kind)
+		return
 	if collider.has_meta("terrain_cell"):
 		var tcell: Vector3i = collider.get_meta("terrain_cell")
 		var tkind := str(collider.get_meta("terrain_kind")) if collider.has_meta("terrain_kind") else "hill"
 		_mine_terrain_cell(tcell, tkind)
 		return
-	var hit_pos: Vector3 = aim.get("position", Vector3.ZERO)
-	var normal: Vector3 = aim.get("normal", Vector3.UP)
-	var inside: Vector3 = hit_pos - normal * 0.05
-	var gcell := Vector3i(floori(inside.x), floori(inside.y), floori(inside.z))
-	if gcell.y != -1:
-		return
+
+
+func _wake_chunks() -> Node:
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
-		if bool(cm.get("is_dream_layer")):
-			continue
-		if cm.has_method("is_world_in_lake") and cm.is_world_in_lake(Vector3(float(gcell.x) + 0.5, 0.0, float(gcell.z) + 0.5)):
-			return
-	_mine_terrain_cell(gcell, "ground")
+		if not bool(cm.get("is_dream_layer")) and not bool(cm.get("panorama_mode")):
+			return cm
+	return null
+
+
+func _try_place_beacon() -> void:
+	## Маяк (G): ставится в яви на точку прицела — высокий световой столб, виден издалека.
+	if GameState.is_dream():
+		GameState.set_hint("Маяк ставится в яви.")
+		return
+	var vox := _wake_voxels()
+	if vox == null:
+		return
+	var aim := _aim()
+	if not aim.get("hit", false):
+		return
+	var cell: Vector3i = vox.world_to_cell(aim["position"] + aim["normal"] * 0.51)
+	if cell.y < 0:
+		cell.y = 0
+	if not GameState.consume_item("beacon", 1):
+		GameState.set_hint("Нет маяков. Крафт во сне: %d осыпи + 1 реагент3." % GameState.BEACON_CRAFT_DUST)
+		return
+	if GameState.place_wake_block(cell, "beacon"):
+		vox.add_block(cell, GameState.wake_blocks[cell])
+		GameState.set_hint("Маяк установлен.")
+	else:
+		GameState.add_item_count("beacon", 1)
 
 
 func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
@@ -194,7 +229,7 @@ func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 func _finish_mine(cell: Vector3i, kind: String) -> void:
 	_spawn_block_pickup(cell, kind)
 	var host := _wake_world()
-	if host:
+	if host and not GameState.peaceful:
 		var boss_script: GDScript = load("res://scripts/block_mother.gd")
 		boss_script.try_spawn_from_mine(host, cell)
 

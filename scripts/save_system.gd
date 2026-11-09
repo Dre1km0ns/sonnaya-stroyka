@@ -1,8 +1,13 @@
 extends Node
-## Диск-сейв: user://sonnaya_save.json
-## Авто: после пробуждения, при выходе; F5 сохранить / F9 загрузить.
+## Диск-сейв v0.5: у каждого мира свой файл user://worlds/<папка>/save.json.
+## Авто: после пробуждения, при выходе, раз в 2 минуты; F5 сохранить / F9 загрузить.
 
-const SAVE_PATH := "user://sonnaya_save.json"
+const WorldStore := preload("res://scripts/world_store.gd")
+const AUTOSAVE_SEC := 120.0
+var SAVE_PATH: String:
+	get:
+		return WorldStore.save_path(GameState.world_folder) if GameState.world_folder != "" else ""
+var _autosave_t := 0.0
 const SAVE_VERSION := 1
 
 signal save_completed(ok: bool)
@@ -44,10 +49,21 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func has_save() -> bool:
-	return FileAccess.file_exists(SAVE_PATH)
+	return SAVE_PATH != "" and FileAccess.file_exists(SAVE_PATH)
+
+
+func _process(delta: float) -> void:
+	if GameState.world_folder == "":
+		return
+	_autosave_t += delta
+	if _autosave_t >= AUTOSAVE_SEC:
+		_autosave_t = 0.0
+		save_game("auto")
 
 
 func save_game(reason: String = "manual") -> bool:
+	if SAVE_PATH == "":
+		return false
 	var data := GameState.to_save_dict()
 	if _player:
 		data["player_pos"] = [_player.global_position.x, _player.global_position.y, _player.global_position.z]
@@ -61,6 +77,8 @@ func save_game(reason: String = "manual") -> bool:
 		save_completed.emit(false)
 		return false
 	f.store_string(json)
+	f.close()
+	WorldStore.touch(GameState.world_folder)
 	GameState.set_hint("Сохранено (%s). F9 — загрузка." % reason)
 	save_completed.emit(true)
 	print("SAVE OK reason=", reason, " path=", SAVE_PATH)

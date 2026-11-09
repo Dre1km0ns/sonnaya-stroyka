@@ -99,6 +99,9 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "torch":
 		mat.albedo_color = Color(0.42, 0.26, 0.12)
 		box.size = Vector3(0.12, 0.72, 0.12)
+	elif kind == "beacon":
+		mat.albedo_color = Color(0.30, 0.34, 0.42)
+		box.size = Vector3(0.8, 0.5, 0.8)
 	elif kind == "workbench":
 		mat.albedo_color = Color(0.46, 0.30, 0.18)
 		mat.emission_enabled = true
@@ -148,6 +151,39 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		light.shadow_enabled = false
 		light.position = Vector3(0, 0.45, 0)
 		mi.add_child(light)
+	if kind == "beacon":
+		mi.position = cell_to_world(cell) + Vector3(0, -0.25, 0)
+		var core := MeshInstance3D.new()
+		var cs := SphereMesh.new()
+		cs.radius = 0.22
+		cs.height = 0.44
+		core.mesh = cs
+		var cmat := StandardMaterial3D.new()
+		cmat.albedo_color = Color(0.45, 0.95, 1.0)
+		cmat.emission_enabled = true
+		cmat.emission = Color(0.35, 0.9, 1.0)
+		cmat.emission_energy_multiplier = 2.0
+		core.material_override = cmat
+		core.position = Vector3(0, 0.45, 0)
+		mi.add_child(core)
+		var beam := MeshInstance3D.new()
+		beam.name = "Beam"
+		var bm := CylinderMesh.new()
+		bm.top_radius = 0.18
+		bm.bottom_radius = 0.18
+		bm.height = 48.0
+		bm.radial_segments = 8
+		bm.rings = 1
+		beam.mesh = bm
+		var bmat := StandardMaterial3D.new()
+		bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		bmat.albedo_color = Color(0.45, 0.95, 1.0, 0.35)
+		bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		beam.material_override = bmat
+		beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		beam.position = Vector3(0, 24.5, 0)
+		mi.add_child(beam)
 	if kind == "workbench":
 		# Столешница — дочерний узел блока: враг/кирка снимают верстак целиком.
 		var top := MeshInstance3D.new()
@@ -180,5 +216,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		body.add_to_group("workbench")
 	if kind == "torch":
 		body.add_to_group("torch")
+	if kind == "beacon":
+		body.add_to_group("beacon")
 	add_child(body)
 	_bodies[cell] = body

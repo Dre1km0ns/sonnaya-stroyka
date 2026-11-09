@@ -1,5 +1,5 @@
 extends Node3D
-## Главная сцена v0.4.5: кирка ломает холмы/руины, модели инструментов.
+## Главная сцена v0.5: мир из выбранного сейва/сида, пауза (Esc), настройки, отсечение сущностей.
 
 @onready var player: CharacterBody3D = $Player
 @onready var wake_world: Node3D = $WakeWorld
@@ -17,15 +17,27 @@ extends Node3D
 
 
 func _ready() -> void:
+	get_tree().paused = false
+	if _want_shots05():
+		GameState.begin_world("Скриншоты", "", "6767676767", GameState.DEV_SEED, true)
+	elif GameState.world_folder == "" and not _want_shots() and not _want_perf():
+		# Сцену запустили напрямую (F6 в редакторе) — временный мир без сохранения.
+		GameState.begin_world("", "", "1337", 1337, false)
+	elif _want_perf() and GameState.world_folder == "":
+		GameState.begin_world("", "", "1337", 1337, false)
 	build.setup(player, dream_voxels)
 	anchors.setup(player, dream_voxels)
 	switcher.setup(player, wake_world, dream_world, bed, wake_voxels, dream_voxels)
 	threat.setup(player, wake_world, bed)
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
-	if wake_chunks and wake_chunks.has_method("setup"):
-		wake_chunks.setup(player, GameState.world_seed_wake)
-	if dream_chunks and dream_chunks.has_method("setup"):
-		dream_chunks.setup(player, GameState.world_seed_dream)
+	var loaded := false
+	if not _want_shots() and saver.has_save():
+		loaded = saver.load_game()
+	if not loaded:
+		if wake_chunks and wake_chunks.has_method("setup"):
+			wake_chunks.setup(player, GameState.world_seed_wake)
+		if dream_chunks and dream_chunks.has_method("setup"):
+			dream_chunks.setup(player, GameState.world_seed_dream)
 	var day_script: GDScript = load("res://scripts/day_cycle.gd")
 	var day: Node = day_script.new()
 	$Systems.add_child(day)
@@ -34,14 +46,47 @@ func _ready() -> void:
 	var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if day.has_method("setup"):
 		day.setup(sun, we.environment if we else null, fill)
-	# Автозагрузка при старте, если есть сейв
+	var culler_script: GDScript = load("res://scripts/entity_culler.gd")
+	var culler: Node = culler_script.new()
+	culler.name = "EntityCuller"
+	$Systems.add_child(culler)
+	culler.setup(player)
+	var pause_script: GDScript = load("res://scripts/pause_menu.gd")
+	var pause: Node = pause_script.new()
+	pause.name = "PauseMenu"
+	add_child(pause)
+	_apply_settings()
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets:
+		gsets.settings_changed.connect(_apply_settings)
 	_start_music()
-	if _want_shots():
+	if _want_shots05():
+		call_deferred("_capture_v05")
+	elif _want_shots():
 		call_deferred("_capture_shots")
-	elif saver.has_save():
-		saver.load_game()
+	elif loaded:
 		GameState.set_hint("Продолжение с диска (F5 сейв / F9 лоад).")
-	print("Сонная стройка v0.4.5 ready. Path OK.")
+	else:
+		saver.save_game("new-world")
+	GameState.inventory_changed.emit()
+	print("Сонная стройка v0.5 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+
+
+func _apply_settings() -> void:
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets == null:
+		return
+	var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
+	if we:
+		gsets.apply_environment(we.environment)
+	var sun := wake_world.get_node_or_null("Sun") as DirectionalLight3D
+	if sun:
+		sun.shadow_enabled = bool(gsets.shadows)
+		sun.directional_shadow_max_distance = maxf(40.0, float(gsets.render_distance) * 16.0)
+
+
+func _want_perf() -> bool:
+	return "--perf" in OS.get_cmdline_user_args()
 
 
 func apply_world_visibility(is_dream: bool) -> void:
@@ -65,7 +110,76 @@ func _start_music() -> void:
 func _want_shots() -> bool:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
-	return "--shots" in args
+	return "--shots" in args or "--shots05" in args
+
+
+func _want_shots05() -> bool:
+	return "--shots05" in OS.get_cmdline_user_args()
+
+
+func _look_at_point(target: Vector3, from: Vector3) -> void:
+	player.global_position = from
+	var d := target - from
+	player.rotation.y = atan2(-d.x, -d.z)
+	if player.has_node("CameraPivot"):
+		var flat := Vector2(d.x, d.z).length()
+		player.get_node("CameraPivot").rotation.x = atan2(d.y, flat)
+
+
+func _capture_v05() -> void:
+	## v0.5: HUD (хотбар 9 + вертикальная полоса), открытый инвентарь, маяк, пауза, сон.
+	DirAccess.make_dir_recursive_absolute("/workspace/shots")
+	GameState.beacons = 3
+	GameState.add_item_count("drift", 40)
+	GameState.add_item_count("hill", 12)
+	GameState.select_item_slot(0)
+	if wake_chunks.has_method("load_all_pending"):
+		wake_chunks.load_all_pending()
+	var ruin: Vector3i = wake_chunks.find_first_terrain("ruin") if wake_chunks.has_method("find_first_terrain") else Vector3i(0, -999, 0)
+	var focus := Vector3(8, 0.5, -10)
+	if ruin.y != -999 and Vector2(ruin.x, ruin.z).length() < 70.0:
+		focus = Vector3(ruin.x + 0.5, 1.0, ruin.z + 0.5)
+	_look_at_point(focus, focus + Vector3(0, 2.4, 9))
+	# маяк рядом с точкой обзора
+	var bcell := Vector3i(floori(focus.x) - 4, 0, floori(focus.z) + 2)
+	if GameState.place_wake_block(bcell, "beacon"):
+		wake_voxels.add_block(bcell, GameState.wake_blocks[bcell])
+	await get_tree().create_timer(1.2).timeout
+	GameState.set_hint("v0.5: хотбар 1–9, инвентарь I/Tab, якоря — справа (R), маяк — G.")
+	await _save_shot("v05_hud.png")
+	var hud := get_node_or_null("HUD")
+	if hud and "inventory" in hud and hud.inventory:
+		hud.inventory.open()
+		await get_tree().create_timer(0.3).timeout
+		await _save_shot("v05_inventory.png")
+		hud.inventory.close()
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets:
+		gsets.set_value("show_fps", true)
+	await get_tree().create_timer(0.3).timeout
+	await _save_shot("v05_hud_debug.png")
+	if wake_chunks.has_method("get_any_lake_sample_point"):
+		var lp: Vector3 = wake_chunks.get_any_lake_sample_point()
+		if lp != Vector3.ZERO:
+			_look_at_point(lp, lp + Vector3(6, 5, 6))
+			await get_tree().create_timer(0.8).timeout
+			await _save_shot("v05_lake.png")
+			_look_at_point(focus, focus + Vector3(0, 2.4, 9))
+	var pm := get_node_or_null("PauseMenu")
+	if pm:
+		pm.open()
+		await get_tree().create_timer(0.2, true, false, true).timeout
+		await _save_shot("v05_pause.png")
+		pm.resume()
+	if switcher.has_method("enter_dream"):
+		switcher.enter_dream()
+	elif switcher.has_method("_enter_dream"):
+		switcher._enter_dream()
+	await get_tree().create_timer(1.5).timeout
+	await _save_shot("v05_dream.png")
+	if gsets:
+		gsets.set_value("show_fps", false)
+	get_tree().quit(0)
 
 
 func _save_shot(name: String) -> void:

@@ -33,13 +33,9 @@ func _process(_delta: float) -> void:
 		preview.visible = false
 		return
 
-	if GameState.craft_menu_open:
+	if GameState.ui_blocked():
 		preview.visible = false
 		return
-	if Input.is_action_just_pressed("select_nail"):
-		GameState.select_anchor(GameState.AnchorType.NAIL)
-	if Input.is_action_just_pressed("select_wedge"):
-		GameState.select_anchor(GameState.AnchorType.WEDGE)
 
 	_update_preview()
 

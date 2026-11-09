@@ -19,6 +19,7 @@ var _want: String = "wake"
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_a = _make_player("MusicA")
 	_b = _make_player("MusicB")
 	_cur = _a

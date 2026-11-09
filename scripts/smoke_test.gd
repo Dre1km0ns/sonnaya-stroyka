@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless smoke v0.4.5: добыча холмов/руин киркой + сейв террейна + модели инструментов.
+## Headless smoke v0.5: меню/миры/сиды/инвентарь 9+27/дев-сид + всё из v0.4.5.
 ## Запуск: godot --headless --path ... -s res://scripts/smoke_test.gd
 
 
@@ -120,19 +120,19 @@ func _run() -> void:
 	assert(gs_m.dream_exit_count == 2)
 	assert(gs_m.mobs_unlocked())
 
-	# Инвентарь 5 слотов (0 гвоздь, 1 клин, 2 якорь3)
-	assert(gs.item_slots.size() == 5)
-	assert(str(gs.item_slots[2].get("id")) == "anchor3")
-	gs.select_item_slot(3)
-	assert(gs.selected_slot == 3)
-	gs.cycle_item_slot(1)
-	assert(gs.selected_slot == 4)
+	# Инвентарь 9+27, якоря/маяки — отдельно (вертикальная полоса)
+	assert(gs.item_slots.size() == 36)
+	assert(gs.HOTBAR_SIZE == 9 and gs.MAIN_INV_SIZE == 27)
+	assert(_slot_of(gs, "nail") == -1 and _slot_of(gs, "anchor3") == -1)
+	gs.select_item_slot(8)
+	assert(gs.selected_slot == 8)
 	gs.cycle_item_slot(1)
 	assert(gs.selected_slot == 0)
+	gs.cycle_item_slot(-1)
+	assert(gs.selected_slot == 8)
 	var added_at: int = gs.add_item("test_tool", "Тест", 1)
-	assert(added_at == 3)
-	assert(str(gs.item_slots[3].get("id")) == "test_tool")
-	assert(int(gs.item_slots[3].get("count")) == 1)
+	assert(added_at >= 0 and added_at < 9)
+	assert(int(gs.item_slots[added_at].get("count")) == 1)
 
 	# Верстак и кирка
 	var gs_c: Node = gs_script.new()
@@ -141,12 +141,12 @@ func _run() -> void:
 	gs_c.reagent_counts = [10, 0, 0]
 	gs_c.reagents = 10
 	assert(gs_c.craft_recipe("workbench", {"is_dream": true}))
-	assert(str(gs_c.item_slots[3].get("id")) == "workbench")
+	assert(_slot_of(gs_c, "workbench") >= 0)
 	assert(not gs_c.craft_recipe("pickaxe", {"at_workbench": false}))
 	gs_c.reagent_counts = [0, 2, 3]
 	gs_c.reagents = 5
 	assert(gs_c.craft_recipe("pickaxe", {"at_workbench": true}))
-	assert(str(gs_c.item_slots[4].get("id")) == "pickaxe")
+	assert(_slot_of(gs_c, "pickaxe") >= 0)
 	var wb := Vector3i(8, 0, 8)
 	assert(gs_c.place_dream_block(wb, "workbench"))
 	gs_c.nails = 2
@@ -159,7 +159,7 @@ func _run() -> void:
 	assert(int(wb_res["transferred"]) >= 1)
 	assert(gs_c.wake_blocks.has(wb))
 	assert(str(gs_c.wake_blocks[wb].get("kind")) == "workbench")
-	gs_c.select_item_slot(4)
+	gs_c.select_item_slot(_slot_of(gs_c, "pickaxe"))
 	assert(gs_c.selected_is("pickaxe"))
 	var mine_cell := Vector3i(3, 0, 3)
 	gs_c.wake_blocks[mine_cell] = {"kind": "drift", "mutant": false}
@@ -185,7 +185,7 @@ func _run() -> void:
 	gs_t.reagent_counts = [1, 1, 0]
 	gs_t.reagents = 2
 	assert(gs_t.craft_recipe("torch", {"at_workbench": true}))
-	assert(str(gs_t.item_slots[3].get("id")) == "torch")
+	assert(_slot_of(gs_t, "torch") >= 0)
 	var torch_cell := Vector3i(4, 0, 5)
 	assert(gs_t.place_wake_block(torch_cell, "torch"))
 	assert(str(gs_t.wake_blocks[torch_cell].get("kind")) == "torch")
@@ -205,7 +205,7 @@ func _run() -> void:
 	gs_s.reagents = 7
 	assert(not gs_s.craft_recipe("sword", {"at_workbench": false}))
 	assert(gs_s.craft_recipe("sword", {"at_workbench": true}))
-	assert(str(gs_s.item_slots[3].get("id")) == "sword")
+	assert(_slot_of(gs_s, "sword") >= 0)
 	var wb_only: Array = gs_s.get_visible_recipes({"at_workbench": true, "is_dream": true})
 	for recw in wb_only:
 		var ridw := str(recw.get("id", ""))
@@ -331,14 +331,15 @@ func _run() -> void:
 	await process_frame
 	await physics_frame
 	await physics_frame
-	var hfrom := Vector3(float(hill_cell.x) + 0.5, float(hill_cell.y) + 3.0, float(hill_cell.z) + 0.5)
+	var hfrom := Vector3(float(hill_cell.x) + 0.5, float(hill_cell.y) + 3.3, float(hill_cell.z) + 0.5)
 	var hto := Vector3(float(hill_cell.x) + 0.5, float(hill_cell.y) + 0.4, float(hill_cell.z) + 0.5)
 	var hhit: Dictionary = cm.ray_query_terrain(hfrom, hto)
 	assert(not hhit.is_empty())
 	assert(hhit.collider != null)
-	assert(hhit.collider.has_meta("terrain_cell"))
-	assert(str(hhit.collider.get_meta("terrain_kind")) == "hill")
-	var hmined: Vector3i = hhit.collider.get_meta("terrain_cell")
+	assert(hhit.collider.has_meta("terrain_chunk"))
+	assert(str(hhit["kind"]) == "hill")
+	var hmined: Vector3i = hhit["cell"]
+	assert(hmined == hill_cell)
 	assert(cm.mine_terrain_at(hmined, "hill"))
 	assert(not cm.has_terrain_visual(hmined))
 	cm.rebuild_chunk(cm.world_to_chunk(Vector3(hmined.x, 0, hmined.z)))
@@ -351,17 +352,19 @@ func _run() -> void:
 					cm.ensure_chunk_loaded(Vector2i(rx, rz))
 		ruin_cell = cm.find_first_terrain("ruin")
 	assert(ruin_cell.y != -999)
+	while cm.terrain_kind_at(ruin_cell + Vector3i(0, 1, 0)) == "ruin":
+		ruin_cell += Vector3i(0, 1, 0)
 	assert(cm.has_terrain_visual(ruin_cell))
 	await process_frame
 	await physics_frame
-	var rfrom := Vector3(float(ruin_cell.x) + 0.5, float(ruin_cell.y) + 3.0, float(ruin_cell.z) + 0.5)
+	var rfrom := Vector3(float(ruin_cell.x) + 0.5, float(ruin_cell.y) + 3.3, float(ruin_cell.z) + 0.5)
 	var rto := Vector3(float(ruin_cell.x) + 0.5, float(ruin_cell.y) + 0.4, float(ruin_cell.z) + 0.5)
 	var rhit: Dictionary = cm.ray_query_terrain(rfrom, rto)
 	assert(not rhit.is_empty())
 	assert(rhit.collider != null)
-	assert(rhit.collider.has_meta("terrain_cell"))
-	assert(str(rhit.collider.get_meta("terrain_kind")) == "ruin")
-	var rmined: Vector3i = rhit.collider.get_meta("terrain_cell")
+	assert(rhit.collider.has_meta("terrain_chunk"))
+	assert(str(rhit["kind"]) == "ruin")
+	var rmined: Vector3i = rhit["cell"]
 	assert(cm.mine_terrain_at(rmined, "ruin"))
 	assert(not cm.has_terrain_visual(rmined))
 	cm.rebuild_chunk(cm.world_to_chunk(Vector3(rmined.x, 0, rmined.z)))
@@ -551,7 +554,7 @@ func _run() -> void:
 	assert(gs2.dream_exit_count == gs.dream_exit_count)
 	assert(gs2.get_reagent_count(2) == gs.get_reagent_count(2))
 	assert(gs2.get_reagent_count(3) == gs.get_reagent_count(3))
-	assert(str(gs2.item_slots[3].get("id")) == "test_tool")
+	assert(gs2.item_slots[added_at].get("id") == "test_tool")
 	# Очистка smoke-файла
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
@@ -562,9 +565,178 @@ func _run() -> void:
 	for n2 in get_nodes_in_group("enemy_ghost"):
 		ghost_count += 1
 
-	print("SMOKE: OK v0.4.5 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
+	await _v05_checks(gs_script, cm_script)
+	if not _v05_ok:
+		push_error("SMOKE: v0.5 checks FAILED")
+		quit(1)
+		return
+
+	print("SMOKE: OK v0.5 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
 	])
 	quit(0)
+
+
+var _v05_ok := false
+
+
+func _slot_of(g: Node, id: String) -> int:
+	for i in range(g.item_slots.size()):
+		if str(g.item_slots[i].get("id", "")) == id:
+			return i
+	return -1
+
+
+func _v05_checks(gs_script: GDScript, cm_script: GDScript) -> void:
+	print("SMOKE: v0.5 checks")
+	# --- Сцены грузятся ---
+	for sc in ["res://scenes/main_menu.tscn", "res://scenes/main.tscn", "res://scenes/hud.tscn"]:
+		var pk: PackedScene = load(sc)
+		assert(pk != null)
+		assert(pk.can_instantiate())
+	for scr in ["res://scripts/inventory_ui.gd", "res://scripts/settings_menu.gd", "res://scripts/pause_menu.gd",
+			"res://scripts/main_menu.gd", "res://scripts/entity_culler.gd", "res://scripts/world_store.gd",
+			"res://scripts/item_db.gd", "res://scripts/slot_view.gd"]:
+		assert(load(scr) != null)
+
+	# --- Сиды ---
+	assert(gs_script.seed_from_text("12345") == 12345)
+	assert(gs_script.seed_from_text("6767676767") == 6767676767)
+	assert(gs_script.seed_from_text("дом") == gs_script.seed_from_text("дом"))
+	assert(gs_script.seed_from_text("дом") != gs_script.seed_from_text("сон"))
+	assert(gs_script.derive_dream_seed(42) == gs_script.derive_dream_seed(42))
+	assert(gs_script.derive_dream_seed(42) != gs_script.derive_dream_seed(43))
+	var sigs := []
+	for sv in [424242, 424242, 777]:
+		var c: Node3D = cm_script.new()
+		c.is_dream_layer = false
+		c.panorama_mode = true
+		c.load_radius = 1
+		root.add_child(c)
+		var anchor := Node3D.new()
+		root.add_child(anchor)
+		c.setup(anchor, sv)
+		sigs.append(c.terrain_signature(4))
+		c.queue_free()
+		anchor.queue_free()
+	assert(sigs[0] == sigs[1])
+	assert(sigs[0] != sigs[2])
+	print("SMOKE: determinism sig=%d other=%d" % [sigs[0], sigs[2]])
+
+	# --- Инвентарь: стаки, swap, quick_move, set_slot ---
+	var gi: Node = gs_script.new()
+	root.add_child(gi)
+	gi.reset_state()
+	assert(gi.add_item_count("drift", 70) == 70)
+	assert(gi.raw_count("drift") == 70)
+	assert(int(gi.item_slots[0].get("count")) == 64)
+	assert(int(gi.item_slots[1].get("count")) == 6)
+	gi.swap_slots(0, 20)
+	assert(int(gi.item_slots[20].get("count")) == 64 and str(gi.item_slots[0].get("id")) == "")
+	gi.quick_move(20) # основной → хотбар
+	assert(str(gi.item_slots[20].get("id")) == "")
+	assert(gi.raw_count("drift") == 70)
+	gi.quick_move(1) # хотбар → основной
+	var in_main := 0
+	for i in range(9, 36):
+		if str(gi.item_slots[i].get("id", "")) == "drift":
+			in_main += int(gi.item_slots[i]["count"])
+	assert(in_main >= 6)
+	gi.set_slot(5, {"id": "torch", "count": 3})
+	assert(gi.count_item("torch") == 3)
+	assert(gi.remove_item("torch", 2) and gi.count_item("torch") == 1)
+	assert(not gi.remove_item("torch", 5))
+	gi.add_item_count("nail", 2)
+	assert(_slot_of(gi, "nail") == -1) # якоря не в инвентаре
+	gi.dust = 40
+	assert(gi.count_item("dust") == 40 and gi.dust == 40)
+	var icon: Texture2D = load("res://scripts/item_db.gd").icon("pickaxe")
+	assert(icon != null)
+	for iid in load("res://scripts/item_db.gd").all_icon_ids():
+		assert(ResourceLoader.exists("res://assets/icons/%s.png" % iid))
+
+	# --- Осыпь за убийства ---
+	assert(gs_script.new().DUST_PER_KILL == 20)
+	gi.dust = 0
+	assert(gi.reward_kill(false, "Шовник") == 20)
+	assert(gi.dust == 20)
+	assert("+20 осыпи" in gi.last_hint)
+	assert(gi.reward_kill(true, "Мать блоков") == 250)
+	assert(gi.dust == 270)
+
+	# --- Дев-сид 6767676767: всё бесконечно ---
+	var gd: Node = gs_script.new()
+	root.add_child(gd)
+	gd.begin_world("dev", "", "6767676767", gs_script.seed_from_text("6767676767"), false)
+	assert(gd.dev_mode)
+	assert(gd.dust == gd.INF_COUNT)
+	assert(gd.get_reagent_count(1) == gd.INF_COUNT)
+	assert(gd.count_text(gd.special_display_count("nail")) == "∞")
+	var n0: int = gd.nails
+	for rec in gd.recipe_defs():
+		assert(gd.can_afford_recipe(rec))
+	assert(gd.craft_recipe("wedge", {"is_dream": true}))
+	assert(gd.craft_recipe("pickaxe", {"at_workbench": true}))
+	assert(gd.dust == gd.INF_COUNT)
+	assert(gd.consume_item("torch", 1))
+	assert(gd.count_item("torch") == gd.INF_COUNT)
+	gd.enter_dream()
+	gd.select_anchor(gd.AnchorType.NAIL)
+	gd.place_dream_block(Vector3i(0, 0, 0), "drift")
+	assert(gd.try_place_anchor(Vector3i(0, 0, 0)))
+	assert(gd.nails == n0)
+	assert(gd.reward_kill(false, "x") == 0 or gd.dust == gd.INF_COUNT)
+	assert(gd.steal_resource_hardcore() == "none")
+
+	# --- Миграция сейва v4 → v5 ---
+	var v4 := {"version": 4, "dust": 33, "reagent_counts": [4, 5, 6], "nails": 2, "wedges": 1, "anchors3": 1,
+		"item_slots": [{"id": "nail", "count": 2}, {"id": "wedge", "count": 1}, {"id": "anchor3", "count": 1},
+			{"id": "pickaxe", "name": "Кирка", "count": 1}, {"id": "drift", "name": "Нанос", "count": 5}],
+		"wake_blocks": {}, "dream_blocks": {}}
+	var gm: Node = gs_script.new()
+	root.add_child(gm)
+	gm.apply_save_dict(v4)
+	assert(gm.item_slots.size() == 36)
+	assert(gm.dust == 33)
+	assert(gm.get_reagent_count(2) == 5)
+	assert(gm.count_item("pickaxe") == 1 and gm.count_item("drift") == 5)
+	assert(gm.nails == 2 and gm.anchors3 == 1)
+	assert(_slot_of(gm, "nail") == -1)
+	var v5: Dictionary = gm.to_save_dict()
+	assert(int(v5["version"]) == 5)
+	var gm2: Node = gs_script.new()
+	root.add_child(gm2)
+	gm2.apply_save_dict(JSON.parse_string(JSON.stringify(v5)))
+	assert(gm2.dust == 33 and gm2.count_item("drift") == 5)
+
+	# --- Хранилище миров ---
+	var ws: GDScript = load("res://scripts/world_store.gd")
+	var meta: Dictionary = ws.create_world("Смоук тест", "abc", gs_script.seed_from_text("abc"), false)
+	var folder := str(meta.get("folder", ""))
+	assert(folder != "")
+	var found := false
+	for w in ws.list_worlds():
+		if str(w.get("folder", "")) == folder:
+			found = true
+			assert(ws.meta_seed(w) == gs_script.seed_from_text("abc"))
+	assert(found)
+	ws.delete_world(folder)
+	for w2 in ws.list_worlds():
+		assert(str(w2.get("folder", "")) != folder)
+
+	# --- Настройки ---
+	var gset: Node = root.get_node("GameSettings")
+	assert(gset.render_distance >= 2 and gset.render_distance <= 8)
+	assert(gset.entity_distance_m() > 0.0)
+
+	# --- HUD: хотбар 9 + вертикальная полоса ---
+	var hud: Node = load("res://scenes/hud.tscn").instantiate()
+	root.add_child(hud)
+	await process_frame
+	assert(hud.find_child("SpecialBar", true, false) != null)
+	var hb: Node = hud.find_child("Hotbar", true, false)
+	assert(hb != null and hb.get_child_count() == 9)
+	print("SMOKE: v0.5 checks OK")
+	_v05_ok = true

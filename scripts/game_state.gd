@@ -1,5 +1,8 @@
 extends Node
-## Глобальное состояние «Сонная стройка» v0.4.5: копание холмов/руин, модели кирки и меча.
+## Глобальное состояние «Сонная стройка» v0.5: миры с сидом, инвентарь 9+27,
+## вертикальная полоса якорей/маяков, дев-сид 6767676767 (бесконечные ресурсы).
+
+const ItemDB := preload("res://scripts/item_db.gd")
 
 signal world_changed(is_dream: bool)
 signal inventory_changed
@@ -8,6 +11,9 @@ signal hint_changed(text: String)
 signal wake_resolved(transferred: int, dust_gained: int, mutations: int)
 signal night_changed(is_night: bool)
 signal boss_changed(alive: bool)
+signal anchor_selected(t: int)
+## Короткое всплывающее сообщение над хотбаром (подсказки внизу скрыты по просьбе игрока).
+signal toast(text: String)
 
 enum World { WAKE, DREAM }
 enum AnchorType { NAIL, WEDGE, ANCHOR3 }
@@ -24,28 +30,67 @@ const DUST_PER_BLOCK := 1
 const NAIL_CRAFT_DUST := 10
 const WEDGE_CRAFT_DUST := 100
 const ANCHOR3_CRAFT_DUST := 250
+const BEACON_CRAFT_DUST := 30
+## Осыпь за убийство моба = 1/5 стоимости клина; босс «Мать блоков» даёт стоимость Якоря3.
+const DUST_PER_KILL := WEDGE_CRAFT_DUST / 5
+const DUST_PER_BOSS_KILL := ANCHOR3_CRAFT_DUST
 const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 30.0
 const MUTATION_CHANCE := 0.25
-const SAVE_FORMAT := 4
+const SAVE_FORMAT := 5
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
-const ITEM_SLOT_COUNT := 5
+const HOTBAR_SIZE := 9
+const MAIN_INV_SIZE := 27
+const ITEM_SLOT_COUNT := 36
 const MOBS_UNLOCK_AT_EXITS := 2
+const DEV_SEED := 6767676767
+const INF_COUNT := 999999
+const RESOURCE_IDS: Array[String] = ["reagent1", "reagent2", "reagent3", "dust"]
 
 var current_world: World = World.WAKE
 var clarity: float = CLARITY_MAX
-var reagents: int = 0
-var reagent_counts: Array = [0, 0, 0]
-var dust: int = 0
 var nails: int = 3
 var wedges: int = 1
 var anchors3: int = 0
+var beacons: int = 0
 var item_slots: Array = []
 var selected_slot: int = 0
 var dream_exit_count: int = 0
 var collected_reagent_ids: Dictionary = {}
+
+## Мир (v0.5): имя, папка сейва, сид, дев-режим, мирный режим.
+var world_name: String = ""
+var world_folder: String = ""
+var seed_text: String = ""
+var world_seed: int = 1337
+var dev_mode: bool = false
+var peaceful: bool = false
+
+## Осыпь и реагенты теперь лежат в инвентаре; свойства оставлены для совместимости.
+var dust: int:
+	get:
+		return count_item("dust")
+	set(v):
+		_set_item_total("dust", maxi(v, 0))
+var reagents: int:
+	get:
+		return _typed_sum()
+	set(v):
+		_set_reagent_total(maxi(v, 0))
+var reagent_counts: Array:
+	get:
+		return [get_reagent_count(1), get_reagent_count(2), get_reagent_count(3)]
+	set(v):
+		if dev_mode:
+			return
+		for i in range(REAGENT_TYPE_COUNT):
+			var want := 0
+			if typeof(v) == TYPE_ARRAY and i < v.size():
+				want = clampi(int(v[i]), 0, REAGENT_CAP)
+			_set_item_total("reagent%d" % (i + 1), want, false)
+		inventory_changed.emit()
 
 ## Блоки сна: ключ Vector3i → словарь {kind, anchored, mutant}
 var dream_blocks: Dictionary = {}
@@ -59,6 +104,8 @@ var last_hint: String = ""
 var awake_time: float = 0.0
 var day_time: float = 0.0
 var craft_menu_open: bool = false
+var inventory_open: bool = false
+var paused: bool = false
 var _night_flag: bool = false
 var boss_alive: bool = false
 var last_mined_kind: String = ""
@@ -78,24 +125,107 @@ func _init() -> void:
 
 func _ready() -> void:
 	_ensure_inventory()
-	set_hint("Явь. Собери реагенты (E), колесо — слоты. Кровать (E). F5/F9 — сейв.")
+
+
+func ui_blocked() -> bool:
+	return craft_menu_open or inventory_open or paused
+
+
+# --- Сид и мир ---
+
+static func seed_from_text(text: String) -> int:
+	## Пусто → случайный; целое число → как есть; иначе — хеш строки (как в Minecraft).
+	var t := text.strip_edges()
+	if t == "":
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		return (int(rng.randi()) << 16) ^ int(rng.randi())
+	if t.is_valid_int():
+		return t.to_int()
+	return int(t.hash())
+
+
+static func derive_dream_seed(s: int) -> int:
+	var n := s * 6364136223846793005 + 1442695040888963407
+	n = n ^ (n >> 29)
+	return n & 0x7fffffffffff
+
+
+func reset_state() -> void:
+	## Полный сброс перед входом в другой мир.
+	current_world = World.WAKE
+	clarity = CLARITY_MAX
+	nails = 3
+	wedges = 1
+	anchors3 = 0
+	beacons = 0
+	selected_slot = 0
+	dream_exit_count = 0
+	collected_reagent_ids = {}
+	dream_blocks = {}
+	wake_blocks = {}
+	pending_anchors = []
+	selected_anchor = AnchorType.NAIL
+	last_hint = ""
+	awake_time = 0.0
+	day_time = 0.0
+	craft_menu_open = false
+	inventory_open = false
+	paused = false
+	_night_flag = false
+	boss_alive = false
+	last_mined_kind = ""
+	last_mined_cell = Vector3i.ZERO
+	block_stash = {}
+	removed_terrain = {}
+	_init_default_slots()
+
+
+func begin_world(wname: String, folder: String, stext: String, sv: int, is_peaceful: bool = false) -> void:
+	reset_state()
+	world_name = wname
+	world_folder = folder
+	seed_text = stext
+	world_seed = sv
+	world_seed_wake = sv
+	world_seed_dream = derive_dream_seed(sv)
+	dev_mode = sv == DEV_SEED
+	peaceful = is_peaceful
+	if dev_mode:
+		_fill_dev_inventory()
+
+
+func is_dev() -> bool:
+	return dev_mode
+
+
+func _fill_dev_inventory() -> void:
+	## Дев-сид: по стаку всего, количество бесконечное (∞, не уменьшается).
+	_init_default_slots()
+	var ids := ["pickaxe", "sword", "torch", "workbench", "reagent1", "reagent2", "reagent3", "dust", "hill",
+		"ruin", "ground", "drift", "mouth"]
+	for i in range(ids.size()):
+		item_slots[i] = {"id": ids[i], "name": ItemDB.display_name(ids[i]), "count": 1}
+	inventory_changed.emit()
 
 
 func _init_default_slots() -> void:
-	item_slots = [
-		{"id": "nail", "name": "Гвоздь", "count": nails},
-		{"id": "wedge", "name": "Клин", "count": wedges},
-		{"id": "anchor3", "name": "Якорь3", "count": anchors3},
-		{"id": "", "name": "", "count": 0},
-		{"id": "", "name": "", "count": 0},
-	]
+	item_slots = []
+	for i in range(ITEM_SLOT_COUNT):
+		item_slots.append(_empty_slot())
+
+
+func _empty_slot() -> Dictionary:
+	return {"id": "", "name": "", "count": 0}
 
 
 func _ensure_inventory() -> void:
-	if reagent_counts.size() < REAGENT_TYPE_COUNT:
-		reagent_counts = [0, 0, 0]
 	if item_slots.size() != ITEM_SLOT_COUNT:
+		var old := item_slots.duplicate(true)
 		_init_default_slots()
+		for i in range(mini(old.size(), ITEM_SLOT_COUNT)):
+			if typeof(old[i]) == TYPE_DICTIONARY:
+				item_slots[i] = old[i]
 
 
 func reagent_type_name(type_id: int) -> String:
@@ -103,80 +233,265 @@ func reagent_type_name(type_id: int) -> String:
 	return REAGENT_NAMES[i]
 
 
-func get_reagent_count(type_id: int) -> int:
-	var i := type_id - 1
-	if i < 0 or i >= reagent_counts.size():
+# --- Инвентарь 9+27 ---
+
+func raw_count(id: String) -> int:
+	var n := 0
+	for s in item_slots:
+		if str(s.get("id", "")) == id:
+			n += int(s.get("count", 0))
+	return n
+
+
+func count_item(id: String) -> int:
+	if dev_mode and (id in RESOURCE_IDS or raw_count(id) > 0):
+		return INF_COUNT
+	return raw_count(id)
+
+
+func is_infinite_slot(index: int) -> bool:
+	if not dev_mode or index < 0 or index >= item_slots.size():
+		return false
+	return str(item_slots[index].get("id", "")) != ""
+
+
+func add_item_count(id: String, count: int) -> int:
+	## Кладёт count штук: сначала в существующие стаки, потом в пустые (хотбар первым). Возвращает сколько вошло.
+	_ensure_inventory()
+	if id == "" or count <= 0:
 		return 0
-	return int(reagent_counts[i])
+	if ItemDB.is_special(id):
+		_add_special(id, count)
+		return count
+	var left := count
+	var cap := ItemDB.max_stack(id)
+	for i in range(ITEM_SLOT_COUNT):
+		if left <= 0:
+			break
+		var s: Dictionary = item_slots[i]
+		if str(s.get("id", "")) == id and int(s.get("count", 0)) < cap:
+			var put := mini(cap - int(s.get("count", 0)), left)
+			s["count"] = int(s.get("count", 0)) + put
+			left -= put
+	for i in range(ITEM_SLOT_COUNT):
+		if left <= 0:
+			break
+		if str(item_slots[i].get("id", "")) == "":
+			var put2 := mini(cap, left)
+			item_slots[i] = {"id": id, "name": ItemDB.display_name(id, id), "count": put2}
+			left -= put2
+	if left != count:
+		inventory_changed.emit()
+	return count - left
+
+
+
+func remove_item(id: String, amount: int = 1) -> bool:
+	if amount <= 0:
+		return true
+	if dev_mode and (id in RESOURCE_IDS or raw_count(id) > 0):
+		return true
+	if raw_count(id) < amount:
+		return false
+	var left := amount
+	# Сначала с конца инвентаря, чтобы хотбар оставался.
+	for i in range(ITEM_SLOT_COUNT - 1, -1, -1):
+		if left <= 0:
+			break
+		var s: Dictionary = item_slots[i]
+		if str(s.get("id", "")) != id:
+			continue
+		var take := mini(int(s.get("count", 0)), left)
+		s["count"] = int(s.get("count", 0)) - take
+		left -= take
+		if int(s["count"]) <= 0:
+			item_slots[i] = _empty_slot()
+	inventory_changed.emit()
+	return true
+
+
+func _set_item_total(id: String, value: int, emit: bool = true) -> void:
+	if dev_mode:
+		return
+	var cur := raw_count(id)
+	if value > cur:
+		add_item_count(id, value - cur)
+	elif value < cur:
+		var left := cur - value
+		for i in range(ITEM_SLOT_COUNT - 1, -1, -1):
+			if left <= 0:
+				break
+			var s: Dictionary = item_slots[i]
+			if str(s.get("id", "")) != id:
+				continue
+			var take := mini(int(s.get("count", 0)), left)
+			s["count"] = int(s.get("count", 0)) - take
+			left -= take
+			if int(s["count"]) <= 0:
+				item_slots[i] = _empty_slot()
+	if emit:
+		inventory_changed.emit()
+
+
+func _set_reagent_total(v: int) -> void:
+	if dev_mode:
+		return
+	var typed := _typed_sum()
+	if v > typed:
+		var extra := v - typed
+		_set_item_total("reagent1", mini(get_reagent_count(1) + extra, REAGENT_CAP))
+	elif v < typed:
+		var diff := typed - v
+		for i in range(REAGENT_TYPE_COUNT):
+			if diff <= 0:
+				break
+			var have := get_reagent_count(i + 1)
+			var take := mini(have, diff)
+			_set_item_total("reagent%d" % (i + 1), have - take, false)
+			diff -= take
+		inventory_changed.emit()
+
+
+func swap_slots(a: int, b: int) -> void:
+	if a < 0 or b < 0 or a >= ITEM_SLOT_COUNT or b >= ITEM_SLOT_COUNT or a == b:
+		return
+	var t: Dictionary = item_slots[a]
+	item_slots[a] = item_slots[b]
+	item_slots[b] = t
+	inventory_changed.emit()
+
+
+func set_slot(i: int, data: Dictionary) -> void:
+	if i < 0 or i >= ITEM_SLOT_COUNT:
+		return
+	if data.is_empty() or str(data.get("id", "")) == "" or int(data.get("count", 0)) <= 0:
+		item_slots[i] = _empty_slot()
+	else:
+		item_slots[i] = {"id": str(data["id"]), "name": str(data.get("name", ItemDB.display_name(str(data["id"])))), "count": int(data["count"])}
+	inventory_changed.emit()
+
+
+func get_slot(i: int) -> Dictionary:
+	if i < 0 or i >= item_slots.size():
+		return _empty_slot()
+	return item_slots[i]
+
+
+func quick_move(i: int) -> void:
+	## Shift+клик: хотбар ↔ основной инвентарь.
+	var s: Dictionary = get_slot(i)
+	var id := str(s.get("id", ""))
+	if id == "":
+		return
+	var range_from := HOTBAR_SIZE if i < HOTBAR_SIZE else 0
+	var range_to := ITEM_SLOT_COUNT if i < HOTBAR_SIZE else HOTBAR_SIZE
+	var cap := ItemDB.max_stack(id)
+	var left := int(s.get("count", 0))
+	for j in range(range_from, range_to):
+		if left <= 0:
+			break
+		var t: Dictionary = item_slots[j]
+		if str(t.get("id", "")) == id and int(t.get("count", 0)) < cap:
+			var put := mini(cap - int(t["count"]), left)
+			t["count"] = int(t["count"]) + put
+			left -= put
+	for j in range(range_from, range_to):
+		if left <= 0:
+			break
+		if str(item_slots[j].get("id", "")) == "":
+			var put2 := mini(cap, left)
+			item_slots[j] = {"id": id, "name": str(s.get("name", id)), "count": put2}
+			left -= put2
+	if left <= 0:
+		item_slots[i] = _empty_slot()
+	else:
+		item_slots[i]["count"] = left
+	inventory_changed.emit()
+
+
+func special_count(id: String) -> int:
+	match id:
+		"nail":
+			return nails
+		"wedge":
+			return wedges
+		"anchor3":
+			return anchors3
+		"beacon":
+			return beacons
+	return 0
+
+
+func _add_special(id: String, count: int) -> void:
+	match id:
+		"nail":
+			nails += count
+		"wedge":
+			wedges += count
+		"anchor3":
+			anchors3 += count
+		"beacon":
+			beacons += count
+	inventory_changed.emit()
+
+
+func get_reagent_count(type_id: int) -> int:
+	if type_id < 1 or type_id > REAGENT_TYPE_COUNT:
+		return 0
+	if dev_mode:
+		return INF_COUNT
+	return raw_count("reagent%d" % type_id)
 
 
 func _typed_sum() -> int:
 	var s := 0
-	for i in range(mini(REAGENT_TYPE_COUNT, reagent_counts.size())):
-		s += int(reagent_counts[i])
+	for i in range(REAGENT_TYPE_COUNT):
+		s += get_reagent_count(i + 1)
 	return s
 
 
 func _sync_reagent_total() -> void:
-	reagents = _typed_sum()
+	pass
 
 
 func _reconcile_reagents() -> void:
-	while reagent_counts.size() < REAGENT_TYPE_COUNT:
-		reagent_counts.append(0)
-	if reagent_counts.size() > REAGENT_TYPE_COUNT:
-		reagent_counts.resize(REAGENT_TYPE_COUNT)
-	for i in range(REAGENT_TYPE_COUNT):
-		reagent_counts[i] = clampi(int(reagent_counts[i]), 0, REAGENT_CAP)
-	var typed := _typed_sum()
-	if reagents != typed:
-		if reagents > typed:
-			var extra := reagents - typed
-			reagent_counts[0] = clampi(int(reagent_counts[0]) + extra, 0, REAGENT_CAP)
-		else:
-			var diff := typed - reagents
-			for i in range(REAGENT_TYPE_COUNT):
-				if diff <= 0:
-					break
-				var take := mini(int(reagent_counts[i]), diff)
-				reagent_counts[i] -= take
-				diff -= take
-	_sync_reagent_total()
+	pass
 
 
 func add_typed_reagent(type_id: int, amount: int) -> int:
-	_reconcile_reagents()
 	var i := clampi(type_id - 1, 0, REAGENT_TYPE_COUNT - 1)
-	var room := REAGENT_CAP - int(reagent_counts[i])
+	if dev_mode:
+		return maxi(amount, 0)
+	var have := raw_count("reagent%d" % (i + 1))
+	var room := REAGENT_CAP - have
 	var add := mini(maxi(amount, 0), room)
 	if add <= 0:
 		return 0
-	reagent_counts[i] = int(reagent_counts[i]) + add
-	_sync_reagent_total()
-	inventory_changed.emit()
-	return add
+	return add_item_count("reagent%d" % (i + 1), add)
 
 
 func spend_reagents(amount: int, emit_changed: bool = true) -> bool:
-	_reconcile_reagents()
-	if amount <= 0:
+	if amount <= 0 or dev_mode:
 		return true
 	if reagents < amount:
 		return false
 	var left := amount
 	for i in range(REAGENT_TYPE_COUNT):
-		var take := mini(int(reagent_counts[i]), left)
-		reagent_counts[i] -= take
+		var have := get_reagent_count(i + 1)
+		var take := mini(have, left)
+		if take > 0:
+			_set_item_total("reagent%d" % (i + 1), have - take, false)
 		left -= take
 		if left <= 0:
 			break
-	_sync_reagent_total()
 	if emit_changed:
 		inventory_changed.emit()
 	return true
 
 
 func mobs_unlocked() -> bool:
+	if peaceful:
+		return false
 	return dream_exit_count >= MOBS_UNLOCK_AT_EXITS
 
 
@@ -192,28 +507,19 @@ func is_reagent_collected(id: String) -> bool:
 
 func select_item_slot(index: int) -> void:
 	_ensure_inventory()
-	selected_slot = clampi(index, 0, ITEM_SLOT_COUNT - 1)
+	selected_slot = clampi(index, 0, HOTBAR_SIZE - 1)
 	var item: Dictionary = item_slots[selected_slot]
 	var id := str(item.get("id", ""))
-	if id == "nail":
-		selected_anchor = AnchorType.NAIL
-		set_hint("Слот %d: Гвоздь (x%d). Q — заякорить." % [selected_slot + 1, nails])
-	elif id == "wedge":
-		selected_anchor = AnchorType.WEDGE
-		set_hint("Слот %d: Клин (x%d). Q — заякорить." % [selected_slot + 1, wedges])
-	elif id == "anchor3":
-		selected_anchor = AnchorType.ANCHOR3
-		set_hint("Слот %d: Якорь3 (x%d). Q — заякорить большую зону." % [selected_slot + 1, anchors3])
-	elif id == "":
+	if id == "":
 		set_hint("Слот %d: пусто." % (selected_slot + 1))
 	else:
-		set_hint("Слот %d: %s x%d" % [selected_slot + 1, str(item.get("name", id)), int(item.get("count", 0))])
+		set_hint("Слот %d: %s" % [selected_slot + 1, ItemDB.display_name(id, str(item.get("name", id)))])
 	inventory_changed.emit()
 
 
 func cycle_item_slot(delta: int) -> void:
 	_ensure_inventory()
-	select_item_slot(posmod(selected_slot + delta, ITEM_SLOT_COUNT))
+	select_item_slot(posmod(selected_slot + delta, HOTBAR_SIZE))
 
 
 func get_selected_item() -> Dictionary:
@@ -222,35 +528,52 @@ func get_selected_item() -> Dictionary:
 
 
 func add_item(id: String, item_name: String, count: int = 1) -> int:
+	## Совместимость: возвращает индекс слота, куда лёг предмет, или -1 (нет места).
 	_ensure_inventory()
 	if id == "":
 		return -1
+	if ItemDB.is_special(id):
+		_add_special(id, count)
+		return 0
+	var cap := ItemDB.max_stack(id)
+	var target := -1
 	for i in range(ITEM_SLOT_COUNT):
-		if str(item_slots[i].get("id", "")) == id and id != "nail" and id != "wedge":
-			item_slots[i]["count"] = int(item_slots[i].get("count", 0)) + count
-			inventory_changed.emit()
-			return i
-	for i in range(ITEM_SLOT_COUNT):
-		if str(item_slots[i].get("id", "")) == "":
-			item_slots[i] = {"id": id, "name": item_name, "count": count}
-			inventory_changed.emit()
-			return i
-	return -1
+		var s: Dictionary = item_slots[i]
+		if str(s.get("id", "")) == id and int(s.get("count", 0)) + count <= cap:
+			target = i
+			break
+	if target < 0:
+		for i in range(ITEM_SLOT_COUNT):
+			if str(item_slots[i].get("id", "")) == "":
+				target = i
+				break
+	if target < 0:
+		var added := add_item_count(id, count)
+		return 0 if added == count else -1
+	if str(item_slots[target].get("id", "")) == "":
+		var nm := item_name if item_name != "" else id
+		if ItemDB.ITEMS.has(id):
+			nm = ItemDB.display_name(id)
+		item_slots[target] = {"id": id, "name": nm, "count": mini(count, cap)}
+		if count > cap:
+			add_item_count(id, count - cap)
+	else:
+		item_slots[target]["count"] = int(item_slots[target].get("count", 0)) + count
+	inventory_changed.emit()
+	return target
 
 
 func slot_display_count(index: int) -> int:
 	_ensure_inventory()
 	if index < 0 or index >= item_slots.size():
 		return 0
-	var id := str(item_slots[index].get("id", ""))
-	if id == "nail":
-		return nails
-	if id == "wedge":
-		return wedges
-	if id == "anchor3":
-		return anchors3
+	if is_infinite_slot(index):
+		return INF_COUNT
 	return int(item_slots[index].get("count", 0))
 
+
+func count_text(n: int) -> String:
+	return "∞" if n >= INF_COUNT else str(n)
 
 
 func inventory_status_text() -> String:
@@ -260,13 +583,21 @@ func inventory_status_text() -> String:
 		for k in block_stash.keys():
 			bits.append("%s x%d" % [block_display_name(str(k)), int(block_stash[k])])
 		extra = "   запасы: " + ", ".join(bits)
-	return "Осыпь: %d   Гвозди: %d   Клинья: %d   Якорь3: %d\n%s: %d   %s: %d   %s: %d%s" % [
-		dust, nails, wedges, anchors3,
-		reagent_type_name(1), get_reagent_count(1),
-		reagent_type_name(2), get_reagent_count(2),
-		reagent_type_name(3), get_reagent_count(3),
+	return "Осыпь: %s   Гвозди: %s   Клинья: %s   Якорь3: %s   Маяки: %s\n%s: %s   %s: %s   %s: %s%s" % [
+		count_text(dust), count_text(_sp(nails)), count_text(_sp(wedges)), count_text(_sp(anchors3)), count_text(_sp(beacons)),
+		reagent_type_name(1), count_text(get_reagent_count(1)),
+		reagent_type_name(2), count_text(get_reagent_count(2)),
+		reagent_type_name(3), count_text(get_reagent_count(3)),
 		extra,
 	]
+
+
+func _sp(n: int) -> int:
+	return INF_COUNT if dev_mode else n
+
+
+func special_display_count(id: String) -> int:
+	return _sp(special_count(id))
 
 
 func recipe_defs() -> Array:
@@ -274,6 +605,7 @@ func recipe_defs() -> Array:
 		{"id": "nail", "name": "Гвоздь", "where": "dream", "dust": NAIL_CRAFT_DUST, "gives": "nails"},
 		{"id": "wedge", "name": "Клин", "where": "dream", "dust": WEDGE_CRAFT_DUST, "gives": "wedges"},
 		{"id": "anchor3", "name": "Якорь3", "where": "dream", "dust": ANCHOR3_CRAFT_DUST, "gives": "anchors3"},
+		{"id": "beacon", "name": "Маяк", "where": "dream", "dust": BEACON_CRAFT_DUST, "reagent3": 1, "gives": "beacons"},
 		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 10, "item": "workbench", "item_name": "Верстак"},
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent2": 2, "reagent3": 3, "item": "pickaxe", "item_name": "Кирка"},
 		{"id": "torch", "name": "Факел", "where": "workbench", "reagent1": 1, "reagent2": 1, "item": "torch", "item_name": "Факел"},
@@ -355,45 +687,34 @@ func recipe_label(rec: Dictionary) -> String:
 
 
 func spend_typed_reagent(type_id: int, amount: int) -> bool:
-	if amount <= 0:
+	if amount <= 0 or dev_mode:
 		return true
 	if get_reagent_count(type_id) < amount:
 		return false
-	var i := type_id - 1
-	reagent_counts[i] = int(reagent_counts[i]) - amount
-	_sync_reagent_total()
-	inventory_changed.emit()
-	return true
+	return remove_item("reagent%d" % type_id, amount)
 
 
 func consume_item(id: String, amount: int = 1) -> bool:
 	_ensure_inventory()
-	if id == "nail":
-		if nails < amount:
-			return false
-		nails -= amount
-		inventory_changed.emit()
-		return true
-	if id == "wedge":
-		if wedges < amount:
-			return false
-		wedges -= amount
-		inventory_changed.emit()
-		return true
-	if id == "anchor3":
-		if anchors3 < amount:
-			return false
-		anchors3 -= amount
-		inventory_changed.emit()
-		return true
-	for i in range(ITEM_SLOT_COUNT):
-		if str(item_slots[i].get("id", "")) == id and int(item_slots[i].get("count", 0)) >= amount:
-			item_slots[i]["count"] = int(item_slots[i]["count"]) - amount
-			if int(item_slots[i]["count"]) <= 0:
-				item_slots[i] = {"id": "", "name": "", "count": 0}
-			inventory_changed.emit()
+	if ItemDB.is_special(id):
+		if dev_mode:
 			return true
-	return false
+		var have := special_count(id)
+		if have < amount:
+			return false
+		_add_special(id, -amount)
+		return true
+	# Сначала выбранный слот хотбара, затем остальные.
+	if dev_mode:
+		return raw_count(id) > 0 or id in RESOURCE_IDS
+	var sel: Dictionary = item_slots[selected_slot]
+	if str(sel.get("id", "")) == id and int(sel.get("count", 0)) >= amount:
+		sel["count"] = int(sel["count"]) - amount
+		if int(sel["count"]) <= 0:
+			item_slots[selected_slot] = _empty_slot()
+		inventory_changed.emit()
+		return true
+	return remove_item(id, amount)
 
 
 func selected_is(id: String) -> bool:
@@ -462,7 +783,11 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 		wedges += 1
 	elif gives == "anchors3":
 		anchors3 += 1
+	elif gives == "beacons":
+		beacons += 1
 	var item_id := str(rec.get("item", ""))
+	if item_id != "" and dev_mode and raw_count(item_id) > 0:
+		item_id = ""
 	if item_id != "":
 		if add_item(item_id, str(rec.get("item_name", item_id)), 1) < 0:
 			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
@@ -516,6 +841,10 @@ func block_display_name(kind: String) -> String:
 			return "Руинный блок"
 		"ground":
 			return "Грунт"
+		"drift":
+			return "Дрейф-блок"
+		"beacon":
+			return "Маяк"
 		_:
 			return "Блок"
 
@@ -527,9 +856,13 @@ func is_placeable_block(id: String) -> bool:
 func add_mined_block(kind: String, amount: int = 1) -> void:
 	if amount <= 0:
 		return
-	if add_item(kind, block_display_name(kind), amount) >= 0:
+	if ItemDB.is_special(kind):
+		_add_special(kind, amount)
 		return
-	block_stash[kind] = int(block_stash.get(kind, 0)) + amount
+	var added := add_item_count(kind, amount)
+	if added >= amount:
+		return
+	block_stash[kind] = int(block_stash.get(kind, 0)) + (amount - added)
 	inventory_changed.emit()
 
 
@@ -566,6 +899,8 @@ func add_reagents(amount: int) -> void:
 
 
 func spend_clarity(amount: float) -> bool:
+	if dev_mode:
+		return true
 	if clarity < amount:
 		return false
 	clarity = maxf(0.0, clarity - amount)
@@ -575,6 +910,8 @@ func spend_clarity(amount: float) -> bool:
 
 func drain_clarity(delta: float) -> void:
 	if not is_dream():
+		return
+	if dev_mode:
 		return
 	clarity = maxf(0.0, clarity - CLARITY_DRAIN_PER_SEC * delta)
 	clarity_changed.emit(clarity, CLARITY_MAX)
@@ -604,7 +941,8 @@ func craft_selected_from_dust() -> bool:
 
 func select_anchor(t: AnchorType) -> void:
 	selected_anchor = t
-	selected_slot = 0 if t == AnchorType.NAIL else 1
+	anchor_selected.emit(int(t))
+	inventory_changed.emit()
 	if t == AnchorType.NAIL:
 		set_hint("Выбран Гвоздь (1 блок). Q — заякорить. C — меню крафта (%d осыпи)." % NAIL_CRAFT_DUST)
 	elif t == AnchorType.WEDGE:
@@ -617,8 +955,13 @@ func select_anchor(t: AnchorType) -> void:
 		])
 
 
+func cycle_anchor(delta: int = 1) -> void:
+	select_anchor(posmod(int(selected_anchor) + delta, 3) as AnchorType)
+
+
 func can_afford_anchor(t: AnchorType) -> bool:
-	_reconcile_reagents()
+	if dev_mode:
+		return true
 	if t == AnchorType.NAIL:
 		return nails >= 1 and reagents >= NAIL_COST_REAGENTS and clarity >= NAIL_COST_CLARITY
 	if t == AnchorType.WEDGE:
@@ -641,7 +984,8 @@ func try_place_anchor(origin: Vector3i) -> bool:
 			set_hint("Гвоздь: целься в существующий блок.")
 			return false
 		cells.append(origin)
-		nails -= 1
+		if not dev_mode:
+			nails -= 1
 		spend_reagents(NAIL_COST_REAGENTS, false)
 		spend_clarity(NAIL_COST_CLARITY)
 	else:
@@ -657,11 +1001,13 @@ func try_place_anchor(origin: Vector3i) -> bool:
 			set_hint("Якорь: в зоне нет блоков.")
 			return false
 		if t == AnchorType.WEDGE:
-			wedges -= 1
+			if not dev_mode:
+				wedges -= 1
 			spend_reagents(WEDGE_COST_REAGENTS, false)
 			spend_clarity(WEDGE_COST_CLARITY)
 		else:
-			anchors3 -= 1
+			if not dev_mode:
+				anchors3 -= 1
 			spend_reagents(ANCHOR3_COST_REAGENTS, false)
 			spend_clarity(ANCHOR3_COST_CLARITY)
 
@@ -687,7 +1033,7 @@ func enter_dream() -> void:
 	awake_time = 0.0
 	clarity_changed.emit(clarity, CLARITY_MAX)
 	world_changed.emit(true)
-	set_hint("Сон. ЛКМ — блок, ПКМ — снять, 1/2/3 — якорь, Q — заякорить, C — меню крафта, F — проснуться.")
+	set_hint("Сон. ЛКМ — блок, ПКМ — снять, R — сменить якорь, Q — заякорить, C — меню крафта, F — проснуться.")
 
 
 func resolve_wake() -> Dictionary:
@@ -711,7 +1057,7 @@ func resolve_wake() -> Dictionary:
 		var data: Dictionary = dream_blocks[cell]
 		var kind := str(data.get("kind", "drift"))
 		var mutant := false
-		if kind != "workbench" and kind != "torch" and randf() < MUTATION_CHANCE:
+		if kind != "workbench" and kind != "torch" and kind != "beacon" and randf() < MUTATION_CHANCE:
 			mutant = true
 			mutations += 1
 			kind = "mouth"
@@ -758,21 +1104,30 @@ func remove_dream_block(cell: Vector3i) -> bool:
 
 func steal_resource_hardcore(amount: int = 1) -> String:
 	## Шовник: сначала осыпь (до amount), иначе реагент. amount>1 — элита/хардкор.
+	## Дев-сид: ресурсы бесконечны, украсть нечего.
 	var take := maxi(1, amount)
-	if dust > 0:
-		var got := mini(dust, take)
-		dust -= got
-		inventory_changed.emit()
+	if dev_mode:
+		return "none"
+	var d := dust
+	if d > 0:
+		var got := mini(d, take)
+		dust = d - got
 		return "dust:%d" % got
-	_reconcile_reagents()
-	if reagents > 0:
-		for i in range(REAGENT_TYPE_COUNT):
-			if int(reagent_counts[i]) > 0:
-				reagent_counts[i] -= 1
-				_sync_reagent_total()
-				inventory_changed.emit()
-				return "reagent"
+	for i in range(REAGENT_TYPE_COUNT):
+		if get_reagent_count(i + 1) > 0:
+			remove_item("reagent%d" % (i + 1), 1)
+			return "reagent"
 	return "none"
+
+
+func reward_kill(is_boss: bool = false, who: String = "") -> int:
+	var amount := DUST_PER_BOSS_KILL if is_boss else DUST_PER_KILL
+	if not dev_mode:
+		add_item_count("dust", amount)
+	var prefix := (who + " повержен: ") if who != "" else ""
+	set_hint("%s+%d осыпи" % [prefix, amount])
+	toast.emit("%s+%d осыпи" % [prefix, amount])
+	return amount
 
 
 func count_enemies_in_tree(tree: SceneTree) -> int:
@@ -785,22 +1140,28 @@ func to_save_dict() -> Dictionary:
 	return {
 		"version": SAVE_FORMAT,
 		"world": "dream" if is_dream() else "wake",
+		"world_name": world_name,
+		"seed_text": seed_text,
+		"world_seed": str(world_seed),
+		"dev_mode": dev_mode,
+		"peaceful": peaceful,
 		"clarity": clarity,
-		"reagents": reagents,
-		"reagent_counts": [get_reagent_count(1), get_reagent_count(2), get_reagent_count(3)],
-		"dust": dust,
 		"nails": nails,
 		"wedges": wedges,
 		"anchors3": anchors3,
+		"beacons": beacons,
 		"day_time": day_time,
 		"selected_anchor": int(selected_anchor),
 		"selected_slot": selected_slot,
 		"item_slots": item_slots.duplicate(true),
+		"reagent_counts": [raw_count("reagent1"), raw_count("reagent2"), raw_count("reagent3")],
+		"dust": raw_count("dust"),
+		"block_stash": block_stash.duplicate(),
 		"dream_exit_count": dream_exit_count,
 		"collected_reagent_ids": collected_reagent_ids.keys(),
 		"awake_time": awake_time,
-		"world_seed_wake": world_seed_wake,
-		"world_seed_dream": world_seed_dream,
+		"world_seed_wake": str(world_seed_wake),
+		"world_seed_dream": str(world_seed_dream),
 		"wake_blocks": _blocks_to_json(wake_blocks),
 		"dream_blocks": _blocks_to_json(dream_blocks),
 		"pending_anchors": _anchors_to_json(pending_anchors),
@@ -808,43 +1169,63 @@ func to_save_dict() -> Dictionary:
 	}
 
 
+static func _seed_val(v: Variant, fallback: int) -> int:
+	if v == null:
+		return fallback
+	if typeof(v) == TYPE_STRING:
+		var s := str(v)
+		return s.to_int() if s.is_valid_int() else fallback
+	return int(v)
+
+
 func apply_save_dict(data: Dictionary) -> void:
-	dust = int(data.get("dust", 0))
+	var fmt := int(data.get("version", 4))
 	nails = int(data.get("nails", 3))
 	wedges = int(data.get("wedges", 1))
 	anchors3 = int(data.get("anchors3", 0))
+	beacons = int(data.get("beacons", 0))
 	clarity = float(data.get("clarity", CLARITY_MAX))
 	awake_time = float(data.get("awake_time", 0.0))
 	day_time = float(data.get("day_time", 0.0))
-	world_seed_wake = int(data.get("world_seed_wake", 1337))
-	world_seed_dream = int(data.get("world_seed_dream", 9001))
-	selected_anchor = int(data.get("selected_anchor", 0)) as AnchorType
+	world_seed_wake = _seed_val(data.get("world_seed_wake", null), world_seed_wake if world_folder != "" else 1337)
+	world_seed_dream = _seed_val(data.get("world_seed_dream", null), world_seed_dream if world_folder != "" else 9001)
+	if data.has("world_seed"):
+		world_seed = _seed_val(data["world_seed"], world_seed)
+	selected_anchor = clampi(int(data.get("selected_anchor", 0)), 0, 2) as AnchorType
 	dream_exit_count = int(data.get("dream_exit_count", data.get("wake_count", 0)))
-	selected_slot = clampi(int(data.get("selected_slot", 0)), 0, ITEM_SLOT_COUNT - 1)
-	var rc: Variant = data.get("reagent_counts", null)
-	reagent_counts = [0, 0, 0]
-	if typeof(rc) == TYPE_ARRAY:
-		for i in range(mini(REAGENT_TYPE_COUNT, rc.size())):
-			reagent_counts[i] = clampi(int(rc[i]), 0, REAGENT_CAP)
-		_sync_reagent_total()
-	else:
-		reagents = int(data.get("reagents", 0))
-		_reconcile_reagents()
+	selected_slot = clampi(int(data.get("selected_slot", 0)), 0, HOTBAR_SIZE - 1)
+	_init_default_slots()
 	var slots: Variant = data.get("item_slots", null)
-	if typeof(slots) == TYPE_ARRAY and slots.size() == ITEM_SLOT_COUNT:
-		item_slots = []
-		for s in slots:
-			if typeof(s) != TYPE_DICTIONARY:
-				item_slots.append({"id": "", "name": "", "count": 0})
-			else:
-				item_slots.append({
-					"id": str(s.get("id", "")),
-					"name": str(s.get("name", "")),
-					"count": int(s.get("count", 0)),
-				})
+	if fmt >= 5 and typeof(slots) == TYPE_ARRAY:
+		for i in range(mini(slots.size(), ITEM_SLOT_COUNT)):
+			var s: Variant = slots[i]
+			if typeof(s) == TYPE_DICTIONARY and str(s.get("id", "")) != "" and int(s.get("count", 0)) > 0:
+				item_slots[i] = {"id": str(s["id"]), "name": str(s.get("name", "")), "count": int(s["count"])}
 	else:
-		_init_default_slots()
-	_ensure_anchor3_slot()
+		# Сейв v4 и старше: 5 слотов + отдельные счётчики реагентов/осыпи. Якоря уходят в полосу.
+		var dev_was := dev_mode
+		dev_mode = false
+		if typeof(slots) == TYPE_ARRAY:
+			for s2 in slots:
+				if typeof(s2) != TYPE_DICTIONARY:
+					continue
+				var sid := str(s2.get("id", ""))
+				if sid == "" or sid == "nail" or sid == "wedge" or sid == "anchor3":
+					continue
+				add_item_count(sid, maxi(1, int(s2.get("count", 1))))
+		var rc: Variant = data.get("reagent_counts", null)
+		if typeof(rc) == TYPE_ARRAY:
+			for i2 in range(mini(REAGENT_TYPE_COUNT, rc.size())):
+				add_item_count("reagent%d" % (i2 + 1), clampi(int(rc[i2]), 0, REAGENT_CAP))
+		elif data.has("reagents"):
+			add_item_count("reagent1", clampi(int(data["reagents"]), 0, REAGENT_CAP))
+		add_item_count("dust", maxi(0, int(data.get("dust", 0))))
+		dev_mode = dev_was
+	block_stash = {}
+	var bs: Variant = data.get("block_stash", {})
+	if typeof(bs) == TYPE_DICTIONARY:
+		for k in bs.keys():
+			block_stash[str(k)] = int(bs[k])
 	collected_reagent_ids = {}
 	var col: Variant = data.get("collected_reagent_ids", [])
 	if typeof(col) == TYPE_ARRAY:
@@ -857,6 +1238,8 @@ func apply_save_dict(data: Dictionary) -> void:
 	dream_blocks = _blocks_from_json(data.get("dream_blocks", {}))
 	pending_anchors = _anchors_from_json(data.get("pending_anchors", []))
 	removed_terrain = _cells_kind_from_json(data.get("removed_terrain", {}))
+	if dev_mode:
+		_ensure_dev_items()
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
 	clarity_changed.emit(clarity, CLARITY_MAX)
@@ -864,18 +1247,18 @@ func apply_save_dict(data: Dictionary) -> void:
 	world_changed.emit(is_dream())
 
 
+func _ensure_dev_items() -> void:
+	var any := false
+	for s in item_slots:
+		if str(s.get("id", "")) != "":
+			any = true
+			break
+	if not any:
+		_fill_dev_inventory()
+
 
 func _ensure_anchor3_slot() -> void:
 	_ensure_inventory()
-	var has := false
-	for i in range(item_slots.size()):
-		if str(item_slots[i].get("id", "")) == "anchor3":
-			item_slots[i]["count"] = anchors3
-			has = true
-	if has:
-		return
-	if item_slots.size() > 2 and str(item_slots[2].get("id", "")) == "":
-		item_slots[2] = {"id": "anchor3", "name": "Якорь3", "count": anchors3}
 
 
 func _blocks_to_json(src: Dictionary) -> Dictionary:

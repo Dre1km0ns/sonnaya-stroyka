@@ -31,6 +31,8 @@ func _process(delta: float) -> void:
 		if GameState.clarity <= 0.0:
 			wake_up()
 			return
+	if GameState.ui_blocked():
+		return
 	if Input.is_action_just_pressed("wake_up") and GameState.is_dream():
 		wake_up()
 	if Input.is_action_just_pressed("interact"):
@@ -86,7 +88,7 @@ func enter_dream() -> void:
 	# Подтянуть чанки сна к игроку
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
 		if cm.has_method("setup") and bool(cm.get("is_dream_layer")):
-			cm.setup(player, 9001)
+			cm.setup(player, GameState.world_seed_dream)
 	switched.emit(true)
 
 

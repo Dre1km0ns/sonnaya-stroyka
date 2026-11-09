@@ -15,6 +15,9 @@ const WATER_COST := 2.5
 const WATER_SPEED_FACTOR := 0.4
 const PATH_MAX_EXTENT := 28
 const ATTACK_RANGE := 1.65
+const PATH_REBUILD_SEC := 0.7
+
+static var _cm_cache: Node = null
 
 static func setup_body(body: CharacterBody3D) -> void:
 	body.collision_layer = ENEMY_LAYER
@@ -26,28 +29,26 @@ static func setup_body(body: CharacterBody3D) -> void:
 
 
 static func is_water_at(body: Node3D, pos: Vector3) -> bool:
-	var tree := body.get_tree()
-	if tree == null:
-		return false
-	for cm in tree.get_nodes_in_group("chunk_manager"):
-		if bool(cm.get("is_dream_layer")):
-			continue
-		if cm.has_method("is_world_in_lake") and cm.is_world_in_lake(pos):
-			return true
-	return false
+	var cm := _chunk_manager(body)
+	return cm != null and cm.is_world_in_lake(pos)
 
 
 static func _chunk_manager(from: Node) -> Node:
+	## v0.5: кэш менеджера чанков яви (раньше — обход группы на каждую клетку A*).
+	if _cm_cache != null and is_instance_valid(_cm_cache) and _cm_cache.is_inside_tree():
+		return _cm_cache
+	_cm_cache = null
 	if from == null:
 		return null
-	var tree := from.get_tree() if from.has_method("get_tree") else null
+	var tree := from.get_tree() if from.is_inside_tree() else null
 	if tree == null:
 		if from.is_in_group("chunk_manager"):
 			return from
 		return null
 	for cm in tree.get_nodes_in_group("chunk_manager"):
-		if bool(cm.get("is_dream_layer")):
+		if bool(cm.get("is_dream_layer")) or bool(cm.get("panorama_mode")):
 			continue
+		_cm_cache = cm
 		return cm
 	return null
 
@@ -115,49 +116,109 @@ static func find_path(from: Vector3, to: Vector3, query: Node) -> Array[Vector3]
 	min_z = clampi(min_z, cz - PATH_MAX_EXTENT, cz + PATH_MAX_EXTENT)
 	max_z = clampi(max_z, cz - PATH_MAX_EXTENT, cz + PATH_MAX_EXTENT)
 
-	var open: Array[Vector2i] = [start]
+	var memo_h: Dictionary = {}
+	var memo_s: Dictionary = {}
+	var heap_f: Array[float] = []
+	var heap_c: Array[Vector2i] = []
+	_heap_push(heap_f, heap_c, float(absi(goal.x - start.x) + absi(goal.y - start.y)), start)
 	var came: Dictionary = {}
 	var gscore: Dictionary = {start: 0.0}
-	var fscore: Dictionary = {start: float(absi(goal.x - start.x) + absi(goal.y - start.y))}
 	var closed: Dictionary = {}
 	var dirs: Array[Vector2i] = [
 		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
 		Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1),
 	]
 	var guard := 0
-	while not open.is_empty() and guard < 1400:
+	while not heap_c.is_empty() and guard < 1400:
 		guard += 1
-		var best_i := 0
-		var best_f := float(fscore.get(open[0], 1e9))
-		for i in range(1, open.size()):
-			var f := float(fscore.get(open[i], 1e9))
-			if f < best_f:
-				best_f = f
-				best_i = i
-		var current: Vector2i = open[best_i]
-		open.remove_at(best_i)
+		var current: Vector2i = _heap_pop(heap_f, heap_c)
+		if closed.has(current):
+			continue
 		if current == goal:
 			return _reconstruct(came, current, to.y)
 		closed[current] = true
+		var hc := _memo_height(query, current, memo_h)
 		for d in dirs:
 			var nxt := current + d
 			if nxt.x < min_x or nxt.x > max_x or nxt.y < min_z or nxt.y > max_z:
 				continue
 			if closed.has(nxt):
 				continue
-			if nxt != start and is_solid_cell(query, nxt.x, nxt.y):
-				continue
-			if not _can_step(query, current, nxt):
+			if nxt != start:
+				var solid: bool
+				if memo_s.has(nxt):
+					solid = memo_s[nxt]
+				else:
+					solid = is_solid_cell(query, nxt.x, nxt.y)
+					memo_s[nxt] = solid
+				if solid:
+					continue
+			var hn := _memo_height(query, nxt, memo_h)
+			var dh := absi(hc - hn)
+			if dh > 1 and not ((hc < 0 or hn < 0) and dh <= 2):
 				continue
 			var step := 1.414 if d.x != 0 and d.y != 0 else 1.0
-			var tentative := float(gscore[current]) + step * _weight(query, nxt.x, nxt.y)
+			var w := WATER_COST if hn < 0 else 1.0
+			var tentative := float(gscore[current]) + step * w
 			if tentative < float(gscore.get(nxt, 1e12)):
 				came[nxt] = current
 				gscore[nxt] = tentative
-				fscore[nxt] = tentative + float(absi(goal.x - nxt.x) + absi(goal.y - nxt.y))
-				if not open.has(nxt):
-					open.append(nxt)
+				_heap_push(heap_f, heap_c, tentative + float(absi(goal.x - nxt.x) + absi(goal.y - nxt.y)), nxt)
 	return out
+
+
+static func _memo_height(query: Node, c: Vector2i, memo: Dictionary) -> int:
+	if memo.has(c):
+		return memo[c]
+	var h := cell_height(query, c.x, c.y)
+	memo[c] = h
+	return h
+
+
+static func _heap_push(fs: Array[float], cs: Array[Vector2i], f: float, c: Vector2i) -> void:
+	fs.append(f)
+	cs.append(c)
+	var i := fs.size() - 1
+	while i > 0:
+		var p := (i - 1) >> 1
+		if fs[p] <= fs[i]:
+			break
+		var tf := fs[p]
+		fs[p] = fs[i]
+		fs[i] = tf
+		var tc := cs[p]
+		cs[p] = cs[i]
+		cs[i] = tc
+		i = p
+
+
+static func _heap_pop(fs: Array[float], cs: Array[Vector2i]) -> Vector2i:
+	var top := cs[0]
+	var last := fs.size() - 1
+	fs[0] = fs[last]
+	cs[0] = cs[last]
+	fs.resize(last)
+	cs.resize(last)
+	var i := 0
+	var n := fs.size()
+	while true:
+		var l := i * 2 + 1
+		var r := l + 1
+		var m := i
+		if l < n and fs[l] < fs[m]:
+			m = l
+		if r < n and fs[r] < fs[m]:
+			m = r
+		if m == i:
+			break
+		var tf := fs[m]
+		fs[m] = fs[i]
+		fs[i] = tf
+		var tc := cs[m]
+		cs[m] = cs[i]
+		cs[i] = tc
+		i = m
+	return top
 
 
 static func _nearest_walkable(query: Node, goal: Vector2i, toward: Vector2i) -> Vector2i:
@@ -231,7 +292,9 @@ static func follow_target(body: CharacterBody3D, target: Vector3, speed: float, 
 	cache["t"] = now
 	var last_rebuild: float = float(cache.get("rebuild_at", -10.0))
 	var last_goal: Vector3 = cache.get("goal", Vector3.INF)
-	if now - last_rebuild > 0.4 or last_goal.distance_to(target) > 1.5:
+	if not cache.has("jitter"):
+		cache["jitter"] = randf() * 0.3
+	if now - last_rebuild > PATH_REBUILD_SEC + float(cache["jitter"]) or last_goal.distance_to(target) > 2.5:
 		cache["path"] = find_path(body.global_position, target, body)
 		cache["rebuild_at"] = now
 		cache["goal"] = target
@@ -273,6 +336,9 @@ static func nearest_adjacent_block(body: Node3D) -> Variant:
 static func _pick_steer_dir(body: CharacterBody3D, want_dir: Vector3) -> Vector3:
 	if want_dir.length() < 0.001:
 		return Vector3.ZERO
+	# v0.5: прямой путь свободен — без перебора 8 направлений (9 test_move → 1).
+	if not _blocked(body, want_dir, 0.45):
+		return want_dir
 	var candidates: Array[Vector3] = [want_dir]
 	for i in range(8):
 		var a := float(i) * PI * 0.25

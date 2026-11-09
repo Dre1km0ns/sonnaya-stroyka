@@ -23,6 +23,11 @@ var mouse_sens: float = MOUSE_SENS_DEFAULT
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	add_to_group("player")
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets:
+		mouse_sens = MOUSE_SENS_DEFAULT * float(gsets.mouse_sensitivity)
+		gsets.settings_changed.connect(func() -> void:
+			mouse_sens = MOUSE_SENS_DEFAULT * float(gsets.mouse_sensitivity))
 	collision_mask = 1 | 4 | 16
 	GameState.world_changed.connect(_on_world_changed)
 
@@ -33,22 +38,20 @@ func _on_world_changed(is_dream: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if GameState.craft_menu_open:
+	if GameState.ui_blocked():
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-event.relative.x * mouse_sens)
 		pivot.rotate_x(-event.relative.y * mouse_sens)
 		pivot.rotation.x = clampf(pivot.rotation.x, deg_to_rad(-85.0), deg_to_rad(85.0))
-	if event.is_action_pressed("ui_cancel"):
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event.is_action_pressed("toggle_fly") and GameState.is_dream():
 		flying = not flying
 		GameState.set_hint("Полёт: %s" % ("вкл" if flying else "выкл"))
+	if event.is_action_pressed("cycle_anchor"):
+		GameState.cycle_anchor(1)
+		get_viewport().set_input_as_handled()
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			GameState.cycle_item_slot(-1)
@@ -61,12 +64,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_adjust_mouse_sens(-MOUSE_SENS_STEP)
 		elif event.keycode == KEY_BRACKETRIGHT:
 			_adjust_mouse_sens(MOUSE_SENS_STEP)
-		elif event.keycode == KEY_3:
-			GameState.select_item_slot(2)
-		elif event.keycode == KEY_4:
-			GameState.select_item_slot(3)
-		elif event.keycode == KEY_5:
-			GameState.select_item_slot(4)
+		elif event.keycode >= KEY_1 and event.keycode <= KEY_9:
+			GameState.select_item_slot(event.keycode - KEY_1)
 
 
 func _adjust_mouse_sens(delta: float) -> void:
@@ -77,6 +76,8 @@ func _adjust_mouse_sens(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if GameState.ui_blocked():
+		input_dir = Vector2.ZERO
 	var direction := (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
 	var speed := (SPRINT if Input.is_key_pressed(KEY_SHIFT) else SPEED) * _move_factor()
 
@@ -127,6 +128,8 @@ func _move_factor() -> float:
 
 func _is_in_lake() -> bool:
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if bool(cm.get("panorama_mode")):
+			continue
 		if not cm.has_method("is_world_in_lake"):
 			continue
 		var dream_cm := bool(cm.get("is_dream_layer"))

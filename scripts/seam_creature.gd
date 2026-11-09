@@ -111,6 +111,7 @@ func take_damage(amount: int) -> void:
 
 func _die() -> void:
 	_dead = true
+	GameState.reward_kill(false, "Шовник")
 	_Vis.play_state(self, "death", true)
 	collision_layer = 0
 	collision_mask = 0
