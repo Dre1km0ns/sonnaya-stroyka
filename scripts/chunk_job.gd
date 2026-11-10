@@ -59,6 +59,12 @@ func configure(data: Dictionary) -> void:
 	_nest_cache = data.get("nests",{})
 
 func run() -> void:
+	_run_data(true)
+
+func run_plan_only() -> void:
+	_run_data(false)
+
+func _run_data(with_mesh:bool) -> void:
 	var start := Time.get_ticks_usec()
 	var occupied := {}
 	var solids := {}
@@ -71,7 +77,7 @@ func run() -> void:
 	if not is_dream_layer: _plan_trees(coord,occupied,solids)
 	_plan_nest_blocks(coord,solids)
 	_solid_by_chunk[coord] = solids
-	var geometry := _build_chunk_geometry(coord,lake,solids)
+	var geometry:Dictionary=_build_chunk_geometry(coord,lake,solids) if with_mesh else {"air":underground_air_cells(coord,lake)}
 	freeze_value(_cave_sys_cache);freeze_value(_carve_cache);freeze_value(_nest_cache)
 	result = {"coord":coord,"epoch":epoch,"revision":revision,"solids":solids,"lake":lake,"reagents":reagents,"geometry":geometry,
 		"trees":_trees_by_chunk.get(coord,[]),"walls":_walls_by_chunk.get(coord,[]),"ruin":_ruin_centers.get(coord),

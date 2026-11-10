@@ -38,7 +38,7 @@ func run() -> void:
 		vox.queue_free();await process_frame
 	G.begin_world("benchmark","","6767676767",G.DEV_SEED,true)
 	var scene=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true)
-	var t=Time.get_ticks_usec();root.add_child(scene);current_scene=scene
+	var t=Time.get_ticks_usec();root.add_child(scene);current_scene=scene;scene.switcher.show_result_ui=false
 	stats("startup",[(Time.get_ticks_usec()-t)/1000.0])
 	await create_timer(1.5).timeout
 	var console=get_first_node_in_group("dev_console")

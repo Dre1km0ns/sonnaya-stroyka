@@ -108,6 +108,7 @@ func setup(player: Node3D, world_seed: int = 1337) -> void:
 
 func clear_all() -> void:
 	_generation_epoch += 1
+	_retired_jobs.append_array(_transfer_queries.values());_transfer_queries.clear();_transfer_cache.clear()
 	# Retire in-flight immutable jobs, never wait for every worker in a gameplay frame.
 	_retired_jobs.append_array(_jobs.values());_jobs.clear();_chunk_revisions.clear();_rebuild_requests.clear()
 	for key in _loaded.keys():
@@ -2146,6 +2147,8 @@ var _insert_budget_usec:=2000
 var last_snapshot_usec:=0
 var snapshot_cells_copied:=0
 var stale_jobs_discarded:=0
+var _transfer_queries:Dictionary={}
+var _transfer_cache:Dictionary={}
 var worker_chunk_count := 0
 var last_worker_id := -1
 var generation_usec := 0
@@ -2228,6 +2231,8 @@ func _wait_jobs(insert: bool) -> void:
 
 func _exit_tree() -> void:
 	_wait_jobs(false)
+	for entry in _transfer_queries.values(): WorkerThreadPool.wait_for_task_completion(entry.id)
+	_transfer_queries.clear()
 	for entry in _retired_jobs: WorkerThreadPool.wait_for_task_completion(entry.id)
 	_retired_jobs.clear()
 
@@ -2256,6 +2261,7 @@ func _insert_chunk_data(data: Dictionary) -> void:
 	var c: Vector2i = data.coord
 	if _loaded.has(c): _unload_chunk(c,true)
 	_rebuild_requests.erase(c)
+	_transfer_cache[c]={"epoch":data.epoch,"revision":data.get("revision",0),"solids":data.solids,"air":data.geometry.get("air",{})}
 	var node := Node3D.new()
 	node.name = "Chunk_%d_%d" % [c.x,c.y]
 	node.position = chunk_origin(c)
@@ -2309,3 +2315,31 @@ func _insert_chunk_data(data: Dictionary) -> void:
 	last_worker_id = data.worker_id
 	generation_usec += data.generation_us
 	last_insert_usec = Time.get_ticks_usec()-t0
+
+func transfer_natural(cells:Array)->Dictionary:
+	var needed:Dictionary={}
+	for cell in cells: needed[world_to_chunk(Vector3(cell))]=true
+	for key in _transfer_cache.keys():
+		if not _loaded.has(key) and not needed.has(key): _transfer_cache.erase(key)
+	# Explicit validation requests can run while Wake sleeps: pure data only, no scene insertion.
+	for ck in _transfer_queries.keys():
+		var entry:Dictionary=_transfer_queries[ck]
+		if not WorkerThreadPool.is_task_completed(entry.id): continue
+		WorkerThreadPool.wait_for_task_completion(entry.id);_transfer_queries.erase(ck)
+		var data:Dictionary=entry.job.result
+		if _valid_job(data): _transfer_cache[ck]={"epoch":data.epoch,"revision":data.revision,"solids":data.solids,"air":data.geometry.air}
+	var kinds:Dictionary={};var ready:=true;var requested:Dictionary={}
+	for c in cells:
+		var ck:=world_to_chunk(Vector3(c));var cache:Dictionary=_transfer_cache.get(ck,{})
+		if cache.is_empty() or cache.epoch!=_generation_epoch or cache.revision!=int(_chunk_revisions.get(ck,0)):
+			ready=false;requested[ck]=true;continue
+		if GameState.is_terrain_removed(c): kinds[c]="";continue
+		if cache.solids.has(c): kinds[c]=cache.solids[c]
+		elif c.y<0 and c.y>=BEDROCK_Y: kinds[c]="" if cache.air.has(c) else depth_kind(c.y)
+		else: kinds[c]=""
+	for ck in requested:
+		if _transfer_queries.size()>=MAX_CHUNK_JOBS: break
+		if not _transfer_queries.has(ck):
+			var job:=_job_for(ck);var id:=WorkerThreadPool.add_task(job.run_plan_only,true,"Transfer validation")
+			_transfer_queries[ck]={"job":job,"id":id}
+	return {"ready":ready,"kinds":kinds,"pending":requested.size()}

@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 4 (entities/pickup/AI) завершён, extended smoke зелёный; большой suite запущен. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 10 ноября 2026, МСК. Текущий этап: 4 завершён; этап 5 (atomic transfer/UI) реализован, расширенные новые тесты в работе. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -38,8 +38,8 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | Готово: session epoch + chunk revisions, ближайшие/вперёд, adaptive 0.5–4ms insertion, bounded indexed snapshots, immutable caches, retired jobs |
 | 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | Готово: только changed levels, coalesced dirty, ≤2 meshes/frame +1.5ms soft budget, indexed sources, save/reload flow, inactive sleep |
 | 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | Готово: cached bounds/no process, local mask8 sphere query ≤64/1.5ms, batch inventory signals, full process+physics cull except bosses, cooperative A*/2ms and stagger, local125 nearest-block |
-| 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | TODO |
-| 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | TODO |
+| 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | Реализовано, stage5 extended tests в работе |
+| 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | Реализовано, детерминизм/7%/cap/маяк проверяются |
 | 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | TODO |
 
 ## Baseline / обнаружено
@@ -56,11 +56,11 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 - Heal2 разрешён общим slot UI, но нет use action для выбранной хилки; use_heal выбирает heal1 прежде heal2 независимо от низшего слота. Нужны тесты обоих.
 
 ## Точные следующие шаги
-1. Применить инкрементальную VoxelWorld заготовку, добавить GameState placed_cells_changed и адаптировать targeting merged collider. Убрать production rebuild на действие.
-2. Parse + smoke, исправлять реальные регрессии, обновить этот файл, commit/push WIP.
-3. Последовательно пункты7–10 с отдельными тестами; затем gameplay1–5 и TransferPlan/UX11–12. Не переписывать весь проект одним махом.
-4. Добавить suite реальные water borders, 1000-block base render, doors, fast streaming/cancel, 7 mobs/boss/pickup, old save. Before fixture ещё доступен на git main.
-5. Финальные screenshots review, зелёный smoke без leaks, changelog, main push, ZIP/upload/trash one attempt; в результате все цифры/ограничения и ссылки.
+1. Завершить stage5: `/workspace/v010/stage5_extended2.log`, script `scripts/smoke_test.gd`, новые tests10060–10093. Первый extended прогон выявил ошибки ТЕСТОВОЙ подготовки (place_wake_block запрещён во Сне, чтение Dream slot вместо Wake); fixtures поправлены, повтор запущен. Ничего не маскировать.
+2. Проверить реальный transfer UI (Esc/Y, zero clarity, pending terrain, cancellation/refund incl. overflow), old fixture `tests/fixtures/v091_save.json` создан исходным сериализатором commit89cbb0d; generator `tools/make_v091_fixture.py`.
+3. Final suite + дополнительный high-speed streaming/large base/door render probe; записать реальные числа в benchmarks/v0.10.json. Старый before water_cells=0 невалиден. llvmpipe p95 не улучшился на stage4 — не скрывать регрессии.
+4. Обновить `tools/v010_screens.gd`: transfer preview/wake result/console; переснять F3/дверь/уменьшенный меч, открыть все изображения и поправить.
+5. Версия0.10, README/CHANGELOG, финальный smoke без leaks, обновить HANDOFF, push WIP, fast-forward main+push, ZIP с .godot без .git, UploadFile/metadata, по одной попытке trash старого ZIP и старого HANDOFF, актуальная HANDOFF копия на Drive. Не писать report docs, не трогать видео.
 
 ## Внешние артефакты
 HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ/view (этап 0; обновить в конце).
@@ -104,3 +104,11 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 - Console: `pickup stats|collect`, `ai stats|budget`; Russian help/Tab.
 - Полный обновлённый benchmark запущен в `/workspace/v010/suite_stage4.log` (взять результат/добавить JSON после завершения). Mass pickup теперь содержит и first-tick, и CPU sum / wall latency для всех300; не сравнивать64 с300 как одинаковые операции. Water row теперь содержит настоящую воду через границу, не water_cells=0.
 - Дальше stage5: atomic TransferPlan + terrain-aware preflight + reserve/refund, anchor preview/highlight/cost/conflicts, wake result UI,7% rolls capped floor(3% structure), beacon+5dust. Затем финальные тесты/замеры/скрины/версия/README/CHANGELOG/main push/ZIP/Drive/one old ZIP trash.
+
+## Контрольная точка этапа5 (ещё не финальный зелёный)
+- Pure-data `transfer_plan.gd`: дедуп roots, полные bed/door/catcher, bounds/occupied terrain/placed/spawn checks; никакого частичного переноса. Якорь сначала preflight, затем резерв с receipt точных реагентов. Cancel возвращает резерв; overflow сверх100 сохраняется в optional refunded_overflow и расходуется без обрезки.
+- Wake preflight использует worker plan-only данные для неизвестных чанков, без SceneTree/scene insertion и ожидания всех jobs. Первая попытка Q может сказать «проверяем»; UI polling .15s. Terrain snapshot/session/revision кешируется, дальние старые validation entries вычищаются.
+- Мутации7% rolls, затем детерминированный shuffle и cap floor(3% объектов); N<34 =>0. Полные многоблочные объекты/станции не мутируют. Все маяки атомарного batch тоже защищают куб±10; за каждый предотвращённый roll +5 dust, даже если общий cap уже меньше числа rolls.
+- Result UI ставит мир на паузу. При конфликте можно остаться/повторить/вернуться в Явь с СОХРАНЕНИЕМ черновика и возвратом резерва (осознанная защита от потери постройки). При0 clarity Esc делает безопасный abort; второй Esc/Y закрывает summary. Нормальный успешный wake всё ещё растворяет незаякоренное (1dust/5 объектов).
+- Console `transfer plan|wake|cancel|abort|risk`, реальный `anchor preview`; wireframe батч и счётчик/цена/conflicts/instability. Нужно финально просмотреть UI.
+- Stage4 suite завершён: build1000 avg2.556/p954.812/max8.725ms (before7.429/14.156/22.162), 3meshes/3bodies/13nodes; mass300 CPU7.696ms / wall67.685ms / worst1.747ms; seven enemies max171.997ms (before786.512), p9573.693 (before53.176, регрессия); walking p9561.716 (before45.035, регрессия). Полные строки сохранены в benchmarks/v0.10.json. После замера восстановлен старый DevSeed default held pickaxe2 вместо нового sword3 (для сопоставимости/familiar hotbar); нужен final повтор.

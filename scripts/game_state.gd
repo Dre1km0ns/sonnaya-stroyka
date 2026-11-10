@@ -3,6 +3,7 @@ extends Node
 ## общий «кошель» ресурсов (реагенты, осыпь), вертикальная полоса якорей/маяков,
 ## «под подушкой» (хилки), смерть с выпадением, кулдаун босса, дев-сид 6767676767.
 
+const TransferPlan:=preload("res://scripts/transfer_plan.gd")
 const ItemDB := preload("res://scripts/item_db.gd")
 
 signal placed_cells_changed(is_dream: bool, cells: Array)
@@ -132,6 +133,9 @@ var reagent_counts: Array:
 		notify_inventory()
 
 ## Блоки сна: ключ Vector3i → словарь {kind, anchored, mutant}
+var transfer_ui_open:=false
+var last_transfer_preflight_usec:=0
+var last_transfer_apply_usec:=0
 var dream_mapping := "parallel"
 var flowing_water: Dictionary = {}
 var _snapshot_indices: Dictionary = {}
@@ -204,7 +208,7 @@ func _ready() -> void:
 
 func ui_blocked() -> bool:
 	if console_open: return true
-	return Engine.get_process_frames() <= modal_closed_frame + 1 or storage_open or craft_menu_open or inventory_open or paused or death_open or pillow_open
+	return transfer_ui_open or Engine.get_process_frames() <= modal_closed_frame + 1 or storage_open or craft_menu_open or inventory_open or paused or death_open or pillow_open
 
 var pillow_open: bool = false
 var storage_open := false
@@ -254,6 +258,7 @@ func reset_state() -> void:
 	armor = [{},{},{},{}]
 	sword2_crafted = false
 	console_open = false
+	transfer_ui_open=false
 	god_mode = false
 	dev_fly = false
 	storage_open = false
@@ -334,8 +339,8 @@ func is_dev() -> bool:
 	return dev_mode
 
 
-const DEV_WAKE_ITEMS := ["sword3","pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
-	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock"]
+const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
+	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock", "sword3"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
 
@@ -498,7 +503,7 @@ func _set_item_total(id: String, value: int, emit: bool = true) -> void:
 		return
 	var cur := raw_count(id)
 	if pouch.has(id):
-		pouch[id] = maxi(0, value if id == "dust" else mini(value, REAGENT_CAP))
+		pouch[id] = maxi(0, value if id == "dust" else mini(value, maxi(REAGENT_CAP,cur)))
 		if emit:
 			notify_inventory()
 		return
@@ -1627,62 +1632,90 @@ func can_afford_anchor(t: AnchorType) -> bool:
 	return anchors3 >= 1 and reagents >= ANCHOR3_COST_REAGENTS and clarity >= ANCHOR3_COST_CLARITY
 
 
-func try_place_anchor(origin: Vector3i) -> bool:
-	if not is_dream():
-		set_hint("Якоря ставятся только во сне.")
-		return false
-	var t := selected_anchor
-	if not can_afford_anchor(t):
-		set_hint("Не хватает ресурсов/ясности для якоря.")
-		return false
+func anchor_cost(t:int) -> Dictionary:
+	return {"special":["nail","wedge","anchor3"][clampi(t,0,2)],"reagents":[NAIL_COST_REAGENTS,WEDGE_COST_REAGENTS,ANCHOR3_COST_REAGENTS][clampi(t,0,2)],"clarity":[NAIL_COST_CLARITY,WEDGE_COST_CLARITY,ANCHOR3_COST_CLARITY][clampi(t,0,2)]}
 
-	var cells: Array[Vector3i] = []
-	if t == AnchorType.NAIL:
-		if not dream_blocks.has(origin):
-			set_hint("Гвоздь: целься в существующий блок.")
-			return false
-		cells.append(origin)
-		if not dev_mode:
-			nails -= 1
-		spend_reagents(NAIL_COST_REAGENTS, false)
-		spend_clarity(NAIL_COST_CLARITY)
+func _transfer_manager() -> Node:
+	if not is_inside_tree() or self!=get_node_or_null("/root/GameState"): return null
+	var scene:=get_tree().current_scene
+	if not scene: return null
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if not cm.is_dream_layer and not cm.panorama_mode and scene.is_ancestor_of(cm): return cm
+	return null
+
+func _make_transfer_plan(roots:Array) -> Dictionary:
+	var started:=Time.get_ticks_usec();var cells:Dictionary={}
+	for c in roots:
+		for cell in TransferPlan.footprint(c,dream_blocks.get(c,{})): cells[cell]=true
+	var natural:Dictionary={"ready":true,"kinds":{},"pending":0};var manager:=_transfer_manager()
+	if manager: natural=manager.transfer_natural(cells.keys())
+	var areas:Array=[AABB(spawn_point+Vector3(-0.4,0,-0.4),Vector3(0.8,1.7,0.8)),AABB(creation_spawn+Vector3(-0.4,0,-0.4),Vector3(0.8,1.7,0.8))]
+	var plan:=TransferPlan.build(dream_blocks,wake_blocks,roots,natural.kinds,areas,natural.ready)
+	plan.pending=natural.get("pending",0);last_transfer_preflight_usec=Time.get_ticks_usec()-started;return plan
+
+func transfer_plan() -> Dictionary:
+	var cells:Array=[]
+	for anchor in pending_anchors: cells.append_array(anchor.get("cells",[]))
+	return _make_transfer_plan(TransferPlan.roots_for(dream_blocks,cells,true))
+
+func anchor_preview(origin:Vector3i) -> Dictionary:
+	var selected:Array=[];var t:=int(selected_anchor)
+	if t==AnchorType.NAIL: selected.append(origin)
 	else:
-		var zone := WEDGE_SIZE if t == AnchorType.WEDGE else ANCHOR3_SIZE
-		var half := zone / 2
-		for x in range(origin.x - half, origin.x - half + zone):
-			for y in range(origin.y - half, origin.y - half + zone):
-				for z in range(origin.z - half, origin.z - half + zone):
-					var c := Vector3i(x, y, z)
-					if dream_blocks.has(c):
-						cells.append(c)
-		if cells.is_empty():
-			set_hint("Якорь: в зоне нет блоков.")
-			return false
-		if t == AnchorType.WEDGE:
-			if not dev_mode:
-				wedges -= 1
-			spend_reagents(WEDGE_COST_REAGENTS, false)
-			spend_clarity(WEDGE_COST_CLARITY)
-		else:
-			if not dev_mode:
-				anchors3 -= 1
-			spend_reagents(ANCHOR3_COST_REAGENTS, false)
-			spend_clarity(ANCHOR3_COST_CLARITY)
+		var size:=WEDGE_SIZE if t==AnchorType.WEDGE else ANCHOR3_SIZE;var half:=int(size/2)
+		for x in range(origin.x-half,origin.x-half+size):
+			for y in range(origin.y-half,origin.y-half+size):
+				for z in range(origin.z-half,origin.z-half+size):
+					var c:=Vector3i(x,y,z)
+					if dream_blocks.has(c): selected.append(c)
+	var local:=TransferPlan.roots_for(dream_blocks,selected);var new_roots:Array[Vector3i]=[];var already:=0
+	for c in local:
+		if dream_blocks[c].get("anchored",false): already+=1
+		else: new_roots.append(c)
+	var all_cells:Array=[]
+	for anchor in pending_anchors: all_cells.append_array(anchor.get("cells",[]))
+	all_cells.append_array(new_roots)
+	var plan:=_make_transfer_plan(TransferPlan.roots_for(dream_blocks,all_cells))
+	plan.new_roots=new_roots;plan.local_count=local.size();plan.already=already;plan.cost=anchor_cost(t);plan.affordable=can_afford_anchor(selected_anchor)
+	if new_roots.is_empty(): plan.ok=false
+	return plan
 
-	for c in cells:
-		var data: Dictionary = dream_blocks[c]
-		data["anchored"] = true
-		dream_blocks[c] = data
+func try_place_anchor(origin:Vector3i) -> bool:
+	if not is_dream(): set_hint("Якоря ставятся только во сне.");return false
+	var plan:=anchor_preview(origin)
+	if not plan.ready: set_hint("Проверяем рельеф Яви… подождите и нажмите Q снова.",false);return false
+	if not plan.ok:
+		set_hint("Якорь: "+(str(plan.conflicts[0]) if not plan.conflicts.is_empty() else "нет новых блоков в зоне."),false);return false
+	if not plan.affordable: set_hint("Не хватает ресурсов/ясности для якоря.");return false
+	# All validation precedes every deduction. Record the exact reservation for safe cancellation.
+	var cost:Dictionary=plan.cost;var before:=pouch.duplicate(true);var receipt:Dictionary={"dev":dev_mode,"wallet":{},"special":cost.special,"clarity":cost.clarity}
+	begin_inventory_batch()
+	if not dev_mode:
+		_add_special(cost.special,-1);spend_reagents(cost.reagents,false);spend_clarity(cost.clarity)
+		for id in ["reagent1","reagent2","reagent3"]: receipt.wallet[id]=int(before[id])-int(pouch[id])
+	var cells:Array[Vector3i]=[]
+	for c in plan.new_roots:
+		for cell in TransferPlan.footprint(c,dream_blocks[c]): dream_blocks[cell]["anchored"]=true;cells.append(cell)
+	pending_anchors.append({"type":selected_anchor,"origin":origin,"cells":cells,"receipt":receipt})
+	placed_cells_changed.emit(true,cells);notify_inventory();end_inventory_batch()
+	set_hint("%s: закреплено %d объектов / %d ячеек. Ресурсы зарезервированы; отмена возвращает их."%[ItemDB.display_name(cost.special),plan.new_roots.size(),cells.size()],false);return true
 
-	pending_anchors.append({"type": t, "origin": origin, "cells": cells})
-	notify_inventory()
-	var aname := "Гвоздь"
-	if t == AnchorType.WEDGE:
-		aname = "Клин"
-	elif t == AnchorType.ANCHOR3:
-		aname = "Якорь3"
-	set_hint("%s: заякорено %d блок(ов). F — проснуться." % [aname, cells.size()])
-	return true
+func cancel_anchors() -> Dictionary:
+	var refunded:Dictionary={"anchors":0,"reagents":0,"clarity":0.0}
+	begin_inventory_batch()
+	for anchor in pending_anchors:
+		var receipt:Dictionary=anchor.get("receipt",{})
+		if receipt.get("dev",dev_mode): continue
+		var cost:=anchor_cost(int(anchor.get("type",0)));_add_special(cost.special,1);refunded.anchors+=1
+		var wallet:Dictionary=receipt.get("wallet",{"reagent1":cost.reagents})
+		for id in ["reagent1","reagent2","reagent3"]:
+			var count:=clampi(int(wallet.get(id,0)),0,int(cost.reagents));pouch[id]=int(pouch[id])+count;refunded.reagents+=count
+		refunded.clarity+=cost.clarity
+	var changed:Array=[]
+	for c in dream_blocks:
+		if dream_blocks[c].get("anchored",false): dream_blocks[c].anchored=false;changed.append(c)
+	pending_anchors.clear();clarity=minf(dream_clarity_max(),clarity+refunded.clarity)
+	placed_cells_changed.emit(true,changed);clarity_changed.emit(clarity,dream_clarity_max());notify_inventory();end_inventory_batch();return refunded
 
 
 func enter_dream() -> void:
@@ -1695,68 +1728,44 @@ func enter_dream() -> void:
 	set_hint("Сон. ЛКМ — блок, ПКМ — снять, R — сменить якорь, Q — заякорить, C — меню крафта, F — проснуться.",false)
 
 
-func resolve_wake() -> Dictionary:
-	## Переносит новые якоря в явь с тем же Vector3i (высота совпадает).
-	## v0.7: после пробуждения ВСЕ поставленные во сне блоки исчезают — в следующий сон строить заново.
-	var transferred := 0
-	var dust_gained := 0
-	var mutations := 0
-	var newly: Dictionary = {}
-
-	for a in pending_anchors:
-		for c in a["cells"]:
-			newly[c] = true
-
-	for key in newly.keys():
-		var cell: Vector3i = key
-		if not dream_blocks.has(cell):
-			continue
-		if wake_blocks.has(cell):
-			continue
-		var data: Dictionary = dream_blocks[cell]
-		if data.has("root"):
-			continue
-		var kind := str(data.get("kind", "drift"))
-		if not can_place_shape(wake_blocks,cell,kind):
-			continue
-		var mutant := false
-		if not (kind in NO_MUTATION_KINDS) and randf() < MUTATION_CHANCE and not suppress_mutation(cell):
-			mutant = true
-			mutations += 1
-			kind = "mouth"
-		wake_blocks[cell] = {
-			"kind": kind,
-			"mutant": mutant,
-		}
-		if kind=="door":
-			wake_blocks[cell]["facing"] = int(data.get("facing",0))
-			wake_blocks[cell]["open"] = bool(data.get("open",false))
-			wake_blocks[cell]["hinge_right"] = bool(data.get("hinge_right",false))
-		add_shape_parts(wake_blocks, cell, kind)
-		transferred += 1
-
-	var dream_roots := 0
-	for block in dream_blocks.values():
-		if not block.has("root"):
-			dream_roots += 1
-	dust_gained += maxi(0,dream_roots-transferred)/5
-	dust += dust_gained
-	pending_anchors.clear()
-	var wiped := dream_blocks.size()
-	dream_blocks.clear()
-	current_world = World.WAKE
-	_bind_inventory()
-	dream_exit_count += 1
-	clarity = dream_clarity_max()
-	clarity_changed.emit(clarity, dream_clarity_max())
-	notify_inventory()
-	world_changed.emit(false)
-	wake_resolved.emit(transferred, dust_gained, mutations)
-	var msg := "Пробуждение: +%d блоков в явь (сон рассеялся: %d блок(ов))" % [transferred, wiped]
-	if mutations > 0:
-		msg += ", мутаций: %d (блок «рот»)" % mutations
-	set_hint(msg)
-	return {"transferred": transferred, "dust": dust_gained, "mutations": mutations}
+func resolve_wake(abort_transfer:bool=false) -> Dictionary:
+	var plan:=transfer_plan()
+	if not abort_transfer and not plan.ok:
+		return {"ok":false,"ready":plan.ready,"blocked":plan.blocked,"conflicts":plan.conflicts,"pending":plan.pending,"transferred":0,"mutations":0,"dust":0,"spent":{}}
+	var started:=Time.get_ticks_usec();var root_count:=0
+	for data in dream_blocks.values():
+		if not data.has("root"): root_count+=1
+	var spent:Dictionary={"anchors":pending_anchors.size(),"reagents":0,"clarity":0.0}
+	for anchor in pending_anchors:
+		var cost:=anchor_cost(int(anchor.get("type",0)));spent.reagents+=cost.reagents;spent.clarity+=cost.clarity
+	var refunded:Dictionary={};var mutation:Dictionary={"cells":[],"protected":0,"cap":0};var transferred:=0;var dust_gained:=0
+	if abort_transfer:
+		refunded=cancel_anchors();spent={"anchors":0,"reagents":0,"clarity":0.0}
+	else:
+		var beacons:Array=[]
+		for c in wake_blocks:
+			if wake_blocks[c].get("kind","")=="beacon": beacons.append(c)
+		for c in plan.roots:
+			if dream_blocks[c].get("kind","")=="beacon": beacons.append(c)
+		mutation=TransferPlan.mutations(dream_blocks,plan.roots,beacons,world_seed_dream^hash(plan.roots)^(dream_exit_count*1103515245),NO_MUTATION_KINDS)
+		var next_wake:=wake_blocks.duplicate();var changed:Array=[]
+		for c in plan.roots:
+			var data:Dictionary=dream_blocks[c].duplicate(true);data.erase("anchored")
+			data.mutant=c in mutation.cells
+			if data.mutant: data.kind="mouth"
+			next_wake[c]=data;changed.append(c)
+			for cell in TransferPlan.footprint(c,data):
+				if cell!=c: next_wake[cell]=dream_blocks[cell].duplicate(true);changed.append(cell)
+		wake_blocks=next_wake;transferred=plan.count
+		placed_cells_changed.emit(false,changed)
+		dust_gained=int(maxi(0,root_count-transferred)/5)+int(mutation.protected)*5;pouch.dust=int(pouch.dust)+dust_gained
+		pending_anchors.clear();dream_blocks.clear()
+	current_world=World.WAKE;_bind_inventory();dream_exit_count+=1;clarity=dream_clarity_max()
+	clarity_changed.emit(clarity,dream_clarity_max());notify_inventory();world_changed.emit(false)
+	wake_resolved.emit(transferred,dust_gained,mutation.cells.size());last_transfer_apply_usec=Time.get_ticks_usec()-started
+	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0 if abort_transfer else maxi(0,root_count-transferred),"spent":spent,"refunded":refunded}
+	set_hint("Пробуждение: перенесено %d, мутаций %d, осыпи +%d%s"%[transferred,mutation.cells.size(),dust_gained," · черновик сохранён, ресурсы возвращены" if abort_transfer else ""],false)
+	return result
 
 
 func place_dream_block(cell: Vector3i, kind: String = "drift", facing: int = 0) -> bool:
@@ -1824,6 +1833,7 @@ func to_save_dict() -> Dictionary:
 		"sword2_crafted":sword3_crafted, # legacy alias
 		"sword3_crafted":sword3_crafted,
 		"progression_revision":10,
+		"refunded_overflow":[maxi(0,int(pouch.reagent1)-REAGENT_CAP),maxi(0,int(pouch.reagent2)-REAGENT_CAP),maxi(0,int(pouch.reagent3)-REAGENT_CAP)],
 		"spatial_mapping":dream_mapping,
 		"flowing_water":water_to_json(),
 		"mother_defeated": mother_defeated,
@@ -1931,7 +1941,7 @@ func apply_save_dict(data: Dictionary) -> void:
 		var rc7: Variant = data.get("reagent_counts", [])
 		if typeof(rc7) == TYPE_ARRAY:
 			for i7 in range(mini(REAGENT_TYPE_COUNT, rc7.size())):
-				pouch["reagent%d" % (i7 + 1)] = clampi(int(rc7[i7]), 0, REAGENT_CAP)
+				pouch["reagent%d" % (i7 + 1)] = clampi(int(rc7[i7]),0,REAGENT_CAP+(clampi(int(data.get("refunded_overflow",[0,0,0])[i7]),0,10000) if data.get("refunded_overflow",[]).size()>i7 else 0))
 		pouch["dust"] = maxi(0, int(data.get("dust", 0)))
 	elif fmt >= 5 and typeof(slots) == TYPE_ARRAY:
 		# v0.5–0.6: один инвентарь → инвентарь яви; реагенты/осыпь из слотов → кошель.
@@ -2122,7 +2132,7 @@ func _anchors_to_json(src: Array) -> Array:
 		out.append({
 			"type": int(a.get("type", 0)),
 			"origin": [origin.x, origin.y, origin.z],
-			"cells": cells_out,
+			"cells": cells_out, "receipt":a.get("receipt",{}).duplicate(true),
 		})
 	return out
 
@@ -2140,7 +2150,7 @@ func _anchors_from_json(src: Variant) -> Array:
 				cells.append(Vector3i(int(arr[0]), int(arr[1]), int(arr[2])))
 		var o: Array = a.get("origin", [0, 0, 0])
 		var origin := Vector3i(int(o[0]), int(o[1]), int(o[2])) if o.size() >= 3 else Vector3i.ZERO
-		out.append({"type": int(a.get("type", 0)), "origin": origin, "cells": cells})
+		out.append({"type": int(a.get("type", 0)), "origin": origin, "cells": cells, "receipt":a.get("receipt",{}).duplicate(true)})
 	return out
 
 func _cells_kind_to_json(src: Dictionary) -> Dictionary:

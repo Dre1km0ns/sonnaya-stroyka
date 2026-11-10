@@ -602,6 +602,7 @@ func _run() -> void:
 	await _v010_gameplay_checks()
 	await _v010_stream_checks()
 	await _v010_entity_checks()
+	await _v010_transfer_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -1801,6 +1802,7 @@ func _v09_checks() -> void:
 	scene.set_meta("smoke",true)
 	root.add_child(scene)
 	current_scene = scene
+	scene.switcher.show_result_ui=false
 	await process_frame
 	await physics_frame
 	scene.player.set_physics_process(false)
@@ -2091,7 +2093,11 @@ func _v091_door_checks(scene: Node,console: Node) -> void:
 	_a(G.dream_blocks[d].facing==1 and G.dream_blocks.has(d+Vector3i.UP),9214)
 	G.dream_blocks[d]["open"] = true
 	G.select_anchor(G.AnchorType.NAIL)
-	_a(G.try_place_anchor(d),9215)
+	var anchor_ready:Dictionary=G.anchor_preview(d)
+	for attempt in range(300):
+		if anchor_ready.ready: break
+		await process_frame;anchor_ready=G.anchor_preview(d)
+	_a(anchor_ready.ready and G.try_place_anchor(d),9215)
 	G.resolve_wake()
 	_a(G.wake_blocks[d].facing==1 and G.wake_blocks[d].open and G.wake_blocks.has(d+Vector3i.UP),9216)
 	G.remove_shape(G.wake_blocks,d)
@@ -2125,7 +2131,7 @@ func _v010_build_checks() -> void:
 func _v010_gameplay_checks() -> void:
 	var G: Node=root.get_node("GameState")
 	G.begin_world("v010 test","","6767676767",G.DEV_SEED,true)
-	var scene: Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene
+	var scene: Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene;scene.switcher.show_result_ui=false
 	await process_frame
 	var console: Node=get_first_node_in_group("dev_console")
 	var hud: Node=scene.get_node("HUD")
@@ -2222,7 +2228,7 @@ func _v010_stream_checks() -> void:
 
 func _v010_entity_checks() -> void:
 	var G: Node=root.get_node("GameState");G.begin_world("entity test","","6767676767",G.DEV_SEED,true)
-	var scene: Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene
+	var scene: Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene;scene.switcher.show_result_ui=false
 	var player: Node=scene.player;player.auto_pickup_enabled=false;player.set_physics_process(false);player.global_position=Vector3(3.5,0.1,3.5)
 	G.dev_mode=false
 	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
@@ -2256,4 +2262,90 @@ func _v010_entity_checks() -> void:
 	for node in get_nodes_in_group("reagent"):
 		if scene.is_ancestor_of(node): _a(not node.is_processing(),10058)
 	print("SMOKE: v0.10 local pickup200 in %d ticks / signals%d / max%dus; grave sensor, full culling/boss exclusion, cooperative A*, local nearest block OK"%[ticks,emitted[0],maximum])
+	scene.queue_free();await process_frame;current_scene=null;G.reset_state()
+
+func _v010_transfer_checks() -> void:
+	var Plan=load("res://scripts/transfer_plan.gd");var gs:Node=load("res://scripts/game_state.gd").new();root.add_child(gs)
+	var times:Array=[]
+	for n in [100,500,1000]:
+		gs.reset_state();gs.enter_dream();gs.world_seed_dream=12345
+		var cells:Array=[]
+		for i in range(n):
+			var c:=Vector3i(200+i%10,5+int(i/100),200+int(i%100/10));gs.place_dream_block(c,"drift");gs.dream_blocks[c].anchored=true;cells.append(c)
+		gs.pending_anchors=[{"type":2,"cells":cells,"receipt":{"dev":true}}]
+		var snapshot:Dictionary=gs.to_save_dict();var preflight:Dictionary=gs.transfer_plan()
+		_a(preflight.ok and preflight.count==n and preflight.cells.size()==n,10060)
+		var result:Dictionary=gs.resolve_wake();var first:Dictionary=gs._blocks_to_json(gs.wake_blocks)
+		_a(result.ok and result.transferred==n and result.mutations<=floori(n*0.03) and gs.dream_blocks.is_empty(),10061)
+		times.append({"blocks":n,"preflight_us":gs.last_transfer_preflight_usec,"apply_us":gs.last_transfer_apply_usec,"mutations":result.mutations})
+		gs.apply_save_dict(snapshot);var second:Dictionary=gs.resolve_wake()
+		_a(first==gs._blocks_to_json(gs.wake_blocks) and second.mutations==result.mutations,10062)
+	gs.reset_state();gs.enter_dream();gs.nails=3;gs.reagent_counts=[0,1,2];gs.select_anchor(gs.AnchorType.NAIL)
+	var c:=Vector3i(250,5,250);gs.place_dream_block(c,"door",3);gs.dream_blocks[c].open=true;gs.wake_blocks[c+Vector3i.UP]={"kind":"stone","mutant":false}
+	var wallet:Dictionary=gs.pouch.duplicate();var clarity_before:float=gs.clarity
+	_a(not gs.try_place_anchor(c+Vector3i.UP) and gs.nails==3 and wallet==gs.pouch and gs.clarity==clarity_before and gs.pending_anchors.is_empty(),10063)
+	gs.remove_shape(gs.wake_blocks,c+Vector3i.UP)
+	_a(gs.try_place_anchor(c+Vector3i.UP) and gs.pending_anchors[0].cells.size()==2 and gs.pouch.reagent2==0 and gs.nails==2,10064)
+	_a(not gs.try_place_anchor(c) and gs.nails==2,10065)
+	var reserved:Dictionary=gs.to_save_dict();gs.apply_save_dict(reserved)
+	_a(gs.pending_anchors[0].receipt.wallet.reagent2==1,10066)
+	gs.wake_blocks[c+Vector3i.UP]={"kind":"stone","mutant":false};var failed:Dictionary=gs.resolve_wake()
+	_a(not failed.ok and failed.blocked==1 and gs.is_dream() and gs.dream_blocks.size()==2 and gs.nails==2 and gs.wake_blocks.size()==1,10067)
+	gs.add_typed_reagent(2,100);var refund:Dictionary=gs.cancel_anchors()
+	_a(refund.reagents==1 and gs.pouch.reagent2==101 and gs.nails==3 and gs.pending_anchors.is_empty() and not gs.dream_blocks[c].anchored,10068)
+	gs.apply_save_dict(gs.to_save_dict());gs.spend_reagents(1)
+	_a(gs.pouch.reagent2==100 and gs.pouch.reagent3==2,10069)
+	gs.remove_shape(gs.wake_blocks,c+Vector3i.UP);_a(gs.try_place_anchor(c),10070)
+	var aborted:Dictionary=gs.resolve_wake(true)
+	_a(aborted.ok and aborted.aborted and aborted.transferred==0 and gs.dream_blocks.size()==2 and gs.pending_anchors.is_empty() and not gs.is_dream(),10071)
+	gs.enter_dream();_a(gs.dream_blocks.has(c) and gs.try_place_anchor(c),10072)
+	var transferred:Dictionary=gs.resolve_wake();_a(transferred.transferred==1 and gs.wake_blocks[c].facing==3 and gs.wake_blocks[c].open and gs.wake_blocks[c+Vector3i.UP].root==gs.cell_key(c),10073)
+	gs.reset_state();gs.enter_dream();gs.nails=5;gs.reagent_counts=[10,10,10]
+	var at_spawn:=Vector3i(floori(gs.creation_spawn.x),floori(gs.creation_spawn.y),floori(gs.creation_spawn.z));gs.place_dream_block(at_spawn,"stone")
+	_a(not gs.try_place_anchor(at_spawn) and gs.nails==5,10074)
+	var source:Dictionary={c:{"kind":"stone"}};var terrain:Dictionary={c:"stone"}
+	_a(not Plan.build(source,{},[c],terrain,[]).ok,10075)
+	source[c]={"kind":"door"};_a(not Plan.build(source,{},[c],{},[]).ok,10076)
+	source.clear();var roots:Array=[]
+	for i in range(10000): var cell:=Vector3i(i%100,10,int(i/100));source[cell]={"kind":"stone"};roots.append(cell)
+	var rolled:Dictionary=Plan.mutations(source,roots,[],98765,[])
+	_a(rolled.rolled>600 and rolled.rolled<800 and rolled.cells.size()==300,10077)
+	var protected_roots:Array=[];source.clear()
+	for i in range(1000):var cell:=Vector3i(200+i%10,5+int(i/100),200+int(i%100/10));source[cell]={"kind":"stone"};protected_roots.append(cell)
+	var protected_result:Dictionary=Plan.mutations(source,protected_roots,[Vector3i(205,10,205)],12345,[])
+	_a(protected_result.cells.is_empty() and protected_result.protected>30 and protected_result.protected<110,10078)
+	# Real v0.9.1 serializer fixture (source commit recorded in JSON), not a new save with fields removed.
+	var old:Dictionary=JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/v091_save.json"));gs.apply_save_dict(old)
+	_a(old._fixture_source.begins_with("89cbb0d") and gs.dream_mapping=="legacy_workshop" and not gs.sword3_crafted,10079)
+	_a(gs.inv_wake[0].durability==117 and gs.armor[1].id=="scale_chest" and gs.armor[1].durability==37 and gs.storage_slots(Vector3i(45,4,40))[0].count==23,10080)
+	_a(gs.wake_blocks[Vector3i(40,4,40)].facing==3 and gs.wake_blocks[Vector3i(40,4,40)].open and gs.transfer_plan().cells.size()==2,10081)
+	var old_r1:int=gs.pouch.reagent1;gs.cancel_anchors();_a(gs.pouch.reagent1==old_r1+1 and gs.dream_blocks.size()==2,10082)
+	gs.queue_free();await process_frame
+	var G:Node=root.get_node("GameState");G.begin_world("transfer scene test","","6767676767",G.DEV_SEED,true)
+	var scene:Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene
+	await process_frame;scene.player.set_physics_process(false);scene.switcher.enter_dream()
+	var far:=Vector3i(512,80,512);G.place_dream_block(far,"door",2);G.select_anchor(G.AnchorType.NAIL)
+	var loaded_before:int=scene.wake_chunks.get_loaded_count();var p:Dictionary=G.anchor_preview(far)
+	_a(not p.ready and not G.try_place_anchor(far) and G.pending_anchors.is_empty(),10083)
+	for i in range(300):
+		if p.ready:break
+		await process_frame;p=G.anchor_preview(far)
+	_a(p.ready and p.ok and scene.wake_chunks.get_loaded_count()==loaded_before and G.try_place_anchor(far),10084)
+	# Explicit natural lookup is accurate even for unloaded chunks, without scene insertion.
+	var natural:Dictionary=scene.wake_chunks.transfer_natural([Vector3i(512,-31,512)])
+	_a(natural.ready and natural.kinds[Vector3i(512,-31,512)]=="bedrock",10085)
+	G.wake_blocks[far+Vector3i.UP]={"kind":"stone","mutant":false};G.placed_cells_changed.emit(false,[far+Vector3i.UP]);G.clarity=0;var ui:Node=get_first_node_in_group("transfer_result_ui")
+	var stopped:Dictionary=scene.switcher.wake_up()
+	_a(not stopped.ok and G.is_dream() and G.transfer_ui_open and paused and ui.panel.visible,10086)
+	var key:=InputEventKey.new();key.keycode=KEY_ESCAPE;key.pressed=true;ui._input(key)
+	_a(not G.is_dream() and ui.last_result.aborted and G.dream_blocks.has(far) and G.pending_anchors.is_empty(),10087)
+	key.keycode=KEY_Y;ui._input(key);_a(not G.transfer_ui_open and not paused and Input.mouse_mode==Input.MOUSE_MODE_CAPTURED,10088)
+	G.remove_shape(G.wake_blocks,far+Vector3i.UP);scene.switcher.enter_dream();_a(G.try_place_anchor(far),10089)
+	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and ui.panel.visible and paused and G.dream_blocks.is_empty(),10090)
+	ui._input(key);_a(not paused and not G.transfer_ui_open,10091)
+	var console:Node=get_first_node_in_group("dev_console")
+	for command in ["help transfer","transfer plan","transfer risk","transfer cancel"]:_a(not console.execute(command).begins_with("Ошибка"),10092)
+	_a(console.completion_candidates("transfer ").size()==5,10093)
+	print("SMOKE: v0.10 atomic preflight/apply ",JSON.stringify(times)," rolls7%=",rolled.rolled,"/10000; beacon protected=",protected_result.protected," legacy v091/receipts/refund overflow/multicell/async validation/pause/Esc/Y safe abort OK")
+	var file:=FileAccess.open("/workspace/v010/transfer_measures.json",FileAccess.WRITE);file.store_string(JSON.stringify({"sizes":times,"rolls_10000":rolled.rolled,"beacon_protected":protected_result.protected},"  "));file.close()
 	scene.queue_free();await process_frame;current_scene=null;G.reset_state()

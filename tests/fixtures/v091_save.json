@@ -1,0 +1,773 @@
+{
+	"_fixture_source": "89cbb0d807041022accddd5a8837c3be90720359: actual v0.9.1 serializer",
+	"active_bed": "",
+	"anchors3": 0,
+	"armor": [
+		{
+			"count": 1,
+			"durability": 37,
+			"id": "wood_helmet"
+		},
+		{
+			"count": 1,
+			"durability": 37,
+			"id": "scale_chest"
+		},
+		{
+			"count": 1,
+			"durability": 37,
+			"id": "wood_legs"
+		},
+		{
+			"count": 1,
+			"durability": 37,
+			"id": "scale_boots"
+		}
+	],
+	"awake_time": 0.0,
+	"beacons": 0,
+	"block_stash": {},
+	"boss_next_mine": false,
+	"clarity": 95.0,
+	"collected_eggs": [],
+	"collected_reagent_ids": [],
+	"creation_spawn": [
+		0.0,
+		2.0,
+		6.0
+	],
+	"day_time": 120.0,
+	"dev_mode": false,
+	"dream_blocks": {
+		"50,4,50": {
+			"anchored": true,
+			"facing": 1,
+			"kind": "door",
+			"mutant": false
+		},
+		"50,5,50": {
+			"kind": "door_top",
+			"root": "50,4,50"
+		}
+	},
+	"dream_bonus_seconds": 0.0,
+	"dream_exit_count": 0,
+	"dust": 0,
+	"graves": [],
+	"heal_cd": 0.0,
+	"idea_eaten": {},
+	"inv_dream": [
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		}
+	],
+	"item_slots": [
+		{
+			"count": 1,
+			"durability": 117,
+			"id": "pickaxe2",
+			"name": "Кирка2"
+		},
+		{
+			"count": 1,
+			"durability": 500,
+			"id": "sword2",
+			"name": "Каменный меч"
+		},
+		{
+			"count": 2,
+			"id": "heal2",
+			"name": "Хилка2"
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		}
+	],
+	"moon_energy": 0.56,
+	"moon_revision": 1,
+	"mother_cooldown": 0.0,
+	"mother_defeated": true,
+	"nails": 2,
+	"peaceful": false,
+	"pending_anchors": [
+		{
+			"cells": [
+				[
+					50,
+					4,
+					50
+				]
+			],
+			"origin": [
+				50,
+				4,
+				50
+			],
+			"type": 0
+		}
+	],
+	"pillow": [
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		}
+	],
+	"player_hp": 100,
+	"reagent_counts": [
+		6,
+		8,
+		9
+	],
+	"removed_dream_terrain": {},
+	"removed_terrain": {},
+	"seed_text": "12345",
+	"selected_anchor": 0,
+	"selected_slot": 0,
+	"spawn_point": [
+		0.0,
+		2.0,
+		6.0
+	],
+	"sword2_crafted": true,
+	"tutorial_enabled": true,
+	"tutorial_step": 0,
+	"version": 9,
+	"wake_blocks": {
+		"40,4,40": {
+			"facing": 3,
+			"kind": "door",
+			"mutant": false,
+			"open": true
+		},
+		"40,5,40": {
+			"kind": "door_top",
+			"root": "40,4,40"
+		},
+		"42,4,40": {
+			"kind": "bed",
+			"mutant": false
+		},
+		"42,4,41": {
+			"kind": "bed_foot",
+			"root": "42,4,40"
+		},
+		"45,4,40": {
+			"kind": "chest",
+			"mutant": false
+		}
+	},
+	"wedges": 1,
+	"world": "dream",
+	"world_name": "fixture_v091",
+	"world_seed": "12345",
+	"world_seed_dream": "96696573099484",
+	"world_seed_wake": "12345",
+	"world_storage": {
+		"45,4,40": [
+			{
+				"count": 23,
+				"id": "stone"
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			}
+		]
+	}
+}

@@ -64,6 +64,7 @@ func _ready() -> void:
 	add_child(pause)
 	var console := preload("res://scripts/dev_console.gd").new()
 	add_child(console)
+	add_child(preload("res://scripts/transfer_result_ui.gd").new())
 	_apply_settings()
 	var gsets := get_node_or_null("/root/GameSettings")
 	if gsets:

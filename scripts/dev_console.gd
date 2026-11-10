@@ -25,6 +25,7 @@ const COMMAND_HELP := {
 "armor":"Комплект надеть/снять/починить/статистика. Пример: armor give scale; armor clear; armor repair; armor stats",
 "sword":"Выдать меч wood|stone|scale. Пример: sword give scale",
 "potion":"Выдать/выпить Хилку1/2; auto использует первый слот, cooldown reset. Пример: potion give 2 10; potion use 2; potion use auto; potion cooldown reset",
+"transfer":"Атомарный перенос: plan — проверить, wake — пробудиться, cancel — вернуть резерв, abort — в Явь с сохранением черновика, risk — шанс/предел. Пример: transfer plan; transfer cancel; transfer wake; transfer abort; transfer risk",
 "anchor":"Выдать/выбрать/применить якорь под прицелом, preview. Пример: anchor give wedge 5; anchor select nail; anchor place; anchor preview",
 "beacon":"Выдать маяки. Пример: beacon give 3",
 "reagents":"Добавить каждый тип реагента. Пример: reagents give 100",
@@ -132,7 +133,7 @@ func _print(text: String) -> void:
 func _submit(line: String) -> void:
 	execute(line)
 	entry.clear()
-	entry.grab_focus()
+	if GameState.console_open: entry.grab_focus()
 func history_step(direction: int) -> void:
 	if history_index==history.size(): _draft = entry.text
 	history_index = clampi(history_index+direction,0,history.size())
@@ -140,7 +141,7 @@ func history_step(direction: int) -> void:
 	entry.caret_column = entry.text.length()
 func completion_candidates(prefix: String) -> Array[String]:
 	var all: Array[String] = ["door toggle","door rotate","help","seed","moon ","kill all","god","fly","heal","hp ","time day","time night","time ","tp spawn","tp ","world wake","world dream","cooldown reset","sword2 on","sword2 off","sword2 toggle","armor give wood","armor give scale","mob hp ","mob damage ","mob speed ","mob tool hand","mob tool pickaxe","mob tool pickaxe2"]
-	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3","chunks revisions","water stats","water step ","mapping parallel","mapping legacy_workshop","pickup stats","pickup collect","ai stats","ai budget "]: all.append(command)
+	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","transfer plan","transfer wake","transfer cancel","transfer abort","transfer risk","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3","chunks revisions","water stats","water step ","mapping parallel","mapping legacy_workshop","pickup stats","pickup collect","ai stats","ai budget "]: all.append(command)
 	for cmd in COMMAND_HELP: all.append("help "+cmd)
 	for id in MOB_IDS: all.append("spawn "+id)
 	for id in DB.all_icon_ids():
@@ -477,8 +478,19 @@ func _v010_command(a: PackedStringArray) -> String:
 			if not aim.get("hit",false): return "Ошибка: наведитесь на блок."
 			var cell:=GameState.ray_cell(aim)
 			if a.size()==2 and a[1]=="place": return "Якорь: "+str(GameState.try_place_anchor(cell))
-			if a.size()==2 and a[1]=="preview": return "Якорь %s · клетка %s · %s" % [GameState.selected_anchor,cell,GameState.last_hint]
+			if a.size()==2 and a[1]=="preview": return "План якоря: "+str(GameState.anchor_preview(cell))
 			return "Ошибка: anchor give|select|place|preview; beacon give <count>"
+		"transfer":
+			if a.size()!=2: return "Ошибка: transfer plan|wake|cancel|abort|risk"
+			match a[1]:
+				"plan": return "План: "+str(GameState.transfer_plan())+" · preflight %.3fms / apply %.3fms"%[GameState.last_transfer_preflight_usec/1000.0,GameState.last_transfer_apply_usec/1000.0]
+				"cancel": return "Возвращено: "+str(GameState.cancel_anchors())
+				"risk": return "Мутация: бросок7% на блок; cap floor(3% всех объектов структуры); маяк куб±10, +5 осыпи за предотвращённый бросок."
+				"wake","abort":
+					var sw:=get_tree().get_first_node_in_group("world_switcher")
+					if not GameState.is_dream() or not sw: return "Ошибка: сначала войдите в Сон."
+					return "Перенос: "+str(sw.wake_up(a[1]=="abort"))
+			return "Ошибка: transfer plan|wake|cancel|abort|risk"
 		"sleep": return _execute(PackedStringArray(["world","dream"]))
 		"bed":
 			if a.size()==2 and a[1]=="spawn": return "Спавн: %s · кровать %s"%[GameState.spawn_point,GameState.active_bed]

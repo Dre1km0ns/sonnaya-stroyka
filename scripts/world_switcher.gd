@@ -11,6 +11,7 @@ var dream_voxels: Node3D
 var bed: Node3D
 var _env: Environment
 var sync_sequences:=0
+var show_result_ui:=true
 
 
 func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wake_vox: Node3D, dream_vox: Node3D) -> void:
@@ -30,6 +31,7 @@ func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wa
 
 
 func _process(delta: float) -> void:
+	if GameState.transfer_ui_open: return
 	if GameState.is_dream():
 		GameState.drain_clarity(delta)
 		if GameState.clarity <= 0.0:
@@ -161,14 +163,19 @@ func enter_dream() -> void:
 	switched.emit(true)
 
 
-func wake_up() -> void:
-	var result := GameState.resolve_wake()
-	player.global_position = GameState.spawn_point
-	player.velocity = Vector3.ZERO
-	if "flying" in player:
-		player.set("flying", false)
-	switched.emit(false)
-	print("Wake resolved: ", result)
+func wake_up(abort_transfer:bool=false) -> Dictionary:
+	var result:=GameState.resolve_wake(abort_transfer)
+	if result.ok:
+		# One safety chunk at a far return bed, never a global worker join or a 9-chunk load.
+		for cm in get_tree().get_nodes_in_group("chunk_manager"):
+			if not cm.is_dream_layer and not cm.panorama_mode and wake_root.is_ancestor_of(cm): cm.ensure_chunk_loaded(cm.world_to_chunk(GameState.spawn_point))
+		player.global_position=GameState.spawn_point;player.velocity=Vector3.ZERO
+		if "flying" in player: player.set("flying",false)
+		switched.emit(false)
+	if show_result_ui:
+		for ui in get_tree().get_nodes_in_group("transfer_result_ui"): ui.show_result(result,self)
+	print("Wake resolved: ",result)
+	return result
 
 
 func _tint_dream(is_dream: bool) -> void:

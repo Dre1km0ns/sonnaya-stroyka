@@ -100,7 +100,7 @@ func _quit_to_menu() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if GameState.console_open: return
+	if GameState.console_open or GameState.transfer_ui_open: return
 	if not event.is_action_pressed("ui_cancel"):
 		return
 	if _settings != null and is_instance_valid(_settings):
