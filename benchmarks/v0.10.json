@@ -704,5 +704,407 @@
         "preflight_us": 2408
       }
     ]
-  }
+  },
+  "final": [
+    {
+      "avg_ms": 0.55799,
+      "bodies": 3,
+      "case": "build_100",
+      "draw_calls": 0.0,
+      "max_ms": 1.692,
+      "meshes": 3,
+      "nodes": 13,
+      "p95_ms": 1.07,
+      "p99_ms": 1.692,
+      "primitives": 0.0,
+      "sum_ms": 55.799,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 0.53123,
+      "bodies": 0,
+      "case": "remove_100",
+      "draw_calls": 0.0,
+      "max_ms": 1.388,
+      "meshes": 0,
+      "nodes": 4,
+      "p95_ms": 0.966,
+      "p99_ms": 1.388,
+      "primitives": 0.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 1.586888,
+      "bodies": 3,
+      "case": "build_500",
+      "draw_calls": 0.0,
+      "max_ms": 6.852,
+      "meshes": 3,
+      "nodes": 13,
+      "p95_ms": 3.076,
+      "p99_ms": 4.932,
+      "primitives": 0.0,
+      "sum_ms": 793.444,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 1.691612,
+      "bodies": 0,
+      "case": "remove_500",
+      "draw_calls": 0.0,
+      "max_ms": 5.188,
+      "meshes": 0,
+      "nodes": 4,
+      "p95_ms": 3.513,
+      "p99_ms": 4.841,
+      "primitives": 0.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 2.647806,
+      "bodies": 3,
+      "case": "build_1000",
+      "draw_calls": 0.0,
+      "max_ms": 10.651,
+      "meshes": 3,
+      "nodes": 13,
+      "p95_ms": 5.262,
+      "p99_ms": 7.89,
+      "primitives": 0.0,
+      "sum_ms": 2647.806,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 2.648056,
+      "bodies": 0,
+      "case": "remove_1000",
+      "draw_calls": 0.0,
+      "max_ms": 9.312,
+      "meshes": 0,
+      "nodes": 4,
+      "p95_ms": 5.054,
+      "p99_ms": 7.49,
+      "primitives": 0.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 296.25,
+      "bodies": 7,
+      "case": "startup",
+      "draw_calls": 0.0,
+      "max_ms": 296.25,
+      "meshes": 22,
+      "nodes": 845,
+      "p95_ms": 296.25,
+      "p99_ms": 296.25,
+      "primitives": 0.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 39.6011666666666,
+      "bodies": 127,
+      "case": "walking_physics",
+      "draw_calls": 190.0,
+      "max_ms": 59.598,
+      "meshes": 154,
+      "nodes": 1353,
+      "p95_ms": 48.752,
+      "p99_ms": 59.598,
+      "primitives": 56044.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 12.626,
+      "bodies": 129,
+      "case": "enter_dream",
+      "draw_calls": 190.0,
+      "max_ms": 12.626,
+      "meshes": 156,
+      "nodes": 1359,
+      "p95_ms": 12.626,
+      "p99_ms": 12.626,
+      "primitives": 56044.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 5.454,
+      "bodies": 132,
+      "case": "wake",
+      "draw_calls": 66.0,
+      "max_ms": 5.454,
+      "meshes": 160,
+      "nodes": 1368,
+      "p95_ms": 5.454,
+      "p99_ms": 5.454,
+      "primitives": 10218.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 3.001,
+      "bodies": 132,
+      "case": "enter_dream",
+      "draw_calls": 190.0,
+      "max_ms": 3.001,
+      "meshes": 160,
+      "nodes": 1368,
+      "p95_ms": 3.001,
+      "p99_ms": 3.001,
+      "primitives": 46886.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 4.197,
+      "bodies": 136,
+      "case": "wake",
+      "draw_calls": 70.0,
+      "max_ms": 4.197,
+      "meshes": 165,
+      "nodes": 1380,
+      "p95_ms": 4.197,
+      "p99_ms": 4.197,
+      "primitives": 11820.0,
+      "tag": "final"
+    },
+    {
+      "ai_max_work_us": 2027,
+      "ai_paths": 40,
+      "avg_ms": 46.2917,
+      "bodies": 141,
+      "case": "seven_enemies",
+      "draw_calls": 196.0,
+      "max_ms": 170.849,
+      "meshes": 182,
+      "nodes": 1456,
+      "p95_ms": 53.115,
+      "p99_ms": 170.849,
+      "primitives": 53132.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 40.6326777777778,
+      "bodies": 143,
+      "case": "boss",
+      "draw_calls": 208.0,
+      "max_ms": 71.766,
+      "meshes": 187,
+      "nodes": 1473,
+      "p95_ms": 49.212,
+      "p99_ms": 71.766,
+      "primitives": 48740.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 1.585,
+      "bodies": 436,
+      "candidates": 128,
+      "case": "mass_pickup",
+      "draw_calls": 208.0,
+      "max_ms": 1.585,
+      "meshes": 466,
+      "nodes": 2289,
+      "p95_ms": 1.585,
+      "p99_ms": 1.585,
+      "picked": 64,
+      "primitives": 48722.0,
+      "tag": "final"
+    },
+    {
+      "avg_ms": 1.4814,
+      "bodies": 181,
+      "case": "mass_pickup_total",
+      "cpu_sum_ms": 7.407,
+      "draw_calls": 208.0,
+      "max_ms": 1.739,
+      "meshes": 211,
+      "nodes": 1524,
+      "p95_ms": 1.739,
+      "p99_ms": 1.739,
+      "picked": 300,
+      "primitives": 48690.0,
+      "tag": "final",
+      "wall_ms": 67.682
+    },
+    {
+      "avg_ms": 54.8819333333333,
+      "bodies": 140,
+      "case": "water_active",
+      "draw_calls": 202.0,
+      "max_ms": 65.844,
+      "mesh_builds": 23,
+      "mesh_us": 277,
+      "meshes": 169,
+      "nodes": 1392,
+      "p95_ms": 62.155,
+      "p99_ms": 65.844,
+      "primitives": 58216.0,
+      "tag": "final",
+      "water_cells": 27
+    }
+  ],
+  "stress_before": [
+    {
+      "avg_ms": 4.523025,
+      "case": "base_render_100",
+      "draw_calls": 100.0,
+      "max_ms": 5.781,
+      "nodes": 307,
+      "p95_ms": 5.328,
+      "tag": "before",
+      "triangles": 1200.0
+    },
+    {
+      "avg_ms": 6.768525,
+      "case": "base_render_500",
+      "draw_calls": 500.0,
+      "max_ms": 8.382,
+      "nodes": 1507,
+      "p95_ms": 7.484,
+      "tag": "before",
+      "triangles": 6000.0
+    },
+    {
+      "avg_ms": 9.239525,
+      "case": "base_render_1000",
+      "draw_calls": 1000.0,
+      "max_ms": 10.245,
+      "nodes": 3007,
+      "p95_ms": 10.242,
+      "tag": "before",
+      "triangles": 12000.0
+    },
+    {
+      "avg_ms": 8.45908333333333,
+      "case": "doors100_render",
+      "draw_calls": 100.0,
+      "max_ms": 9.941,
+      "nodes": 307,
+      "p95_ms": 9.41,
+      "tag": "before",
+      "triangles": 24000.0
+    },
+    {
+      "avg_ms": 2.05001666666667,
+      "case": "doors100_toggle",
+      "draw_calls": 100.0,
+      "max_ms": 3.317,
+      "nodes": 367,
+      "p95_ms": 2.357,
+      "tag": "before",
+      "triangles": 24000.0
+    },
+    {
+      "avg_ms": 31.96875,
+      "case": "rapid_streaming",
+      "draw_calls": 67.0,
+      "jobs_left": 0,
+      "loaded": 48,
+      "max_ms": 267.653,
+      "nodes": 451,
+      "over33ms": 3,
+      "p95_ms": 225.682,
+      "setup_ms": 82.324,
+      "stale": -1,
+      "tag": "before",
+      "triangles": 23064.0
+    }
+  ],
+  "stress_after": [
+    {
+      "avg_ms": 3.649625,
+      "case": "base_render_100",
+      "draw_calls": 2.0,
+      "max_ms": 4.354,
+      "nodes": 13,
+      "p95_ms": 4.111,
+      "tag": "after",
+      "triangles": 500.0
+    },
+    {
+      "avg_ms": 3.93895,
+      "case": "base_render_500",
+      "draw_calls": 2.0,
+      "max_ms": 4.575,
+      "nodes": 13,
+      "p95_ms": 4.356,
+      "tag": "after",
+      "triangles": 1140.0
+    },
+    {
+      "avg_ms": 4.05285,
+      "case": "base_render_1000",
+      "draw_calls": 2.0,
+      "max_ms": 5.326,
+      "nodes": 13,
+      "p95_ms": 4.36,
+      "tag": "after",
+      "triangles": 1400.0
+    },
+    {
+      "avg_ms": 4.23251666666667,
+      "case": "doors100_render",
+      "draw_calls": 100.0,
+      "max_ms": 5.199,
+      "nodes": 307,
+      "p95_ms": 4.684,
+      "tag": "after",
+      "triangles": 1200.0
+    },
+    {
+      "avg_ms": 0.23085,
+      "case": "doors100_toggle",
+      "draw_calls": 100.0,
+      "max_ms": 0.63,
+      "nodes": 367,
+      "p95_ms": 0.347,
+      "tag": "after",
+      "triangles": 1200.0
+    },
+    {
+      "avg_ms": 9.597025,
+      "case": "rapid_streaming",
+      "draw_calls": 65.0,
+      "jobs_left": 0,
+      "loaded": 47,
+      "max_ms": 118.012,
+      "nodes": 395,
+      "over33ms": 1,
+      "p95_ms": 13.766,
+      "setup_ms": 4.871,
+      "stale": 0,
+      "tag": "after",
+      "triangles": 23032.0
+    }
+  ],
+  "water_before": [
+    {
+      "border_level": 5,
+      "cells": 27,
+      "cpu_sum_ms": 2.403,
+      "dirty_meshes": 20,
+      "max_ms": 0.415,
+      "p95_ms": 0.256,
+      "steps": 80,
+      "tag": "before"
+    }
+  ],
+  "water_after": [
+    {
+      "border_level": 5,
+      "cells": 27,
+      "cpu_sum_ms": 2.697,
+      "dirty_meshes": 12,
+      "max_ms": 0.458,
+      "p95_ms": 0.28,
+      "steps": 80,
+      "tag": "after"
+    }
+  ],
+  "notes": [
+    "Mesa llvmpipe software renderer; not owner GPU, no universal FPS promise.",
+    "Before source is exact main 89cbb0d; stress scripts identical, sequential processes.",
+    "Full-suite water_before water_cells=0 was invalid; separate water probe now uses same 27 flowing cells/border level5.",
+    "Runtime budgets are soft; individual physics/mesh/resource operation can exceed them.",
+    "Walking frame p95 regressed45.035→48.752ms; active-water80-step CPU2.403→2.697ms; report honestly.",
+    "Rapid-streaming worst118.012ms remains; no zero-hitch claim."
+  ]
 }

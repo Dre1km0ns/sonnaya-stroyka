@@ -24,6 +24,7 @@ func show_result(result:Dictionary,switcher:Node)->void:
 	for console in get_tree().get_nodes_in_group("dev_console"):
 		if GameState.console_open: console.close()
 	for child in buttons.get_children(): child.free()
+	for overlay in get_tree().get_nodes_in_group("anchor_preview"): overlay.set_overlay_visible(false)
 	panel.show();get_tree().paused=true;Input.mouse_mode=Input.MOUSE_MODE_VISIBLE
 	if result.ok:
 		title.text="Черновик сна сохранён" if result.get("aborted",false) else "Пробуждение · результат переноса"

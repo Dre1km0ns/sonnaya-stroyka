@@ -402,3 +402,24 @@ default_bus_layout.tres
 
 ### Дверь — дополнение к v0.9.1
 Модель Kenney Wooden Door (CC0), источник https://poly.pizza/m/P09FqyST04. Две филёнки и фаски, ручка и петли с обеих сторон вместо растянутой текстуры досок. ПКМ открывает/закрывает; открытая створка остаётся физической сбоку. Направление при установке берётся по взгляду; состояние/сторона сохраняются и переносятся из сна. В DevSeed: `door toggle|rotate [x y z]` (без координат — под прицелом). Иконка рендерится `tools/render_door_icon.gd`; игровые превью — запуск `-- --door-shots`, `/workspace/shots/v091_door_*.png`. Номер версии остаётся 0.9.1.
+
+
+## v0.10 — управление, атомарная стройка и оптимизация
+- **F3**: FPS/XYZ/направление/чанк; checkbox FPS из настроек удалён.
+- **H**: первое по номеру слота зелье (Хилка1/2),20/40 HP, общий cooldown15s. Quick-slot показывает тот же предмет, не копию.
+- Мечи7/13/23 dmg. Чешуйчатый меч: Станок, каменный меч+5 чешуи,700 durability. Только его первый крафт включает normal HP×3.75 / Mother×3. Старый sword2 flag мигрируется вfalse.
+- Двери на сетке:2 блока, толщина1/8, общий mesh12 triangles, один BoxShape; сторона/петля от взгляда и опоры, ПКМ.
+- Q сначала проверяет весь перенос, затем резервирует стоимость. Wireframe/counters/cost/conflicts/risk; если рельеф ещё в worker, дождаться и нажать Q снова. При wake конфликт не даёт частичного переноса; safe abort сохраняет Dream-черновик и возвращает резерв. Esc/Y гарантированно закрывают summary; при0 clarity Esc безопасно возвращает в Явь с черновиком.
+- Мутации:7% roll на блок, общий cap floor(3% объектов структуры); меньше34 объектов — cap0. Маяк±10 куб, +5dust за предотвращённый roll. Успешный wake: незаякоренное1dust/5 объектов.
+- Incremental merged voxel chunks, per-chunk revisions, worker-only data, lazy/sleep worlds, локальные snapshots/pickup/AI budgets, coalesced persistent flowing-water. Числа и ограничения — CHANGELOG и benchmarks/v0.10.json; результаты на llvmpipe, не обещание FPS на любом ПК.
+- Console DevSeed: `help transfer`, `transfer plan|wake|cancel|abort|risk`, `anchor preview`, `debug`, `sword give scale`, `sword3`, `potion`, `armor`, `bed`, `chunks`, `water`, `mapping`, `pickup`, `ai`; у каждой команды русский пример, Tab/history.
+
+### Воспроизведение v0.10
+```
+/home/box/godot/godot --headless --editor --path . --import
+/home/box/godot/godot --headless --path . --script res://scripts/smoke_test.gd
+xvfb-run -a /home/box/godot/godot --path . --rendering-method gl_compatibility --script res://tools/v010_perf_suite.gd -- final
+xvfb-run -a /home/box/godot/godot --path . --rendering-method gl_compatibility --script res://tools/v010_stress_probe.gd -- after
+xvfb-run -a /home/box/godot/godot --path . --rendering-method gl_compatibility --script res://tools/v010_screens.gd
+```
+`tools/v010_water_probe.gd` — одинаковая water fixture; `tools/make_v091_fixture.py` — восстановление save-fixture исходным сериализатором89cbb0d. Превью `/workspace/shots/v010_*.png`. Подробная передача задач/правила владельца — HANDOFF.md. ZIP содержит .godot (готовый import cache), но не .git. Не переносить старые generated textures поверх новых.

@@ -1735,9 +1735,11 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	var started:=Time.get_ticks_usec();var root_count:=0
 	for data in dream_blocks.values():
 		if not data.has("root"): root_count+=1
-	var spent:Dictionary={"anchors":pending_anchors.size(),"reagents":0,"clarity":0.0}
+	var spent:Dictionary={"anchors":0,"reagents":0,"clarity":0.0}
 	for anchor in pending_anchors:
-		var cost:=anchor_cost(int(anchor.get("type",0)));spent.reagents+=cost.reagents;spent.clarity+=cost.clarity
+		var receipt:Dictionary=anchor.get("receipt",{})
+		if receipt.get("dev",dev_mode): continue
+		var cost:=anchor_cost(int(anchor.get("type",0)));spent.anchors+=1;spent.reagents+=cost.reagents;spent.clarity+=cost.clarity
 	var refunded:Dictionary={};var mutation:Dictionary={"cells":[],"protected":0,"cap":0};var transferred:=0;var dust_gained:=0
 	if abort_transfer:
 		refunded=cancel_anchors();spent={"anchors":0,"reagents":0,"clarity":0.0}

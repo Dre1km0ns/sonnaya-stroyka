@@ -94,7 +94,7 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
-	print("Сонная стройка v0.9 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.10 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func _on_player_died() -> void:

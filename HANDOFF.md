@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 4 завершён; этап 5 завершён: полный extended smoke зелёный без leaks. Начат финальный этап13 (stress/metrics/screens/release). Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 11.11.2026 00:04 МСК. Реализация v0.10 и этап13 проверки завершены; осталось опубликовать main и доставить ZIP/HANDOFF в Drive. НЕ заявлять доставку до upload/metadata.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -27,7 +27,7 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 ## Согласованный объём и статус
 | № | Задача | Статус |
 |---|---|---|
-| 0 | Аудит/измерения до изменений | Готово базово; нужны отдельные flowing-water / большая база / дверные замеры |
+| 0 | Аудит/измерения до изменений | Готово: exact89cbb0d before + base/doors/streaming/flowing-water probes |
 | 1 | F3 debug (FPS, XYZ, направление, чанк); убрать toggle в настройках | Готово: F3, XYZ/направление/чанк, пункт настроек удалён |
 | 2 | Дверь: grid alignment, lightweight mesh/material sharing, single box, направление/петля по игроку; измерить | Готово: сетка/поворот/шарнир, 12 треугольников и общие mesh/material/shape, тест 4 направлений |
 | 3 | Полная русская консоль всех систем, описания/примеры/help/Tab | Основные системы готовы, help по-русски с примерами/Tab; новые transfer/water/chunks команды дополнять дальше |
@@ -40,7 +40,7 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | Готово: cached bounds/no process, local mask8 sphere query ≤64/1.5ms, batch inventory signals, full process+physics cull except bosses, cooperative A*/2ms and stagger, local125 nearest-block |
 | 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | Готово: atomic preflight/reserve/refund, preview/highlight, result/conflict/abort UI; smoke10060–10093 |
 | 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | Готово:7% rolls, floor(3%) cap, beacon+5dust; детерминизм/100–1000/10000-roll tests |
-| 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | TODO |
+| 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | Всё проверено/измерено; final_smoke OK/no leaks, screenshots reviewed, CHANGELOG готов. Осталась доставка |
 
 ## Baseline / обнаружено
 Сырые логи `/workspace/v010/baseline_*.log`, `/workspace/v010/suite_before.log`; числа в `benchmarks/v0.10.json`.
@@ -55,12 +55,12 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 - Door уже был 240 triangles + shared cached mesh, главный подозреваемый slowdown — rebuild мира, не обязательно glTF. Измерить и честно описать.
 - Heal2 разрешён общим slot UI, но нет use action для выбранной хилки; use_heal выбирает heal1 прежде heal2 независимо от низшего слота. Нужны тесты обоих.
 
-## Точные следующие шаги
-1. Завершить stage5: `/workspace/v010/stage5_extended2.log`, script `scripts/smoke_test.gd`, новые tests10060–10093. Первый extended прогон выявил ошибки ТЕСТОВОЙ подготовки (place_wake_block запрещён во Сне, чтение Dream slot вместо Wake); fixtures поправлены, повтор запущен. Ничего не маскировать.
-2. Проверить реальный transfer UI (Esc/Y, zero clarity, pending terrain, cancellation/refund incl. overflow), old fixture `tests/fixtures/v091_save.json` создан исходным сериализатором commit89cbb0d; generator `tools/make_v091_fixture.py`.
-3. Final suite + дополнительный high-speed streaming/large base/door render probe; записать реальные числа в benchmarks/v0.10.json. Старый before water_cells=0 невалиден. llvmpipe p95 не улучшился на stage4 — не скрывать регрессии.
-4. Обновить `tools/v010_screens.gd`: transfer preview/wake result/console; переснять F3/дверь/уменьшенный меч, открыть все изображения и поправить.
-5. Версия0.10, README/CHANGELOG, финальный smoke без leaks, обновить HANDOFF, push WIP, fast-forward main+push, ZIP с .godot без .git, UploadFile/metadata, по одной попытке trash старого ZIP и старого HANDOFF, актуальная HANDOFF копия на Drive. Не писать report docs, не трогать видео.
+## Точные следующие шаги (актуальные)
+1. Stage6 commit/push WIP; `git fetch origin`, убедиться origin/main — ancestor WIP. Fast-forward main обычным merge --ff-only и push (не reset/force).
+2. `python3 tools/build_v010_zip.py`: полный архив incl .godot, excl .git; testzip/SHA. UploadFile в папку владельца; metadata parents/size.
+3. После upload ОДНА попытка trash старого ZIP1HykoH2mUKmMj5fUmnNOzrkg1kJiX7r-U. На отказе остановиться, не повторять.
+4. Дописать в HANDOFF ZIP/main commit/trash outcome, UploadFile актуальную копию. Однократно попробовать trash старого HANDOFF19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ. Последний docs-only metadata commit/push main+WIP допустим; код архива будет release commit перед delivery metadata.
+5. Финальный ответ по-русски: ссылки ZIP/commit/HANDOFF, before/after таблица и регрессии, мечи/heal/mutation/migration, console additions,6 screenshot paths. Никаких report docs и видео.
 
 ## Внешние артефакты
 HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ/view (этап 0; обновить в конце).
@@ -117,3 +117,12 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 `/workspace/v010/stage5_extended3.log`: полный SMOKE OK, 0 engine/script errors, 0 ObjectDB/resource leak warnings. 100/500/1000 transfer preflight239/1204/2408µs, apply303/1264/2691µs, мутаций3/15/30. 10000 бросков:674 (6.74%), cap300;1000 блоков в кубе маяка:72 защищённых rolls,0 мутаций. Реальные worker validation незагруженного чанка без Wake insertion, multipart/occupied/spawn/terrain checks, сохранённые точные receipts, refund-overflow101→save/load→spend100, actual v0.9.1 fixture, modal pause/safe abort/Esc/Y проверены. Mouse capture headless не поддерживает; проверить под Xvfb в screenshots.
 
 Текущие следующие шаги: финальный before/after stress (большая база/100 doors/rapid streaming), повтор общего suite, version0.10/README/CHANGELOG, screenshots review включая anchor preview/wake result, финальный smoke+HANDOFF, main ff+push, ZIP/upload/one trash. Старые подпункты первого extended прогона выше — история, не текущие ошибки.
+
+## Этап13: финальные проверки завершены
+- `/workspace/v010/final_smoke.log`: **SMOKE OK v0.10**, без script/engine errors, ObjectDB leaks и resources-in-use. `/workspace/v010/final_import.log` чист. v0.9.1 serializer fixture и всё stage5 покрытие остаются зелёными.
+- Sequential exact-base stress: `/workspace/v010/{stress_before,stress_after,suite_final,water_before,water_after}.log`; JSON `benchmarks/v0.10.json`. Base1000 render p9510.242→4.360ms, draw calls1000→2,triangles12000→1400.100doors p959.410→4.684ms, triangles24000→1200; toggle p952.357→0.347ms. Rapid streaming p95225.682→13.766,max267.653→118.012ms,frames>33ms3→1/40.
+- Final suite: placement1000 p9514.156→5.262ms, nodes3004→13; startup359.882→296.250ms, firstDream28.144→12.626ms.7enemies max786.512→170.849ms,p9553.176→53.115.300pickups CPU29.065→7.407ms, worsttick1.739ms, wall67.682ms.
+- Регрессии честно: walking p9545.035→48.752ms (avg39.919→39.601); boss p9548.656→49.212; wake4.341/3.286→5.454/4.197ms; water одинаковые27cells/border5/80steps CPU2.403→2.697ms,dirty meshes20→12. Soft budgets;118ms worst streaming hitch остаётся. Это llvmpipe, не GPU владельца.
+- Все9 screenshots просмотрены через Read. После review подсказки anchor/context разнесены (anchorY260), overlay скрывается под modal; closer camera показывает всю структуру55roots56cells,1mutation/cap1. Меч уменьшен/правильный grip, дверь на сетке/тонкая. GUI mouse capture/Y close реально проверены Xvfb, не только headless. `/workspace/v010/screens_final2.log` чист кроме обычного Xvfb VSync warning.
+- Reviewed paths: `/workspace/shots/v010_f3.png`, `v010_door_closed.png`, `v010_door_open.png`, `v010_scale_sword.png`, `v010_inventory.png`, `v010_console_help.png`, `v010_transfer_preview.png`, `v010_anchored_cells.png`, `v010_wake_result.png`.
+- Версия0.10 в project/main menu/log/smoke, CHANGELOG/README полные. `tools/build_v010_zip.py` воспроизводит release ZIP.

@@ -2,6 +2,64 @@
 
 Полные описания предыдущих версий — в README.md («Что нового в …»).
 
+## v0.10 — 2026-11-11 (МСК)
+
+### Управление, предметы и дверь
+- **F3** переключает debug overlay: FPS, seed/чанки/очереди/сущности, XYZ, направление и координаты чанка. Удалён checkbox FPS из настроек; изменение настроек не сбрасывает F3.
+- Дверь точно на грани voxel-grid, толщина1/8 блока, высота2. Направление от игрока, сторона петли от соседней опоры; открытая створка остаётся физической. Один общий mesh/material/BoxShape3D, один простой body на дверь, без glTF scene-инстансов:240→12 треугольников. Собственная pixel texture16×32 и иконка; Kenney source/CC0 credits сохранены в архивных assets.
+- **H** пьёт зелье из самого младшего подходящего слота1–36 (Terraria-style), независимо от выбранного слота. ЛКМ использует выбранный тип. Хилка1/2 лечат20/40 HP, общий cooldown15s. Quick-slot — alias первого potion-слота (оба вида можно перемещать мышью), не второе хранилище и не дубликат.
+- Мечи: деревянный7, каменный13, новый **чешуйчатый23** урона /700 прочности. На Станке: каменный меч +5 чешуи Анаконды. Собственные pixel icon/texture и extruded-sprite model.
+- Усиление обычных врагов×3.75 / Матери×3 включается только после первого крафта чешуйчатого меча. В сейвах v0.9.1 старый `sword2_crafted` очищается как триггер; новое `sword3_crafted` сохраняется. Анаконда не усиливается. Console `sword2` остаётся alias `sword3`.
+
+### Генерация, миры, вода, сущности
+- Размещение/удаление — dirty cells/chunks, без полного rebuild мира. Обычные блоки объединены в mesh по16×16 с удалением скрытых граней и объединёнными X-полосами коллизий; двери/станции/контейнеры — отдельные интерактивы. Multi-cell changes отправляются одним batch; targeting merged-collider по точке/нормали.
+- Один sync sequence на переход. Симметричный sleep неактивного мира (chunk generation, water, AI), lazy Dream. В новых мирах Явь/Сон используют параллельные координаты; незавершённый старый Dream остаётся `legacy_workshop`, чтобы не терять черновик.
+- Workers вычисляют только pure data, никакого SceneTree/Node/RenderingServer/PhysicsServer. Per-chunk revisions + граничные соседи вместо глобальной отмены на каждый edit. Очередь nearest/forward, adaptive insertion0.5–4ms, ограниченное число вставок; одна safety-chunk при далёком возврате к кровати, без глобального join gameplay workers.
+- Snapshot копирует только локальные индексы collected/eggs/removals; опубликованные procedural cache values immutable, top-level maps принадлежат job. Underground air передаётся из worker, не пересчитывается второй раз на main. Reset переносит in-flight tasks в retired; join только при teardown/явном test load_all.
+- Вода: no-op при неизменном уровне, dirty coalescing, ≤2 rebuild/frame + soft budget1.5ms, reuse mesh node; source-index по чанкам; flowing-water сохраняется optional полем и восстанавливается после unload/load.
+- У ReagentNode нет пустого `_process`/floating Tag; model bounds кешируются. Pickup — локальный physics broadphase radius1.7, ≤128 candidates / ≤64 attempts и soft budget1.5ms, inventory signal один за batch. Могила поддерживает тот же локальный запрос.
+- Distance culling отключает process **и physics**, затем восстанавливает; Мать и Анаконда исключены (неактивный мир всё равно спит). Cooperative A*: порции≤32 nodes/500µs, общий soft budget2ms, stagger3 фазы, движение каждый physics tick, probe препятствий10Hz. Local nearest block —125 соседних клеток вместо обхода базы.
+
+### Якоря и атомарный перенос
+- Wireframe зоны и ячеек одним mesh, зелёная подсветка закреплённого, счётчики объектов/ячеек, стоимость, конфликты/ожидание рельефа, нестабильность. UI-подсказки разнесены без наложений.
+- Pure-data **TransferPlan** проверяет координаты, полный bed/door/catcher, terrain/placed occupancy и spawn AABB до списания. Недостающий рельеф валидируется plan-only worker без вставки сцены; первый Q может попросить подождать и повторить. Новые блоки на месте удалённых не наследуют якорь.
+- Якорь резервирует точные типы реагентов/предмет/ясность, receipt сохраняется. Cancel возвращает резерв. Возврат сверх капа100 не теряется: optional refund-overflow сохраняется и постепенно расходуется; обычный pickup по-прежнему ограничен100. Старый pending anchor без receipt возвращает номинальный расход как р1 (лучшее доступное приближение старой схемы).
+- Wake повторно проверяет **весь batch**: при конфликте не переносит ничего и не делает новых списаний. Result UI ставит мир на паузу: повторить / исправить во Сне / безопасно вернуться. Безопасный отказ возвращает резерв и **сохраняет Dream-черновик**, не выдавая dust за растворение; на0 ясности Esc делает именно этот safe abort. Esc/Y закрывают summary, мышь возвращается в capture. Нормальный успешный wake по-прежнему растворяет незаякоренное:1 dust за5 объектов.
+- Бросок мутации остаётся7% на eligible root; затем seeded shuffle ограничивает фактические мутации `floor(3% всех root-объектов структуры)`. N<34→0, не округляем вверх. Полные станции/многоблочные объекты не мутируют. Маяки (включая прибывающие в том же атомарном batch) защищают куб±10; +5 dust за каждый предотвращённый roll, даже если rolls больше общего cap. Seed/save дают воспроизводимый результат.
+- Summary: перенесено/заблокировано/мутаций/cap/без якоря/dust/фактически потрачено; DevSeed честно показывает0 расхода.
+
+### Консоль DevSeed
+`help [команда]` даёт русское описание и пример; Tab/history сохранены. Добавлены/расширены:
+- `debug on|off|toggle` (`f3`), `sword give wood|stone|scale`, `sword3 on|off|toggle` (alias sword2).
+- `potion give 1|2 [count]`, `potion use 1|2|auto`, `potion cooldown reset`; `armor stats|repair|clear`, прежний `armor give wood|scale`.
+- `anchor give|select|place|preview`, `beacon give`, `reagents give`, `dust`, `sleep`, `bed spawn|setspawn`, `craft`.
+- `chunks stats|radius|revisions`, `water stats|step`, `mapping parallel|legacy_workshop`, `pickup stats|collect`, `ai stats|budget`.
+- `transfer plan|wake|cancel|abort|risk`: atomic validation / результат / возврат резерва / сохранение черновика / политика риска.
+
+### Проверки и измерения (не FPS-обещание)
+Исходный before:89cbb0d, Godot4.7.2, Xvfb OpenGL3 **Mesa llvmpipe**, последовательные прогоны; сырые/структурированные числа `benchmarks/v0.10.json`, воспроизводимые tools. На ПК владельца GPU может дать другие цифры.
+| Сценарий | v0.9.1 → v0.10 |
+|---|---|
+|100/500/1000 placement CPU sum|87.587/1803.805/7429.141 →55.799/793.444/2647.806ms|
+|1000 placement p95 / deletion p95|14.156→5.262ms /13.320→5.054ms|
+|1000 block mesh/body/node (build fixture)|1000/1000/3004→3/3/13|
+|1000-block rendered base p95 / draw calls / triangles|10.242→4.360ms /1000→2 /12000→1400|
+|100 doors render p95 / triangles|9.410→4.684ms /24000→1200|
+|100-door single-toggle p95|2.357→0.347ms|
+|Rapid streaming p95 / max / frames>33ms|225.682→13.766ms /267.653→118.012ms /3→1 из40|
+|Main startup / первый Dream enter|359.882→296.250ms /28.144→12.626ms|
+|Wake первый/повторный|4.341/3.286→5.454/4.197ms (регрессия: preflight/safety/result support)|
+|Walking avg / p95|39.919→39.601ms /45.035→48.752ms (p95 хуже)|
+|7 enemies p95 / max|53.176→53.115ms /786.512→170.849ms|
+|Boss p95 / max (плюс7 обычных)|48.656→49.212ms /76.542→71.766ms|
+|300 pickups CPU / worst tick / wall|29.065ms одним кадром→7.407ms суммарно /1.739ms /67.682ms|
+|Flowing water, одинаковые27 клеток, borderlevel5,80 шагов|CPU2.403→2.697ms (хуже); dirty meshes20→12|
+|100/500/1000 TransferPlan preflight / apply|0.239/1.204/2.408ms /0.303/1.264/2.691ms; cap3/15/30|
+
+Полный extended smoke: multi-cell/границы, stale job vs unrelated chunk, sleep/один sync, water border/unload/save/cap,7 mobs/boss/local pickup/AI/culling, настоящий v0.9.1 JSON fixture исходного сериализатора, atomic no-partial/refund/overflow/determinism/UI Esc/Y. 10000 mutation rolls:674 (6.74%), cap300. Маяк:72 предотвращённых rolls/1000,0 мутаций. Устранены исходные28 ObjectDB/6 resource leaks: SFX реально транскодированы в PCM WAV, Ogg originals/credits сохранены; не mute и не подавление warnings. Финальный smoke/GUI exits — без leaks.
+
+**Честные ограничения:** софт-бюджеты не прерывают одну дорогую engine operation; rapid streaming ещё имеет118ms worst hitch. Walking p95, wake latency и небольшой CPU water-fixture регрессируют; нет обещания универсального роста FPS. Детерминизм/совместимость проверены Godot4.7.2, ручной прогон на GPU владельца ещё не выполнен. Milestones/blueprints сознательно отложены. Отчётные Google Docs/видео Drive не трогаем.
+
 ## v0.9.1 — 2026-11-10
 
 ### Дополнение: дверь (версия сохранена 0.9.1 по просьбе владельца)
