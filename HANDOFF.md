@@ -1,10 +1,10 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 11.11.2026 00:04 МСК. Реализация v0.10 и этап13 проверки завершены; осталось опубликовать main и доставить ZIP/HANDOFF в Drive. НЕ заявлять доставку до upload/metadata.
+Обновлено: 11.11.2026 00:05 МСК. **v0.10 реализована, проверена, main опубликован, ZIP доставлен.** Список ниже завершён. Актуальная копия HANDOFF загружена в ту же Drive-папку, metadata проверены.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
-Репозиторий https://github.com/Dre1km0ns/sonnaya-stroyka, checkout `/workspace/sonnaya-stroyka`. Работа: `wip/v0.10`; исходный main `89cbb0d807041022accddd5a8837c3be90720359`. В main публиковать только после тестов и review.
+Репозиторий https://github.com/Dre1km0ns/sonnaya-stroyka, checkout `/workspace/sonnaya-stroyka`. Релиз опубликован в `main`, страховочная ветка `wip/v0.10` сохранена; исходный main `89cbb0d807041022accddd5a8837c3be90720359`. Тесты/review перед публикацией выполнены.
 Владелец разрешил v0.10 словом «работай». Для новых идей сначала список, затем ждать «работай»; сейчас выполнять только согласованный объём. Для каждой новой dev-функции добавлять консоль/help/Tab/тесты. Не трогать видео Drive. Не создавать отчётные Google Docs. HANDOFF обновлять после каждого этапа, commit+push WIP. Не сообщать «готово» для частичного результата.
 
 ## Источники и среда
@@ -40,7 +40,7 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | Готово: cached bounds/no process, local mask8 sphere query ≤64/1.5ms, batch inventory signals, full process+physics cull except bosses, cooperative A*/2ms and stagger, local125 nearest-block |
 | 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | Готово: atomic preflight/reserve/refund, preview/highlight, result/conflict/abort UI; smoke10060–10093 |
 | 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | Готово:7% rolls, floor(3%) cap, beacon+5dust; детерминизм/100–1000/10000-roll tests |
-| 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | Всё проверено/измерено; final_smoke OK/no leaks, screenshots reviewed, CHANGELOG готов. Осталась доставка |
+| 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | Готово: regression/measurements/legacy fixture/no leaks/review/CHANGELOG; main+ZIP доставлены |
 
 ## Baseline / обнаружено
 Сырые логи `/workspace/v010/baseline_*.log`, `/workspace/v010/suite_before.log`; числа в `benchmarks/v0.10.json`.
@@ -55,16 +55,16 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 - Door уже был 240 triangles + shared cached mesh, главный подозреваемый slowdown — rebuild мира, не обязательно glTF. Измерить и честно описать.
 - Heal2 разрешён общим slot UI, но нет use action для выбранной хилки; use_heal выбирает heal1 прежде heal2 независимо от низшего слота. Нужны тесты обоих.
 
-## Точные следующие шаги (актуальные)
-1. Stage6 commit/push WIP; `git fetch origin`, убедиться origin/main — ancestor WIP. Fast-forward main обычным merge --ff-only и push (не reset/force).
-2. `python3 tools/build_v010_zip.py`: полный архив incl .godot, excl .git; testzip/SHA. UploadFile в папку владельца; metadata parents/size.
-3. После upload ОДНА попытка trash старого ZIP1HykoH2mUKmMj5fUmnNOzrkg1kJiX7r-U. На отказе остановиться, не повторять.
-4. Дописать в HANDOFF ZIP/main commit/trash outcome, UploadFile актуальную копию. Однократно попробовать trash старого HANDOFF19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ. Последний docs-only metadata commit/push main+WIP допустим; код архива будет release commit перед delivery metadata.
-5. Финальный ответ по-русски: ссылки ZIP/commit/HANDOFF, before/after таблица и регрессии, мечи/heal/mutation/migration, console additions,6 screenshot paths. Никаких report docs и видео.
+## Точные следующие шаги (после релиза)
+Задач по v0.10 не осталось. Не начинать новую версию или идеи без нового «работай» владельца.
+Старый ZIP не удалось убрать: connector отказал из-за shared file. Уже была ровно1 попытка; НЕ повторять/не обходить, владелец может убрать вручную.
+Дальнейшие улучшения только после согласования: остаточный118ms streaming hitch, walking p95/wake/water regressions (цифры ниже), hardware test на ПК владельца. Milestones/blueprints отложены.
 
 ## Внешние артефакты
-HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ/view (этап 0; обновить в конце).
-Релиз ZIP v0.10: ещё не создан.
+HANDOFF Drive (актуальная): https://drive.google.com/file/d/1v3ulNncHcj4BkHtjO7S7Icj3G3gnrG1P/view . Старая stage0-копия19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ осталась: одна trash-попытка тоже отказана из-за shared file; не повторять.
+Релиз ZIP v0.10: https://drive.google.com/file/d/1AJGikeS7Tfq-HuTeNEHUh3Brwip0DQdK/view
+Код релиза: https://github.com/Dre1km0ns/sonnaya-stroyka/commit/4fc591a4fc772a8f44db92c97d0052f73d4711c2
+ZIP60,513,501 bytes /954files, incl .godot/imported, excl .git, testzip OK. SHA256 `27c4098980c55c1320ba0f8d78173baf78d073a5ef636062a56947ba94b54581`. Metadata parents/size после upload проверены.
 
 ## Этап 1: фактические изменения и результат
 - `placed_cells_changed` обновляет только dirty cells; обычные блоки по чанкам (16×16), скрытые внутренние грани, коллизии объединены горизонтальными полосами; интерактивы отдельно. Удалены production full-rebuild из BuildController/дверей/уничтожения мобами/пробуждения.
@@ -126,3 +126,11 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 - Все9 screenshots просмотрены через Read. После review подсказки anchor/context разнесены (anchorY260), overlay скрывается под modal; closer camera показывает всю структуру55roots56cells,1mutation/cap1. Меч уменьшен/правильный grip, дверь на сетке/тонкая. GUI mouse capture/Y close реально проверены Xvfb, не только headless. `/workspace/v010/screens_final2.log` чист кроме обычного Xvfb VSync warning.
 - Reviewed paths: `/workspace/shots/v010_f3.png`, `v010_door_closed.png`, `v010_door_open.png`, `v010_scale_sword.png`, `v010_inventory.png`, `v010_console_help.png`, `v010_transfer_preview.png`, `v010_anchored_cells.png`, `v010_wake_result.png`.
 - Версия0.10 в project/main menu/log/smoke, CHANGELOG/README полные. `tools/build_v010_zip.py` воспроизводит release ZIP.
+
+## Доставка завершена
+- Fast-forward main:89cbb0d→4fc591a4fc772a8f44db92c97d0052f73d4711c2, push успешен. В release ZIP код именно этого коммита; последующий docs-only commit с delivery metadata не меняет игру.
+- Drive ZIP: https://drive.google.com/file/d/1AJGikeS7Tfq-HuTeNEHUh3Brwip0DQdK/view ; folder1YW-aXo6q4BgBnnTx9frlZhIU1tosuMBJ, size60513501 подтверждены.
+- Старый1HykoH2mUKmMj5fUmnNOzrkg1kJiX7r-U: единственная trash-попытка **отказана** — shared file/connector cannot request approval. Не повторять и не обходить. Видео и отчётные Google Docs не трогали.
+- HANDOFF в Drive — текущая копия, её ссылка также в финальном ответе. Первоначальная копия19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ содержит только stage0, не использовать её для новых задач.
+
+Актуальный HANDOFF29578bytes загружен и placement подтверждён: https://drive.google.com/file/d/1v3ulNncHcj4BkHtjO7S7Icj3G3gnrG1P/view . Единственная trash-попытка старого HANDOFF тоже отказана(shared file), повторов не делали.
