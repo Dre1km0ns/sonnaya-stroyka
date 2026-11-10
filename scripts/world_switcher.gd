@@ -20,7 +20,8 @@ func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wa
 	wake_voxels = wake_vox
 	dream_voxels = dream_vox
 	add_to_group("world_switcher")
-	var we := get_tree().current_scene.get_node_or_null("WorldEnvironment") as WorldEnvironment
+	var scene := wake_root.get_parent()
+	var we := scene.get_node_or_null("WorldEnvironment") as WorldEnvironment if scene else null
 	if we:
 		_env = we.environment
 	_apply_visibility(false)
@@ -181,7 +182,7 @@ func _tint_dream(is_dream: bool) -> void:
 		_env.background_color = Color(0.18, 0.14, 0.32)
 		_env.ambient_light_color = Color(0.55, 0.45, 0.75)
 		_env.fog_light_color = Color(0.45, 0.35, 0.65)
-		_env.fog_density = 0.008
+		GameSettings.apply_distance_fog(_env)
 		_env.glow_intensity = 0.45
 	else:
 		for dc in get_tree().get_nodes_in_group("day_cycle"):
@@ -191,7 +192,7 @@ func _tint_dream(is_dream: bool) -> void:
 		_env.background_color = Color(0.55, 0.62, 0.7)
 		_env.ambient_light_color = Color(0.7, 0.68, 0.62)
 		_env.fog_light_color = Color(0.7, 0.65, 0.55)
-		_env.fog_density = 0.002
+		GameSettings.apply_distance_fog(_env)
 		_env.glow_intensity = 0.25
 
 

@@ -59,6 +59,7 @@ func _ready() -> void:
 	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night_look):
 		GameState.night_changed.connect(_on_night_look)
 	_on_night_look(GameState.is_night() if GameState.has_method("is_night") else false)
+	GameState.apply_enemy_scaling(self,50)
 	_Vis.update_hp_bar(self, hp, max_hp)
 
 
@@ -151,11 +152,9 @@ func _physics_process(delta: float) -> void:
 			_pick_wander()
 		target = _wander_target
 
-	var attacking := _tick_block_attack(delta)
-	if not attacking:
-		_Nav.follow_target(self, target, speed, delta, _path_cache)
-	else:
-		_Nav.apply_movement(self, Vector3.ZERO, 0.0, delta)
+	_path_cache["can_break"] = dist<SEEK_RANGE
+	_Nav.follow_target(self,target,speed,delta,_path_cache)
+	var attacking := float(get_meta("mining_progress",0.0))>0.0
 
 	if dist <= CONTACT_RANGE + 1.0:
 		_Nav.face_point(self, player.global_position, delta)
@@ -196,7 +195,7 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	if GameState.awake_time > 60.0:
 		amount = maxi(amount, 2)
 	# v0.7: мобы бьют игрока (i-frames и анти-комбо-кап — в GameState.damage_player).
-	GameState.damage_player(HIT_DAMAGE_ELITE if elite else HIT_DAMAGE, "Шовник")
+	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE_ELITE if elite else HIT_DAMAGE), "Шовник")
 	var stolen := GameState.steal_resource_hardcore(amount)
 	if stolen.begins_with("dust"):
 		GameState.set_hint("Шовник вырвал осыпь (%s)!" % stolen, false)
@@ -204,42 +203,6 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 		GameState.set_hint("Шовник сорвал реагент (−1)!", false)
 	else:
 		GameState.set_hint("Шовник толкает — карман пуст, но удар есть.", false)
-
-
-func _tick_block_attack(_delta: float) -> bool:
-	var cell: Variant = _Nav.nearest_adjacent_block(self)
-	if cell == null:
-		_atk_cell = null
-		_atk_hits = 0
-		return false
-	var ripped: Vector3i = cell
-	var wp := Vector3(float(ripped.x) + 0.5, float(ripped.y) + 0.5, float(ripped.z) + 0.5)
-	_Nav.face_point(self, wp, get_physics_process_delta_time())
-	if _atk_cell != ripped:
-		_atk_cell = ripped
-		_atk_hits = 0
-	if _atk_cd > 0.0:
-		return true
-	_atk_cd = ATTACK_INTERVAL
-	_punch = 0.18
-	_atk_hits += 1
-	_Vis.play_state(self, "attack", true)
-	var body := get_node_or_null("Body") as Node3D
-	if body:
-		body.position.z = 0.12
-	if _atk_hits < ATTACK_HITS:
-		return true
-	_atk_hits = 0
-	if not GameState.destroy_wake_structure(ripped):
-		return true
-	GameState.dust += 1
-	GameState.inventory_changed.emit()
-	GameState.set_hint("Шовник разбил блок яви [%d,%d,%d]" % [ripped.x, ripped.y, ripped.z], false)
-	for vox in get_tree().get_nodes_in_group("voxel_world"):
-		if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
-			vox.remove_block(ripped)
-	_atk_cell = null
-	return true
 
 
 func _on_night_look(night: bool) -> void:

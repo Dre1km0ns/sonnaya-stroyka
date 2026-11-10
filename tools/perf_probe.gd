@@ -7,6 +7,7 @@ var started := false
 var player: Node3D
 var hitch := 0.0
 var label := ""
+var path_start := Vector3(0,10,6)
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -35,6 +36,10 @@ func _process(delta: float) -> bool:
 		return false
 	if player == null:
 		player = current_scene.find_child("Player", true, false) as Node3D
+		player.set_physics_process(false)
+		player.global_position = path_start
+		player.rotation.y = atan2(-12.0,-6.0)
+		player.get_node("CameraPivot").rotation.x = -0.35
 		var gs2 = root.get_node_or_null("GameState")
 		if gs2:
 			gs2.dream_exit_count = (0 if "nomobs" in OS.get_cmdline_user_args() else 2)
@@ -43,7 +48,7 @@ func _process(delta: float) -> bool:
 	frames.append(delta)
 	if t > 9.0 and player:
 		# walk
-		player.global_position += Vector3(12.0 * delta, 0, 6.0 * delta)
+		player.global_position = path_start+Vector3(12.0*(t-9.0),0,6.0*(t-9.0))
 		if t < 19.0:
 			hitch = maxf(hitch, delta)
 	if t >= 9.0 and phase == 0:
@@ -63,6 +68,12 @@ func _report(what: String) -> void:
 	for f in frames:
 		s += f
 		mx = maxf(mx, f)
+	var sorted := frames.duplicate()
+	sorted.sort()
+	var over33 := 0
+	for f in frames:
+		if f>0.03334: over33 += 1
+	print("PERF_HITCH %s %s p95_ms=%.3f p99_ms=%.3f max_ms=%.3f over33=%d total=%d" % [label,what,sorted[floori((sorted.size()-1)*0.95)]*1000.0,sorted[floori((sorted.size()-1)*0.99)]*1000.0,mx*1000.0,over33,frames.size()])
 	var avg := s / maxf(1.0, frames.size())
 	print("PERF %s %s frames=%d avg_ms=%.2f fps=%.1f max_ms=%.1f nodes=%d objects_in_frame=%d draw_calls=%d prims=%d proc_ms=%.2f phys_ms=%.2f" % [
 		label, what, frames.size(), avg * 1000.0, 1.0 / maxf(avg, 0.0001), mx * 1000.0,

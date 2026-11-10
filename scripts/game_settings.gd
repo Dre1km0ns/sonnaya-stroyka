@@ -303,7 +303,24 @@ func apply_window() -> void:
 func apply_environment(env: Environment) -> void:
 	if env == null:
 		return
+	apply_distance_fog(env)
 	env.adjustment_enabled = true
 	env.adjustment_brightness = brightness
 	env.adjustment_contrast = 1.0
 	env.adjustment_saturation = 1.0
+
+
+func fog_end_distance() -> float:
+	return maxf(12.0,render_distance*16.0-8.0)
+
+func apply_distance_fog(env: Environment) -> void:
+	if env == null: return
+	env.fog_enabled = true
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_density = 1.0
+	env.fog_depth_begin = fog_end_distance()*0.35
+	env.fog_depth_end = fog_end_distance()
+	env.fog_depth_curve = 1.0
+	env.fog_sky_affect = 0.8
+	var camera := get_viewport().get_camera_3d()
+	if camera: camera.far = fog_end_distance()+8.0

@@ -198,7 +198,10 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	body.position = mi.position
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	if kind == "workbench":
+	if kind == "torch":
+		body.collision_layer = 32 # pick ray only; player/mobs ignore this layer
+		shape.size = Vector3(0.28,0.85,0.28)
+	elif kind == "workbench":
 		shape.size = Vector3(block_size, block_size * 1.2, block_size)
 		body.position = mi.position + Vector3(0, 0.10, 0)
 	elif kind == "bed":

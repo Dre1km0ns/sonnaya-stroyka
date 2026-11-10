@@ -69,3 +69,5 @@ Procedural v0.8 UI/tool icons and meshes: generated for this project, CC0.
 
 Дополнение v0.8: sfx_drink.ogg — qubodup, Liquid Bottle Drink Set, swallow-03.flac, CC0 1.0, перекодирование mono/44.1kHz/Vorbis. Источник: https://opengameart.org/content/liquid-bottle-drink-set (архив qubodup-bottle-and-drink-sounds.7z).
 sfx_door.ogg — Kenney RPG Audio, Audio/doorOpen_1.ogg, CC0 1.0. https://kenney.nl/assets/rpg-audio ; зеркало https://cc0-sounds.exi.software/collection/kenney_rpgaudio/ .
+
+Original v0.9 assets (tools/make_v09_art.py): ten crack overlays, wooden/stone pickaxe tiles and icons, wooden/scales armour and scale icons; procedural tool geometry (scripts/block_tex.gd). Created for this project, CC0 1.0. No additional external assets used.

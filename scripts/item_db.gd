@@ -4,6 +4,16 @@ extends RefCounted
 
 ## v0.7: стак — 100 предметов (инструменты — 1). Реагенты и осыпь лежат в «кошеле» (общий для яви и сна).
 const ITEMS := {
+	"bedrock":{"name":"Бедрок","stack":100},
+	"anaconda_scale":{"name":"Чешуя Анаконды","stack":100},
+	"wood_helmet":{"name":"Шлем (дерево)","stack":1},
+	"wood_chest":{"name":"Нагрудник (дерево)","stack":1},
+	"wood_legs":{"name":"Поножи (дерево)","stack":1},
+	"wood_boots":{"name":"Ботинки (дерево)","stack":1},
+	"scale_helmet":{"name":"Шлем (чешуя Анаконды)","stack":1},
+	"scale_chest":{"name":"Нагрудник (чешуя Анаконды)","stack":1},
+	"scale_legs":{"name":"Поножи (чешуя Анаконды)","stack":1},
+	"scale_boots":{"name":"Ботинки (чешуя Анаконды)","stack":1},
 	"dirt": {"name":"Земля", "stack":100},
 	"pickaxe2": {"name": "Кирка2", "stack": 1},
 	"deep_stone": {"name": "Глубинный камень", "stack": 100},

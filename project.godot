@@ -1,9 +1,9 @@
 ; Engine configuration file.
-; Godot 4.7 — Сонная стройка (Dream Building) v0.8 caves, depth 30, flowing water, split inventories, bed/pillow, lathe, boss «Анаконда»
+; Godot 4.7 — Сонная стройка (Dream Building) v0.9 caves, depth 30, flowing water, split inventories, bed/pillow, lathe, boss «Анаконда»
 config_version=5
 
 [application]
-config/name="Сонная стройка v0.8"
+config/name="Сонная стройка v0.9"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="sonnaya_stroyka"
 config/description="Dual-world sandbox: build in Dream, anchor what survives into Wake."

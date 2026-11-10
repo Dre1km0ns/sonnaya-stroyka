@@ -163,6 +163,7 @@ func _ready() -> void:
 	if GameState.has_signal("world_changed"):
 		GameState.world_changed.connect(_on_world)
 	_on_world(GameState.is_dream())
+	GameState.apply_enemy_scaling(self,MAX_HP,true)
 	_Vis.update_hp_bar(self, hp, max_hp)
 	_enter(S.SPAWN)
 	var model := get_node_or_null("Model") as Node3D
@@ -203,16 +204,16 @@ func take_damage(amount: int) -> void:
 		dmg = int(round(float(amount) * VULN_MULT))
 	var floor_hp := 0
 	if phase == 1:
-		floor_hp = P2_AT
+		floor_hp = roundi(max_hp*0.66)
 	elif phase == 2:
-		floor_hp = P3_AT
+		floor_hp = roundi(max_hp*0.33)
 	hp = maxi(floor_hp, hp - dmg)
 	damage_dealt += dmg
 	_Vis.update_hp_bar(self, hp, max_hp)
 	_flash()
-	if phase == 1 and hp <= P2_AT:
+	if phase == 1 and hp <= roundi(max_hp*0.66):
 		_pending_transition = 2
-	elif phase == 2 and hp <= P3_AT:
+	elif phase == 2 and hp <= roundi(max_hp*0.33):
 		_pending_transition = 3
 	if hp <= 0:
 		_die()
@@ -229,9 +230,9 @@ func heal_from_blocks(blocks: int) -> int:
 		return 0
 	var cap := max_hp
 	if phase == 2:
-		cap = P2_AT
+		cap = roundi(max_hp*0.66)
 	elif phase == 3:
-		cap = P3_AT
+		cap = roundi(max_hp*0.33)
 	var before := hp
 	hp = mini(cap, hp + HEAL_PER_BLOCK * blocks)
 	var got := hp - before
@@ -311,6 +312,10 @@ func _physics_process(delta: float) -> void:
 		S.AIR:
 			_air_t += delta
 			velocity.y -= _gravity * delta
+			if has_meta("speed_override"):
+				var override_flat := Vector3(velocity.x,0,velocity.z).normalized()*float(get_meta("speed_override"))
+				velocity.x = override_flat.x
+				velocity.z = override_flat.z
 			move_and_slide()
 			_update_shadow()
 			if is_on_floor() and _air_t > 0.15:
@@ -780,7 +785,7 @@ func _roar_push() -> void:
 
 
 func _hurt(player: CharacterBody3D, amount: int, source: String, knock: float) -> int:
-	var dealt: int = GameState.damage_player(amount, "Мать блоков: " + source)
+	var dealt: int = GameState.damage_player(_Nav.combat_damage(self,amount), "Мать блоков: " + source)
 	if dealt > 0:
 		var push := player.global_position - global_position
 		push.y = 0.0

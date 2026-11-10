@@ -69,6 +69,7 @@ func _ready() -> void:
 	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night_look):
 		GameState.night_changed.connect(_on_night_look)
 	_on_night_look(GameState.is_night() if GameState.has_method("is_night") else false)
+	GameState.apply_enemy_scaling(self,50)
 	_Vis.update_hp_bar(self, hp, max_hp)
 
 
@@ -192,11 +193,9 @@ func _physics_process(delta: float) -> void:
 	if forward.length() < 0.01:
 		forward = Vector3(0, 0, -1)
 	var target := compute_target(player.global_position, forward, _find_blinky_pos(), is_scatter_mode())
-	var attacking := _tick_block_attack()
-	if not attacking and dist < SEEK_RANGE + 12.0:
-		_Nav.follow_target(self, target, SPEED, delta, _path_cache)
-	elif attacking:
-		_Nav.apply_movement(self, Vector3.ZERO, 0.0, delta)
+	_path_cache["can_break"] = not is_scatter_mode() and (kind!=Kind.ENEMY4 or dist>CLYDE_FLEE_DIST)
+	if dist<SEEK_RANGE+12.0: _Nav.follow_target(self,target,SPEED,delta,_path_cache)
+	var attacking := float(get_meta("mining_progress",0.0))>0.0
 
 	if dist <= CONTACT_RANGE + 1.0:
 		_Nav.face_point(self, player.global_position, delta)
@@ -219,45 +218,12 @@ func _update_anim(attacking: bool) -> void:
 		_Vis.play_state(self, "idle")
 
 
-func _tick_block_attack() -> bool:
-	var cell: Variant = _Nav.nearest_adjacent_block(self)
-	if cell == null:
-		_atk_cell = null
-		_atk_hits = 0
-		return false
-	var ripped: Vector3i = cell
-	_Nav.face_point(self, Vector3(float(ripped.x) + 0.5, 0.0, float(ripped.z) + 0.5), get_physics_process_delta_time())
-	if _atk_cell != ripped:
-		_atk_cell = ripped
-		_atk_hits = 0
-	if _atk_cd > 0.0:
-		return true
-	_atk_cd = ATTACK_INTERVAL
-	_punch = 0.18
-	_atk_hits += 1
-	_Vis.play_state(self, "attack", true)
-	var body := get_node_or_null("Body") as Node3D
-	if body:
-		body.position.z = 0.12
-	if _atk_hits < ATTACK_HITS:
-		return true
-	_atk_hits = 0
-	if not GameState.destroy_wake_structure(ripped):
-		return true
-	GameState.inventory_changed.emit()
-	for vox in get_tree().get_nodes_in_group("voxel_world"):
-		if vox.has_method("remove_block") and not bool(vox.get("is_dream_layer")):
-			vox.remove_block(ripped)
-	_atk_cell = null
-	return true
-
-
 func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	var push := to_player.normalized()
 	if push.length() < 0.01:
 		push = Vector3(1, 0, 0)
 	player.velocity += Vector3(push.x, 0.3, push.z).normalized() * KNOCKBACK
-	GameState.damage_player(HIT_DAMAGE, kind_name())
+	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE), kind_name())
 	var stolen := GameState.steal_resource_hardcore(1)
 	if stolen.begins_with("dust"):
 		GameState.set_hint("%s выхватил осыпь!" % kind_name(), false)

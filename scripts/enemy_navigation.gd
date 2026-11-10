@@ -254,6 +254,7 @@ static func _reconstruct(came: Dictionary, current: Vector2i, y: float) -> Array
 
 
 static func apply_movement(body: CharacterBody3D, want_dir: Vector3, speed: float, delta: float) -> void:
+	speed = movement_speed(body,speed)
 	var gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity"))
 	want_dir.y = 0.0
 	if want_dir.length() > 0.001:
@@ -329,6 +330,13 @@ static func model_world_forward(body: Node3D) -> Vector3:
 
 
 static func follow_target(body: CharacterBody3D, target: Vector3, speed: float, delta: float, cache: Dictionary) -> Vector3:
+	if cache.get("can_break",true) and try_mine_obstruction(body,target,delta,cache):
+		apply_movement(body,Vector3.ZERO,0.0,delta)
+		return Vector3.ZERO
+	if not cache.get("can_break",true):
+		cache.erase("mine_cell")
+		cache["mine_t"] = 0.0
+		body.set_meta("mining_progress",0.0)
 	var now: float = float(cache.get("t", 0.0)) + delta
 	cache["t"] = now
 	var last_rebuild: float = float(cache.get("rebuild_at", -10.0))
@@ -403,3 +411,52 @@ static func _pick_steer_dir(body: CharacterBody3D, want_dir: Vector3) -> Vector3
 
 static func _blocked(body: CharacterBody3D, dir: Vector3, dist: float) -> bool:
 	return body.test_move(body.global_transform, dir * dist)
+
+
+static func combat_damage(body: Node,base: int) -> int:
+	return maxi(0,int(body.get_meta("damage_override",base)))
+
+static func movement_speed(body: Node,base: float) -> float:
+	return maxf(0.0,float(body.get_meta("speed_override",base))) if base>0.0 else 0.0
+
+static func try_mine_obstruction(body: CharacterBody3D,target: Vector3,delta: float,cache: Dictionary) -> bool:
+	var flat := target-body.global_position
+	flat.y = 0.0
+	if flat.length()<0.3: return false
+	var origin := body.global_position+Vector3(0,0.8,0)
+	var q := PhysicsRayQueryParameters3D.create(origin,origin+flat.normalized()*1.6,1|4,[body.get_rid()])
+	var hit := body.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		cache.erase("mine_cell")
+		cache["mine_t"] = 0.0
+		body.set_meta("mining_progress",0.0)
+		return false
+	var point: Vector3 = hit.position-hit.normal*0.03
+	var cell := Vector3i(floori(point.x),floori(point.y),floori(point.z))
+	var cm := _chunk_manager(body)
+	var kind := ""
+	if GameState.wake_blocks.has(cell):
+		cell = GameState.root_cell(GameState.wake_blocks,cell)
+		kind = GameState.wake_blocks[cell].get("kind","")
+	elif cm and cm.has_method("terrain_kind_at"):
+		kind = str(cm.terrain_kind_at(cell))
+	if kind=="" or kind=="bedrock": return false
+	return advance_mob_mining(body,cell,kind,delta,cache,cm)
+
+static func advance_mob_mining(body: Node,cell: Vector3i,kind: String,delta: float,cache: Dictionary,cm: Node = null) -> bool:
+	var duration := preload("res://scripts/mining_rules.gd").seconds(kind,str(body.get_meta("mining_tool","")))*2.0
+	if not is_finite(duration): return false
+	if cache.get("mine_cell",Vector3i(99999,99999,99999))!=cell:
+		cache["mine_cell"] = cell
+		cache["mine_t"] = 0.0
+	cache["mine_t"] = float(cache.get("mine_t",0.0))+delta
+	body.set_meta("mining_progress",minf(1.0,cache["mine_t"]/duration))
+	if cache["mine_t"]>=duration:
+		if GameState.wake_blocks.has(cell):
+			GameState.destroy_wake_structure(cell)
+		elif GameState.remove_terrain_cell(cell,kind) and cm:
+			cm.rebuild_chunk_at_world(cell.x,cell.z)
+		cache["mine_t"] = 0.0
+		cache.erase("mine_cell")
+		cache["rebuild_at"] = -10.0
+	return true

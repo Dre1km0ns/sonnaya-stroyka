@@ -18,13 +18,16 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
-	if _want_shots07() or _want_inventory_mockup() or _want_shots08():
+	if _want_perf():
+		wake_chunks.legacy_generation = "--legacy-generation" in OS.get_cmdline_user_args()
+		dream_chunks.legacy_generation = wake_chunks.legacy_generation
+	if _want_shots07() or _want_inventory_mockup() or _want_shots08() or _want_shots09():
 		GameState.begin_world("Скриншоты v0.7", "", "6767676767", GameState.DEV_SEED, true)
 	elif _want_shots06():
 		GameState.begin_world("Скриншоты v0.6", "", "6767676767", GameState.DEV_SEED, false)
 	elif _want_shots05():
 		GameState.begin_world("Скриншоты", "", "6767676767", GameState.DEV_SEED, true)
-	elif GameState.world_folder == "" and not _want_shots() and not _want_perf():
+	elif GameState.world_folder == "" and not _want_shots() and not _want_perf() and not has_meta("smoke"):
 		# Сцену запустили напрямую (F6 в редакторе) — временный мир без сохранения.
 		GameState.begin_world("", "", "1337", 1337, false)
 	elif _want_perf() and GameState.world_folder == "":
@@ -59,6 +62,8 @@ func _ready() -> void:
 	var pause: Node = pause_script.new()
 	pause.name = "PauseMenu"
 	add_child(pause)
+	var console := preload("res://scripts/dev_console.gd").new()
+	add_child(console)
 	_apply_settings()
 	var gsets := get_node_or_null("/root/GameSettings")
 	if gsets:
@@ -69,7 +74,9 @@ func _ready() -> void:
 		player.global_position = player.global_position
 	if not GameState.player_died.is_connected(_on_player_died):
 		GameState.player_died.connect(_on_player_died)
-	if _want_shots08():
+	if _want_shots09():
+		call_deferred("_capture_v09")
+	elif _want_shots08():
 		call_deferred("_capture_v08")
 	elif _want_inventory_mockup():
 		call_deferred("_capture_inventory_mockup")
@@ -86,7 +93,7 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
-	print("Сонная стройка v0.7 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.9 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func _on_player_died() -> void:
@@ -97,6 +104,8 @@ func _on_player_died() -> void:
 	for a in get_tree().get_nodes_in_group("anaconda"):
 		if a.has_method("leave"):
 			a.leave("Анаконда утащила добычу в глубину… и потеряла к тебе интерес.")
+	for inv in get_tree().get_nodes_in_group("inventory_ui"):
+		inv.close() # return cursor-held armour/tools before collecting the death drop
 	var at := player.global_position
 	var items: Array = GameState.collect_death_drop()
 	var n := 0
@@ -216,7 +225,7 @@ func _start_music() -> void:
 func _want_shots() -> bool:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
-	return _want_shots08() or _want_inventory_mockup() or "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
+	return _want_shots09() or _want_shots08() or _want_inventory_mockup() or "--shots" in args or "--shots05" in args or "--shots06" in args or "--shots07" in args
 
 
 func _want_shots05() -> bool:
@@ -1160,4 +1169,100 @@ func _capture_v08() -> void:
 	await _wait(0.1)
 	await _save_shot("v08_water_sides.png")
 	print("SHOT08 complete")
+	get_tree().quit(0)
+
+func _want_shots09() -> bool:
+	return "--shots09" in OS.get_cmdline_user_args()
+
+func _v09_camera(at: Vector3,from: Vector3) -> void:
+	_v7_goto(from)
+	player.set_physics_process(false)
+	player.camera.look_at(at,Vector3.UP)
+
+func _capture_v09() -> void:
+	await _wait(1.0)
+	var console := get_tree().get_first_node_in_group("dev_console")
+	console.execute("god")
+	console.execute("time day")
+	GameState.tutorial_enabled = false
+	# Real landscape with linear fog and seed-determined grass tint.
+	_v09_camera(Vector3(35,0,13),Vector3(49,14,35))
+	await _wait(1.5)
+	await _save_shot("v09_fog_landscape.png")
+	_v09_camera(Vector3(6,-0.05,7),Vector3(9,4,14))
+	await _wait(0.4)
+	await _save_shot("v09_grass_tint.png")
+	# Clear only the screenshot stage, never normal worlds / saves.
+	console.execute("fill air -3 0 4 8 7 13")
+	console.execute("fill stone 2 0 8 2 1 8")
+	_v09_camera(Vector3(2.5,1.5,8.5),Vector3(2.5,0.0,12))
+	_v7_select("pickaxe")
+	build._update_hand_tools()
+	await _wait(0.4)
+	await _save_shot("v09_pickaxe_wood.png")
+	build.set_process(false)
+	build._mine_elapsed = 0.0
+	build._tick_mining(1.05)
+	await _wait(0.1)
+	await _save_shot("v09_cracks_03.png")
+	build._tick_mining(1.4)
+	await _wait(0.1)
+	await _save_shot("v09_cracks_08.png")
+	build.cracks.hide()
+	_v7_select("pickaxe2")
+	build._update_hand_tools()
+	await _wait(0.35)
+	await _save_shot("v09_pickaxe_stone.png")
+	_v7_select("sword")
+	build._update_hand_tools()
+	await _wait(0.1)
+	GameState.toast.emit("Название предмета больше не закрывает HP")
+	await _save_shot("v09_hud_name_hp.png")
+	get_node("HUD")._toast_t = 0.0
+	console.execute("armor give wood")
+	GameState.armor[0].durability = 90
+	GameState.inventory_changed.emit()
+	var inv := get_tree().get_first_node_in_group("inventory_ui")
+	inv.open()
+	await _wait(0.3)
+	await _save_shot("v09_armor_wake.png")
+	inv.close()
+	var craft := get_tree().get_first_node_in_group("craft_menu")
+	craft.open_station("sawmill",true)
+	await _wait(0.3)
+	await _save_shot("v09_wood_armor_recipes.png")
+	craft.close()
+	console.execute("armor give scale")
+	console.execute("world dream")
+	player.set_physics_process(false)
+	build._update_hand_tools()
+	inv.open()
+	await _wait(0.4)
+	await _save_shot("v09_armor_dream.png")
+	inv.close()
+	console.execute("world wake")
+	craft.open_lathe()
+	await _wait(0.3)
+	await _save_shot("v09_scale_armor_recipes.png")
+	craft.close()
+	_v09_camera(Vector3(2.5,1.5,8.5),Vector3(2.5,0,12))
+	console.execute("setblock torch 5 0 8")
+	console.execute("fill planks 10 0 8 12 1 10")
+	console.execute("spawn enemy1")
+	console.execute("sword2 on")
+	console.execute("mob hp 188 all")
+	await _wait(0.2)
+	assert(console.open())
+	console.execute("help")
+	console.entry.text = "fill stone 3"
+	await _wait(0.4)
+	await _save_shot("v09_console.png")
+	console.close()
+	console.execute("kill all")
+	console.execute("moon 0.47")
+	console.execute("time night")
+	_v09_camera(Vector3(-7,1.5,0),Vector3(4,0,18))
+	await _wait(0.4)
+	await _save_shot("v09_moon047.png")
+	print("SHOT09 complete")
 	get_tree().quit(0)

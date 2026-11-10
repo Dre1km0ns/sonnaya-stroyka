@@ -61,6 +61,8 @@ func _ready() -> void:
 	if GameState and GameState.has_signal("world_changed"):
 		if not GameState.world_changed.is_connected(_on_world_changed):
 			GameState.world_changed.connect(_on_world_changed)
+	if not GameState.terrain_cell_changed.is_connected(_terrain_edited):
+		GameState.terrain_cell_changed.connect(_terrain_edited)
 	if not is_dream_layer and GameState.has_signal("terrain_cell_changed"):
 		if not GameState.terrain_cell_changed.is_connected(water_notify):
 			GameState.terrain_cell_changed.connect(water_notify)
@@ -104,6 +106,8 @@ func setup(player: Node3D, world_seed: int = 1337) -> void:
 
 
 func clear_all() -> void:
+	_generation_epoch += 1
+	_wait_jobs(false)
 	for key in _loaded.keys():
 		_unload_chunk(key)
 	_pending.clear()
@@ -114,7 +118,7 @@ func get_loaded_count() -> int:
 
 
 func get_pending_count() -> int:
-	return _pending.size()
+	return _pending.size()+_jobs.size()
 
 
 func world_to_chunk(pos: Vector3) -> Vector2i:
@@ -158,8 +162,8 @@ func walk_height_at(wx: int, wz: int) -> int:
 
 
 func is_cell_removed(wx: int, y: int, wz: int) -> bool:
-	if is_dream_layer or panorama_mode:
-		return false
+	if panorama_mode: return false
+	if is_dream_layer: return GameState.removed_dream_terrain.has(Vector3i(wx,y,wz))
 	if GameState and GameState.has_method("is_terrain_removed"):
 		return bool(GameState.is_terrain_removed(Vector3i(wx, y, wz)))
 	return false
@@ -293,7 +297,7 @@ func _process(delta: float) -> void:
 		_water_process(delta)
 
 
-func _drain_pending() -> void:
+func _drain_legacy() -> void:
 	if _pending.is_empty():
 		return
 	var t0 := Time.get_ticks_usec()
@@ -302,10 +306,21 @@ func _drain_pending() -> void:
 		var c: Vector2i = _pending.pop_front()
 		if _loaded.has(c):
 			continue
-		_load_chunk(c)
+		_load_chunk_legacy(c)
 		built += 1
 		if Time.get_ticks_usec() - t0 > FRAME_BUDGET_USEC:
 			break
+
+
+func _drain_pending() -> void:
+	if legacy_generation:
+		_drain_legacy()
+		return
+	_poll_jobs(1)
+	while _jobs.size() < MAX_CHUNK_JOBS and not _pending.is_empty():
+		var c: Vector2i = _pending.pop_front()
+		if not _loaded.has(c) and not _jobs.has(c):
+			_queue_job(c)
 
 
 func _update_chunks(force: bool) -> void:
@@ -326,6 +341,11 @@ func _update_chunks(force: bool) -> void:
 	_pending.clear()
 	for dx in range(-load_radius, load_radius + 1):
 		for dz in range(-load_radius, load_radius + 1):
+			# Nearest possible distance from ANY point in the current chunk to this chunk.
+			# Using centre-to-centre distance incorrectly omitted diagonals near chunk edges.
+			var gap_x := maxi(absi(dx)-1,0)*chunk_size
+			var gap_z := maxi(absi(dz)-1,0)*chunk_size
+			if circular_loading and gap_x*gap_x+gap_z*gap_z > pow(maxf(12.0,load_radius*16.0-8.0),2): continue
 			var c3 := Vector2i(center.x + dx, center.y + dz)
 			if not _loaded.has(c3):
 				_pending.append(c3)
@@ -334,6 +354,7 @@ func _update_chunks(force: bool) -> void:
 
 
 func load_all_pending() -> void:
+	_wait_jobs(true)
 	while not _pending.is_empty():
 		var c: Vector2i = _pending.pop_front()
 		if not _loaded.has(c):
@@ -468,7 +489,7 @@ func terrain_signature(radius_chunks: int = 4) -> int:
 	return hash(acc)
 
 
-func _load_chunk(coord: Vector2i) -> void:
+func _load_chunk_legacy(coord: Vector2i) -> void:
 	var root := Node3D.new()
 	root.name = "Chunk_%d_%d" % [coord.x, coord.y]
 	root.position = chunk_origin(coord)
@@ -1131,7 +1152,7 @@ func _add_ruin_reagent_cluster(root: Node3D, coord: Vector2i, occupied: Dictiona
 	)
 	var salt := 1
 	for cell in locals:
-		if spawned >= (5 if _is_settlement(coord) else RUIN_CLUSTER_TARGET):
+		if spawned >= (13 if _is_settlement(coord) else RUIN_CLUSTER_TARGET):
 			break
 		var pick := _hash01(coord.x * 17 + cell.x + salt, coord.y * 13 + cell.y)
 		if pick < 0.35 and spawned > 0:
@@ -1608,9 +1629,9 @@ func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
 		return BlockTex.faces_for("sand")
 	if n.y == -1:
 		return BlockTex.faces_for("ground", false, true)
-	if n.y >= -3:
+	if n.y > -6:
 		return BlockTex.faces_for("dirt")
-	if n.y <= -16:
+	if n.y <= -18:
 		return BlockTex.faces_for("deep_stone")
 	return BlockTex.faces_for("stone")
 
@@ -2081,3 +2102,158 @@ func _build_flow_water(coord: Vector2i) -> void:
 	mi.mesh = mesh
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
+
+
+# ---------------- v0.9: jobs own all mutable generation state. Scene tree is main-thread only.
+const ChunkJob := preload("res://scripts/chunk_job.gd")
+const MAX_CHUNK_JOBS := 3
+var circular_loading := true
+var legacy_generation := false # Only explicit benchmark comparison; normal gameplay always workers.
+var _jobs: Dictionary = {}
+var _generation_epoch := 0
+var worker_chunk_count := 0
+var last_worker_id := -1
+var generation_usec := 0
+var last_insert_usec := 0
+
+func _terrain_edited(_cell: Vector3i) -> void:
+	_generation_epoch += 1
+
+func _job_for(c: Vector2i) -> RefCounted:
+	var removed := {}
+	for dx in range(-1,2):
+		for dz in range(-1,2):
+			for k in GameState.removed_in_chunk(c+Vector2i(dx,dz)):
+				removed[k] = true
+	if is_dream_layer: removed = GameState.removed_dream_terrain.duplicate()
+	var caves := {}
+	var carve := {}
+	var nests := {}
+	for dx in range(-4,5):
+		for dz in range(-4,5):
+			var near := c+Vector2i(dx,dz)
+			if _cave_sys_cache.has(near): caves[near] = _cave_sys_cache[near]
+			if abs(dx)<=1 and abs(dz)<=1:
+				if _carve_cache.has(near): carve[near] = _carve_cache[near]
+				if _nest_cache.has(near): nests[near] = _nest_cache[near]
+	var job := ChunkJob.new()
+	job.configure({"seed":_seed,"coord":c,"dream":is_dream_layer,"panorama":panorama_mode,
+		"dev":GameState.dev_mode,"removed":removed,"eggs":GameState.collected_eggs.duplicate(),
+		"collected":GameState.collected_reagent_ids.duplicate(),"epoch":_generation_epoch,
+		"caves":caves,"carve":carve,"nests":nests})
+	return job
+
+func _queue_job(c: Vector2i) -> void:
+	var job := _job_for(c)
+	var id := WorkerThreadPool.add_task(job.run,false,"Chunk %s" % c)
+	_jobs[c] = {"job":job,"id":id}
+
+func _poll_jobs(max_insert: int) -> void:
+	var inserted := 0
+	for c in _jobs.keys():
+		var entry: Dictionary = _jobs[c]
+		if not WorkerThreadPool.is_task_completed(entry.id): continue
+		WorkerThreadPool.wait_for_task_completion(entry.id)
+		_jobs.erase(c)
+		var data: Dictionary = entry.job.result
+		if data.is_empty():
+			push_error("Chunk job returned no data: %s" % c)
+			continue
+		if data.epoch != _generation_epoch:
+			if not _loaded.has(c) and not c in _pending: _pending.append(c)
+			continue
+		if not _loaded.has(c) and maxi(abs(c.x-_center.x),abs(c.y-_center.y)) <= unload_radius:
+			_insert_chunk_data(data)
+			inserted += 1
+		if inserted >= max_insert: break
+
+func _wait_jobs(insert: bool) -> void:
+	for c in _jobs.keys():
+		var entry: Dictionary = _jobs[c]
+		WorkerThreadPool.wait_for_task_completion(entry.id)
+		if insert and not _loaded.has(c) and not entry.job.result.is_empty():
+			if entry.job.result.epoch == _generation_epoch:
+				_insert_chunk_data(entry.job.result)
+			elif not c in _pending:
+				_pending.append(c)
+	_jobs.clear()
+
+func _exit_tree() -> void:
+	_wait_jobs(false)
+
+func _load_chunk(c: Vector2i) -> void:
+	if _loaded.has(c): return
+	if legacy_generation:
+		_load_chunk_legacy(c)
+		return
+	var job: RefCounted
+	if _jobs.has(c):
+		var entry: Dictionary = _jobs[c]
+		WorkerThreadPool.wait_for_task_completion(entry.id)
+		job = entry.job
+		_jobs.erase(c)
+		if job.epoch != _generation_epoch: job = null
+	if job == null:
+		job = _job_for(c)
+		var id := WorkerThreadPool.add_task(job.run,true,"Priority chunk")
+		WorkerThreadPool.wait_for_task_completion(id)
+	_insert_chunk_data(job.result)
+
+func _insert_chunk_data(data: Dictionary) -> void:
+	assert(OS.get_thread_caller_id()==OS.get_main_thread_id())
+	if data.is_empty(): return
+	var t0 := Time.get_ticks_usec()
+	var c: Vector2i = data.coord
+	var node := Node3D.new()
+	node.name = "Chunk_%d_%d" % [c.x,c.y]
+	node.position = chunk_origin(c)
+	add_child(node)
+	var body := StaticBody3D.new()
+	body.name = "TerrainBody"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta("terrain_chunk",c)
+	node.add_child(body)
+	for box in data.geometry.boxes:
+		var oid := _add_box_shape(body,box.center,box.size)
+		if box.solid_owner: body.set_meta("solid_owner_%d" % oid,true)
+	var stream: Dictionary = data.geometry.stream
+	if not stream.v.is_empty():
+		var mi := MeshInstance3D.new()
+		mi.name = "TerrainMesh"
+		mi.mesh = BlockTex.stream_to_mesh(stream)
+		node.add_child(mi)
+	if not data.lake.is_empty():
+		var water := MeshInstance3D.new()
+		water.name = "LakeWater"
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,data.geometry.water)
+		mesh.surface_set_material(0,BlockTex.water_material(is_dream_layer))
+		water.mesh = mesh
+		water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.add_child(water)
+		var occupied := {}
+		_register_lake(c,data.lake,occupied)
+	for r in data.reagents:
+		if GameState.is_reagent_collected(r.id): continue
+		if _reagent_script == null: _reagent_script = load("res://scripts/reagent_node.gd")
+		var reagent: Node3D = _reagent_script.new()
+		reagent.position = r.pos
+		reagent.configure(r.type,r.id,1)
+		node.add_child(reagent)
+	_trees_by_chunk[c] = data.trees
+	for wall in data.walls: _add_wall(c,wall)
+	if data.ruin != null: _ruin_centers[c] = data.ruin
+	_solid_by_chunk[c] = data.solids
+	_cave_sys_cache.merge(data.caves,true)
+	_carve_cache.merge(data.carve,true)
+	_nest_cache.merge(data.nests,true)
+	_loaded[c] = node
+	if not panorama_mode:
+		_sync_physics_tree(node,_physics_active())
+		_check_orphan_leaves(c)
+		if not is_dream_layer: _water_on_chunk_loaded(c,data.lake,true)
+	worker_chunk_count += 1
+	last_worker_id = data.worker_id
+	generation_usec += data.generation_us
+	last_insert_usec = Time.get_ticks_usec()-t0

@@ -45,9 +45,9 @@ func _process(delta: float) -> void:
 				elif id == "door":
 					text += "\nПКМ — открыть / закрыть"
 				else:
-					text += "\nУдерживай ЛКМ с киркой — добыча"
+					text += "\nЛКМ — добыча; без кирки камень не выпадает"
 			elif col.has_meta("terrain_chunk"):
-				text = "Добыча\nУдерживай ЛКМ с киркой. Каменная кирка быстрее деревянной."
+				text = "Добыча\nУдерживай ЛКМ: кирка или пустая рука. Камень рукой — без дропа."
 		if text == "" and GameState.tutorial_enabled:
 			var step := GameState.tutorial_step
 			if GameState.is_dream():

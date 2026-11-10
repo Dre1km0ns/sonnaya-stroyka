@@ -229,6 +229,7 @@ func _craft_selected() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.console_open: return
 	if GameState.paused or GameState.inventory_open:
 		return
 	if event.is_action_pressed("craft_nail"):

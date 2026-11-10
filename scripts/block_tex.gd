@@ -6,7 +6,7 @@ const TILES := ["grass_top", "grass_side", "dirt", "stone", "brick", "brick_moss
 	"leaves", "sand", "water", "dream_top", "dream_side", "dream_dirt", "drift", "drift_dream",
 	"drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch",
 	"bedrock", "nest", "egg", "bed_top", "bed_side", "deep_stone", "grave", "lathe_top", "lathe_side", "blanket", "mattress",
-	"blade2", "scale", "scale_head"]
+	"blade2", "scale", "scale_head", "tool_wood", "tool_stone"]
 
 static var _mat: ShaderMaterial = null
 static var _water: Dictionary = {}
@@ -15,10 +15,8 @@ static var _idx: Dictionary = {}
 
 
 static func tile(name: String) -> int:
-	if _idx.is_empty():
-		for i in range(TILES.size()):
-			_idx[TILES[i]] = i
-	return int(_idx.get(name, 2))
+	var i := TILES.find(name)
+	return i if i >= 0 else 2
 
 
 static func atlas() -> Texture2D:
@@ -59,6 +57,8 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("dirt"))
 		"dirt":
 			return _all(tile("dirt"))
+		"tool_wood", "tool_stone":
+			return _all(tile(kind))
 		"stone":
 			return _all(tile("stone"))
 		"deep_stone":
@@ -310,9 +310,20 @@ static func tool_mesh(kind: String) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var head := "stone" if kind.ends_with("2") else "planks"
 	if kind.begins_with("pickaxe"):
-		_mesh_part(st,"log",Vector3(-0.04,-0.4,-0.04),Vector3(0.08,0.7,0.08))
-		_mesh_part(st,head,Vector3(-0.32,0.24,-0.06),Vector3(0.64,0.12,0.12))
-		_mesh_part(st,head,Vector3(0.25,0.1,-0.06),Vector3(0.1,0.16,0.12))
+		var steel := kind.ends_with("2")
+		var texture := "tool_stone" if steel else "tool_wood"
+		_mesh_part(st,"tool_wood",Vector3(-0.045,-0.5,-0.045),Vector3(0.09,0.86,0.09))
+		_mesh_part(st,"log",Vector3(-0.058,-0.49,-0.058),Vector3(0.116,0.065,0.116))
+		# Joined angled beams: a continuous curved pick-head, never floating stair fragments.
+		for sign_x in [-1.0,1.0]:
+			var curve := [Vector3(0,0.35,0),Vector3(sign_x*0.18,0.36,0),Vector3(sign_x*0.33,0.29,0),Vector3(sign_x*0.45,0.10,0)]
+			for i in range(3):
+				_tool_segment(st,texture,curve[i],curve[i+1],0.11-i*0.023,0.14 if steel else 0.11)
+
+		_mesh_part(st,texture,Vector3(-0.08,0.26,-0.07),Vector3(0.16,0.12,0.14))
+		for y in [0.2,0.23]:
+			_mesh_part(st,"planks",Vector3(-0.07,y,-0.07),Vector3(0.14,0.017,0.14))
+
 	else:
 		_mesh_part(st,"log",Vector3(-0.04,-0.4,-0.04),Vector3(0.08,0.24,0.08))
 		_mesh_part(st,"planks",Vector3(-0.18,-0.17,-0.06),Vector3(0.36,0.07,0.12))
@@ -321,3 +332,10 @@ static func tool_mesh(kind: String) -> ArrayMesh:
 		_mesh_part(st,head,Vector3(-0.025,0.61,-0.035),Vector3(0.05,0.06,0.07))
 	st.set_material(material())
 	return st.commit()
+
+
+static func _tool_segment(st: SurfaceTool,kind: String,a: Vector3,b: Vector3,thick: float,depth: float) -> void:
+	var direction := b-a
+	var part := cube_mesh(kind,Vector3(direction.length()+0.045,thick,depth))
+	var basis := Basis(Vector3.BACK,atan2(direction.y,direction.x))
+	st.append_from(part,0,Transform3D(basis,(a+b)*0.5))

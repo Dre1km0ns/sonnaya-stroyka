@@ -14,6 +14,8 @@ var _held_view: Control
 var _title: Label
 var _specials: Array = []
 var _pouch: Array = []
+var _armor_views: Array = []
+var _armor_caption: Label
 
 
 func _ready() -> void:
@@ -116,21 +118,25 @@ func _build() -> void:
 	row.add_child(right)
 	var armor_cap := Label.new()
 	armor_cap.text = "Броня"
+	_armor_caption = armor_cap
 	armor_cap.add_theme_font_size_override("font_size", 13)
 	right.add_child(armor_cap)
-	for armor_name in ["Шлем", "Нагрудник", "Поножи", "Ботинки"]:
+	for ai in range(4):
+		var armor_name: String = GameState.ArmorRules.NAMES[ai]
 		var armor_row := HBoxContainer.new()
 		armor_row.add_theme_constant_override("separation", 8)
 		right.add_child(armor_row)
 		var empty_slot: Panel = SlotView.new()
 		empty_slot.name = "ArmorSlot" + str(armor_row.get_index())
-		empty_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		empty_slot.index = ai
+		empty_slot.slot_clicked.connect(_on_armor_clicked)
 		armor_row.add_child(empty_slot)
 		var silhouette := ArmorPlaceholder.new()
-		silhouette.kind = armor_row.get_index() - 1
+		silhouette.kind = ai
 		silhouette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		silhouette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		empty_slot.add_child(silhouette)
+		_armor_views.append([empty_slot,silhouette])
 		var armor_label := Label.new()
 		armor_label.text = armor_name
 		armor_label.add_theme_font_size_override("font_size", 13)
@@ -153,7 +159,7 @@ func _build() -> void:
 		pgrid.add_child(pv)
 		_pouch.append([pv, pid])
 	var help := Label.new()
-	help.text = "ЛКМ — взять/положить   ПКМ — половина/один   Shift+ЛКМ — перенос   I / Tab / Esc — закрыть"
+	help.text = "ЛКМ — взять/положить   ПКМ — половина   Shift+ЛКМ — перенос/надеть   I / Tab / Esc — закрыть"
 	help.add_theme_font_size_override("font_size", 12)
 	help.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
 	box.add_child(help)
@@ -213,6 +219,21 @@ func _return_held() -> void:
 		if GameState.get_slot(i).get("id", "") == "":
 			GameState.set_slot(i,payload)
 			return
+	var ai := GameState.ArmorRules.slot(id)
+	if ai>=0 and GameState.armor[ai].is_empty():
+		GameState.armor[ai] = payload
+		GameState.inventory_changed.emit()
+		return
+	# Taking equipped armour creates an equipment vacancy rather than an inventory vacancy.
+	# If it was swapped with an inventory tool, restore the armour there first (no lost durability).
+	for part in range(4):
+		if not GameState.armor[part].is_empty(): continue
+		for j in range(GameState.ITEM_SLOT_COUNT):
+			var candidate: Dictionary = GameState.get_slot(j)
+			if GameState.ArmorRules.slot(candidate.get("id",""))==part:
+				GameState.armor[part] = candidate.duplicate(true)
+				GameState.set_slot(j,payload)
+				return
 	var added: int = GameState.add_item_count(id, cnt)
 	if added < cnt:
 		GameState.block_stash[id] = int(GameState.block_stash.get(id, 0)) + cnt - added
@@ -223,6 +244,7 @@ func _on_slot_clicked(i: int, button: int, shift: bool) -> void:
 	var sid := str(slot.get("id", ""))
 	var scount := int(slot.get("count", 0))
 	if shift and button == MOUSE_BUTTON_LEFT and _held.is_empty():
+		if GameState.equip_armor_from_slot(i): return
 		GameState.quick_move(i)
 		return
 	if button == MOUSE_BUTTON_LEFT:
@@ -278,9 +300,16 @@ func _on_special_clicked(anchor_index: int, _button: int, _shift: bool) -> void:
 
 
 func _refresh() -> void:
+	if _armor_caption: _armor_caption.text = "Броня • %d защиты" % GameState.armor_points()
 	if not visible:
 		return
 	_title.text = ("Инвентарь сна" if GameState.is_dream() else "Инвентарь яви") + ("   [DEV-сид: всё бесконечно]" if GameState.dev_mode else "")
+	for i in range(4):
+		var d: Dictionary = GameState.armor[i]
+		var id: String = d.get("id","")
+		_armor_views[i][0].set_item(id,1 if id!="" else 0,false,false)
+		_armor_views[i][0].set_durability(d.get("durability",GameState.tool_max(id)),GameState.tool_max(id))
+		_armor_views[i][1].visible = id==""
 	for pp in _pouch:
 		var pcnt: int = GameState.count_item(str(pp[1]))
 		pp[0].set_item(str(pp[1]), pcnt, false, pcnt >= GameState.INF_COUNT, true)
@@ -312,6 +341,7 @@ func _process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.console_open: return
 	if GameState.paused or GameState.craft_menu_open:
 		return
 	if event.is_action_pressed("open_inventory"):
@@ -321,3 +351,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _open and event.is_action_pressed("ui_cancel"):
 		close()
 		get_viewport().set_input_as_handled()
+
+
+func _on_armor_clicked(i: int,_button: int,_shift: bool) -> void:
+	if not _held.is_empty() and GameState.ArmorRules.slot(_held.get("id",""))!=i: return
+	var old: Dictionary = GameState.armor[i].duplicate(true)
+	GameState.armor[i] = _held.duplicate(true)
+	_held = old
+	_held_from = -1
+	GameState.inventory_changed.emit()
+	_refresh()

@@ -21,6 +21,8 @@ var last_sword_damage := 0
 var last_sword_hits := 0
 var _mine_cell := Vector3i(99999,99999,99999)
 var _mine_elapsed := 0.0
+var _mine_swing_t := 0.0
+var cracks: MeshInstance3D
 var _mine_tool := ""
 
 
@@ -28,6 +30,8 @@ func setup(p: CharacterBody3D, dream_layer: Node3D) -> void:
 	player = p
 	dream_voxels = dream_layer
 	_make_ghost()
+	cracks = load("res://scripts/mining_cracks.gd").new()
+	add_child(cracks)
 	_ensure_hand_tools()
 
 
@@ -46,6 +50,8 @@ func _make_ghost() -> void:
 
 
 func _process(delta: float) -> void:
+	if cracks: cracks.visible = false
+	_mine_swing_t = maxf(0.0,_mine_swing_t-delta)
 	_place_cooldown = maxf(0.0, _place_cooldown - delta)
 	_update_hand_tools()
 	if player == null or dream_voxels == null:
@@ -60,7 +66,7 @@ func _process(delta: float) -> void:
 		ghost.visible = false
 		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
 			return
-		if (GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2")) and (Input.is_action_pressed("place_block") or Input.is_action_pressed("remove_block")):
+		if (GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2") or GameState.get_selected_item().get("id","")=="") and (Input.is_action_pressed("place_block") or Input.is_action_pressed("remove_block")):
 			_tick_mining(delta)
 			return
 		_mine_elapsed = 0.0
@@ -247,7 +253,7 @@ func _try_place_beacon() -> void:
 func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 	if GameState.is_dream():
 		return
-	if not GameState.selected_is("pickaxe") and not GameState.selected_is("pickaxe2"):
+	if not GameState.selected_is("pickaxe") and not GameState.selected_is("pickaxe2") and GameState.get_selected_item().get("id","")!="":
 		return
 	if not GameState.remove_terrain_cell(cell, kind):
 		return
@@ -260,9 +266,11 @@ func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 
 
 func _finish_mine(cell: Vector3i, kind: String) -> void:
+	var mined_tool := str(GameState.get_selected_item().get("id",""))
 	GameState.wear_tool(1)
 	Sfx.play("break_" + Mining.material(kind), get_tree().root)
-	_spawn_block_pickup(cell, kind)
+	if Mining.drops(kind,mined_tool):
+		_spawn_block_pickup(cell,kind)
 	var host := _wake_world()
 	# v0.6: решение о боссе брошено на прошлом блоке (и объявлено в чате) — спавним сейчас.
 	if GameState.on_block_mined() and host:
@@ -476,7 +484,7 @@ func _update_hand_tools() -> void:
 		_sword_view.visible = show_sword
 	if _sword2_view:
 		_sword2_view.visible = show_s2
-	_hand_root.visible = show_pick or show_sword or show_s2
+	_hand_root.visible = (show_pick or show_sword or show_s2) and not GameState.ui_blocked()
 
 
 func _play_tool_swing() -> void:
@@ -512,7 +520,7 @@ func _tick_mining(delta: float) -> void:
 	if collider.is_in_group("enemy") or collider.get_parent().is_in_group("enemy"):
 		var target = collider if collider.is_in_group("enemy") else collider.get_parent()
 		if target.has_method("take_damage"):
-			target.take_damage(6 if tool == "pickaxe2" else 2)
+			target.take_damage(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1))
 			GameState.wear_tool(2)
 			_play_tool_swing()
 			_place_cooldown = 0.5
@@ -537,8 +545,14 @@ func _tick_mining(delta: float) -> void:
 		_mine_elapsed = 0.0
 	if kind == "":
 		return
+	var duration := Mining.seconds(kind,tool)
+	if not is_finite(duration): return
 	_mine_elapsed += delta
-	if _mine_elapsed >= Mining.seconds(kind, tool):
+	if cracks: cracks.show_progress(cell,_mine_elapsed/duration)
+	if _mine_swing_t<=0.0:
+		_mine_swing_t = 0.35
+		_play_tool_swing()
+	if _mine_elapsed >= duration:
 		_try_mine_wake()
 		_mine_elapsed = 0.0
 		_place_cooldown = 0.1

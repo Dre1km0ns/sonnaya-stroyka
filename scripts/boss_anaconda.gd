@@ -438,7 +438,7 @@ func _start_burst(player: CharacterBody3D) -> void:
 	_dust_puff(_emerge + Vector3(0, 0.2, 0))
 	var to := player.global_position - _emerge
 	if Vector2(to.x, to.z).length() <= BURST_RADIUS and to.y > -1.0 and to.y < 2.5:
-		if GameState.damage_player(BURST_DAMAGE, "Анаконда: укус из-под земли") > 0:
+		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,BURST_DAMAGE), "Анаконда: укус из-под земли") > 0:
 			attack_log["burst_hit"] += 1
 			player.velocity += Vector3(to.x, 0, to.z).normalized() * 7.0 + Vector3(0, 4.0, 0)
 
@@ -487,7 +487,7 @@ func _contact(player: CharacterBody3D) -> void:
 		return
 	if player.global_position.distance_to(_head.global_position) < HEAD_SIZE * 0.5 + 0.6:
 		_contact_cd = CONTACT_CD
-		GameState.damage_player(CONTACT_DAMAGE, "Анаконда: касание")
+		GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONTACT_DAMAGE), "Анаконда: касание")
 
 
 # ---------------------------------------------------------------- фаза 2: обвал + землеройки
@@ -530,7 +530,7 @@ func _tick_rocks(delta: float, player: CharacterBody3D) -> void:
 		_dust_puff(at + Vector3(0, 0.3, 0))
 		var d := player.global_position - at
 		if Vector2(d.x, d.z).length() <= ROCK_RADIUS + 0.35 and d.y > -0.6 and d.y < 2.0:
-			if GameState.damage_player(ROCK_DAMAGE, "Анаконда: обвал") > 0:
+			if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,ROCK_DAMAGE), "Анаконда: обвал") > 0:
 				attack_log["rock_hit"] += 1
 	_rocks = keep
 
@@ -591,7 +591,7 @@ func _tick_coil(delta: float, player: CharacterBody3D) -> void:
 		for s in _segs:
 			if s.global_position.distance_to(player.global_position + Vector3(0, 0.6, 0)) < 0.9:
 				_coil_hit_cd = 1.0
-				GameState.damage_player(COIL_CONTACT, "Анаконда: чешуя кольца")
+				GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,COIL_CONTACT), "Анаконда: чешуя кольца")
 				break
 	# Свет внутри кольца — кольцо рвётся, она слепнет.
 	for z in light_zones():
@@ -613,7 +613,7 @@ func _resolve_constrict(player: CharacterBody3D) -> void:
 	var d := player.global_position - _coil_center
 	var inside := Vector2(d.x, d.z).length() < CONSTRICT_INNER and d.y < 1.6
 	if inside and not is_point_lit(player.global_position + Vector3(0, 1.0, 0)):
-		if GameState.damage_player(CONSTRICT_DAMAGE, "Анаконда: удушение") > 0:
+		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONSTRICT_DAMAGE), "Анаконда: удушение") > 0:
 			attack_log["constrict_hit"] += 1
 	_emerge = _head.global_position
 	_emerge.y = _floor_at(_emerge)
@@ -657,8 +657,11 @@ func _die() -> void:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)
 		GameState.add_item_count("dust", REWARD_DUST - GameState.DUST_PER_BOSS_KILL)
+	var scales := randi_range(6,22)
+	set_meta("last_scale_drop",scales)
+	GameState.add_mined_block("anaconda_scale",scales)
 	GameState.add_mined_block("anaconda_egg", 1)
-	GameState.chat("Анаконда повержена! Награда: %d осыпи, %d реагент3, %d реагент2 и Яйцо Анаконды." % [REWARD_DUST, REWARD_R3, REWARD_R2], Color(0.6, 1.0, 0.6))
+	GameState.chat("Анаконда повержена! Награда: %d осыпи, %d реагент3, %d реагент2 и Яйцо Анаконды, %d чешуи." % [REWARD_DUST, REWARD_R3, REWARD_R2,scales], Color(0.6, 1.0, 0.6))
 	for m in get_tree().get_nodes_in_group("anaconda_minion"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()
@@ -704,6 +707,7 @@ func _cleanup_fx() -> void:
 func _move_head(to: Vector3, delta: float, speed: float) -> void:
 	var cur := _head.global_position
 	var d := to - cur
+	speed = preload("res://scripts/enemy_navigation.gd").movement_speed(self,speed)
 	var step := speed * delta
 	var nxt := to if d.length() <= step else cur + d.normalized() * step
 	if (nxt - cur).length() > 0.001:
@@ -881,7 +885,7 @@ func _check_torch_collision() -> void:
 func try_break_torch(c: Vector3i, roll: float = -1.0) -> bool:
 	if torch_break_cd > 0.0 or GameState.wake_blocks.get(c, {}).get("kind", "") != "torch":
 		return false
-	if (randf() if roll < 0.0 else roll) >= 1.0 / 15.0:
+	if (randf() if roll < 0.0 else roll) >= 1.0 / 3.0:
 		return false
 	torch_break_cd = 5.0
 	torches_broken += 1

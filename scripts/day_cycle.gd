@@ -14,7 +14,8 @@ var _sky_t: float = 0.0
 
 const SUN_MAX_ENERGY := 1.15
 ## v0.7: луна ярче — ночью без факелов видно силуэты мира.
-const MOON_MAX_ENERGY := 0.78
+const MOON_MAX_ENERGY := 0.47
+var moon_energy := MOON_MAX_ENERGY
 const MOON_COLOR := Color(0.62, 0.72, 1.0)
 
 const DAY_TOP := Color(0.36, 0.58, 0.92)
@@ -33,6 +34,7 @@ func setup(sun: DirectionalLight3D, env: Environment, fill: OmniLight3D = null) 
 	_env = env
 	_fill = fill
 	add_to_group("day_cycle")
+	moon_energy = GameState.moon_energy
 	if GameState:
 		time_of_day = float(GameState.day_time)
 	if _sun and _sun.get_parent():
@@ -113,6 +115,7 @@ func _process(delta: float) -> void:
 
 
 func set_time(t: float) -> void:
+	moon_energy = GameState.moon_energy
 	time_of_day = t
 	if GameState:
 		GameState.day_time = t
@@ -123,6 +126,7 @@ func set_time(t: float) -> void:
 
 
 func apply_lighting() -> void:
+	moon_energy = GameState.moon_energy
 	var sd := sun_dir()
 	var md := -sd
 	var day_k := smoothstep(-0.10, 0.22, sd.y)          # солнце светит
@@ -137,7 +141,7 @@ func apply_lighting() -> void:
 		_env.ambient_light_color = NIGHT_AMBIENT.lerp(DAY_AMBIENT.lerp(Color(0.75, 0.62, 0.55), warm * 0.6), day_k)
 		_env.ambient_light_energy = lerpf(NIGHT_AMBIENT_ENERGY, 0.55, day_k)
 		_env.fog_light_color = hor
-		_env.fog_density = lerpf(0.0065, 0.0022, day_k)
+		GameSettings.apply_distance_fog(_env)
 		_env.glow_intensity = lerpf(0.4, 0.25, day_k)
 		_env.background_color = hor
 	if _sky_mat:
@@ -157,7 +161,7 @@ func apply_lighting() -> void:
 		if sd.y > -0.3:
 			_sun.global_transform = Transform3D(Basis.looking_at(-sd, Vector3.UP), _sun.global_position)
 	if _moon:
-		_moon.light_energy = MOON_MAX_ENERGY * moon_k
+		_moon.light_energy = moon_energy * moon_k
 		_moon.visible = moon_k > 0.01
 		if md.y > -0.3:
 			_moon.global_transform = Transform3D(Basis.looking_at(-md, Vector3.UP), Vector3(0, 12, 0))

@@ -596,11 +596,13 @@ func _run() -> void:
 	await _v08_checks()
 	if not _v08_done:
 		_fails.append("v0.8 aborted")
+	await _v09_checks()
+	if not _v09_done: _fails.append("v0.9 aborted")
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
 		return
-	print("SMOKE: OK v0.8 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
+	print("SMOKE: OK v0.9 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
@@ -868,7 +870,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	g2.apply_save_dict(JSON.parse_string(JSON.stringify(blob)))
 	_a(g2.is_terrain_removed((tree["logs"] as Array)[0]), 856)
 	_a(g2.is_terrain_removed(leaves[0]), 857)
-	_a(int(blob["version"]) == 8, 858)
+	_a(int(blob["version"]) == 9, 858)
 	cm.queue_free()
 	anchor.queue_free()
 	# --- Бревно → доски (верстак) ---
@@ -1086,7 +1088,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.reset_state()
 	var lathe_ids: Array = G.get_visible_recipes({"at_lathe": true}).map(func(r): return str(r["id"]))
 	var bench_ids: Array = G.get_visible_recipes({"at_workbench": true}).map(func(r): return str(r["id"]))
-	_a(lathe_ids == ["sword2", "pickaxe2"], 1076)
+	_a(lathe_ids == ["sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
 	_a(not ("lathe" in bench_ids) and not ("sword2" in bench_ids), 1077)
 	for rid in bench_ids:
 		_a(not (rid in lathe_ids), 1079)
@@ -1119,7 +1121,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	root.add_child(cmenu)
 	await process_frame
 	cmenu.open_lathe()
-	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword2", "pickaxe2"], 1106)
+	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
 	cmenu.close()
 	cmenu.queue_free()
 	_a(G.is_placeable_block("bed") and G.is_placeable_block("lathe"), 1109)
@@ -1168,9 +1170,9 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(ResourceLoader.exists(Sfx.MOTHER_ROAR) and ResourceLoader.exists(Sfx.ANACONDA_ROAR), 1152)
 	boss.hp = 400
 	_a(boss.heal_from_blocks(3) == 15 and boss.hp == 415, 1154)
-	boss.hp = 499
+	boss.hp = boss.max_hp-1
 	boss.heal_from_blocks(4)
-	_a(boss.hp == 500, 1157)
+	_a(boss.hp == boss.max_hp, 1157)
 	boss.queue_free()
 	await process_frame
 	G.reset_state()
@@ -1178,7 +1180,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(load("res://scripts/seam_creature.gd").HIT_DAMAGE > 0 and load("res://scripts/enemy_ghost.gd").HIT_DAMAGE > 0, 1162)
 	# --- Луна ярче ---
 	var dcs: GDScript = load("res://scripts/day_cycle.gd")
-	_a(dcs.MOON_MAX_ENERGY >= 0.7, 1165)
+	_a(is_equal_approx(dcs.MOON_MAX_ENERGY,0.47),1165)
 	# --- Мир: 30 уровней вниз, бедрок y=-31, пещеры/гнёзда, вода ---
 	_a(G.BEDROCK_Y == -31, 1167)
 	var anchor := Node3D.new()
@@ -1322,6 +1324,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(ana.hp == ana.MAX_HP and ana.weapon_hits_ignored == 1, 1306)
 	_a(ana.is_invulnerable(), 1307)                 # SPAWN — в земле
 	# Вынырнула и лежит (REST): без света урона нет.
+	ana.torch_break_cd = 999.0 # light-DPS fixture, torch destruction tested separately
 	ana._emerge = Vector3(40, 0, 40)
 	ana._enter(ana.S.REST)
 	for i in range(5):
@@ -1416,7 +1419,8 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	host2.add_child(pk)
 	pk.global_position = Vector3(5.5, 0.6, 5)
 	var planks0: int = G.count_item("planks")
-	_a(pc.auto_pickup() == 1, 1394)
+	G.player_hp = 100 # isolate pickup from the preceding boss attacks
+	_a(pc.auto_pickup() >= 1 and pk.collected,1394)
 	_a(G.count_item("planks") == planks0 + 1, 1395)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	host2.queue_free()
@@ -1431,11 +1435,11 @@ func _v08_checks() -> void:
 	var Rules: GDScript = load("res://scripts/mining_rules.gd")
 	G.reset_state()
 	G.dev_mode = false
-	_a(G.SAVE_FORMAT == 8, 8001)
+	_a(G.SAVE_FORMAT == 9, 8001)
 	for pair in [["ground",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
 		_a(is_equal_approx(Rules.hardness(pair[0]),pair[1]),8002)
-	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),1.125),8003)
-	_a(is_equal_approx(Rules.seconds("stone","pickaxe2"),0.5625),8004)
+	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),3.0),8003)
+	_a(is_equal_approx(Rules.seconds("stone","pickaxe2"),1.5),8004)
 	_a(is_inf(Rules.seconds("bedrock","pickaxe2")),8005)
 	for tool in ["pickaxe","sword","pickaxe2","sword2"]:
 		G.set_slot(0,{"id":tool,"count":1})
@@ -1609,7 +1613,7 @@ func _v08_checks() -> void:
 	G.wake_blocks[c] = {"kind":"torch"}
 	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"torch"}
 	var ana: Node3D = AS.spawn_at(host,Vector3(50,0,50),"smoke08")
-	_a(not ana.try_break_torch(c,0.1),8065)
+	_a(not ana.try_break_torch(c,0.34),8065)
 	_a(ana.try_break_torch(c,0.0) and ana.torch_break_cd==5,8066)
 	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8067)
 	ana.torch_break_cd = 0
@@ -1736,3 +1740,257 @@ func _v08_checks() -> void:
 	await process_frame
 	_v08_done = true
 	print("SMOKE: v0.8 checks done")
+
+var _v09_done := false
+func _v09_checks() -> void:
+	print("SMOKE: v0.9 checks")
+	var G: Node = root.get_node("GameState")
+	var A := preload("res://scripts/armor_rules.gd")
+	var M := preload("res://scripts/mining_rules.gd")
+	var Nav: GDScript = load("res://scripts/enemy_navigation.gd")
+	# Exact mining/harvest numbers, including the last durability point.
+	_a(is_equal_approx(M.seconds("dirt",""),0.75) and is_equal_approx(M.seconds("log",""),3.0),9001)
+	_a(is_equal_approx(M.seconds("stone",""),7.5) and not M.drops("stone",""),9002)
+	_a(M.seconds("stone","pickaxe")==3.0 and M.seconds("stone","pickaxe2")==1.5,9003)
+	_a(M.seconds("dirt","pickaxe")==3.75 and M.seconds("ground","pickaxe2")==1.875,9004)
+	for i in range(4):
+		for tier in ["wood","scale"]:
+			var id: String = tier+"_"+A.PARTS[i]
+			_a(A.slot(id)==i and A.durability(id)==(A.WOOD_DURABILITY[i] if tier=="wood" else A.SCALE_DURABILITY[i]),9005)
+			_a(ResourceLoader.exists("res://assets/icons/%s.png" % id),9006)
+	# Ordinary world: all 8 recipes really consume materials, equip, wear, save and drop.
+	G.begin_world("armor-test","","89",89,true)
+	for tier in ["wood","scale"]:
+		for i in range(4):
+			var id: String = tier+"_"+A.PARTS[i]
+			var material := "planks" if tier=="wood" else "anaconda_scale"
+			var context := {"station":"sawmill","upgraded":true} if tier=="wood" else {"at_lathe":true}
+			G.add_item_count(material,A.COST[i])
+			_a(not G.craft_recipe(id,{"at_workbench":true}),9007)
+			_a(G.craft_recipe(id,context) and G.raw_count(material)==0,9008)
+			_a(G.equip_armor_from_slot(_slot_of(G,id)),9009)
+		_a(G.armor_points()==(7 if tier=="wood" else 15),9010)
+		G.player_hp = 100; G._combo_log.clear(); G._iframes = 0
+		var dealt: int = G.damage_player(10,"armor-test",true)
+		_a(dealt==(8 if tier=="wood" else 5),9011)
+		_a(G.armor[0].durability==A.durability(tier+"_helmet")-1,9012)
+	var saved: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	G.apply_save_dict(saved)
+	_a(G.armor_points()==15 and G.armor[2].durability==104,9013)
+	G.armor[0].durability = 1
+	G.damage_player(5,"break-test",true)
+	_a(G.armor[0].is_empty(),9014)
+	var death: Array = G.collect_death_drop()
+	_a(death.filter(func(d): return str(d.get("id","")).begins_with("scale_")).size()==3 and G.armor_points()==0,9015)
+	# Isolate the real-scene command integration from older test fixtures.
+	for group in ["player","chunk_manager","enemy","world_switcher","inventory_ui","craft_menu","threat_director","dev_console","day_cycle"]:
+		for node in get_nodes_in_group(group):
+			node.remove_from_group(group)
+			node.set_process(false)
+			node.set_physics_process(false)
+	G.begin_world("v09 smoke","","6767676767",G.DEV_SEED,true)
+	var scene: Node3D = load("res://scenes/main.tscn").instantiate()
+	scene.set_meta("smoke",true)
+	root.add_child(scene)
+	current_scene = scene
+	await process_frame
+	await physics_frame
+	scene.player.set_physics_process(false)
+	scene.build.set_process(false)
+	scene.threat.set_process(false)
+	var console: Node = get_first_node_in_group("dev_console")
+	_a(console!=null and console.allowed() and console.open(),9016)
+	_a(G.console_open and G.ui_blocked(),9017)
+	console.close()
+	var toggle := InputEventKey.new()
+	toggle.physical_keycode = KEY_QUOTELEFT
+	toggle.pressed = true
+	console._input(toggle)
+	_a(G.console_open,9071)
+	console._input(toggle)
+	_a(not G.console_open,9072)
+	G.dev_mode = false
+	_a(not console.open() and console.execute("give stone").begins_with("Ошибка"),9018)
+	G.dev_mode = true
+	_a(console.execute("help").contains("setblock") and console.execute("help").contains("fill"),9019)
+	_a(console.completion_candidates("fill sto")==["fill stone"],9020)
+	console.entry.text = "spawn ana"
+	console.autocomplete()
+	_a(console.entry.text=="spawn anaconda",9021)
+	console.execute("seed")
+	console.history_step(-1)
+	_a(console.entry.text=="seed",9022)
+	# Every command's actual effects, not just a success message.
+	for cmd in ["god","fly","heal","hp 73","time night","time 9.5","time day","give torch 2","give beacon 2","give wood_helmet","give anaconda_scale 5","armor give wood"]:
+		_a(not console.execute(cmd).begins_with("Ошибка"),9023)
+	console.execute("time night")
+	_a(G.is_night(),9060)
+	console.execute("time 9.5")
+	_a(G.clock_text(G.day_time)=="09:30",9061)
+	console.execute("time night")
+	console.execute("moon 0.61")
+	var day: Node = get_first_node_in_group("day_cycle")
+	_a(is_equal_approx(day.moon_energy,0.61) and day.get_moon().light_energy>0 and day.get_moon().light_energy<=0.610001,9064)
+	console.execute("moon 0.47")
+	_a(console.completion_candidates("moo")==["moon "] and G.to_save_dict().moon_energy==0.47,9065)
+	console.execute("time day")
+	_a(G.clock_text(G.day_time)=="12:00",9062)
+	_a(G.god_mode and scene.player.flying and G.player_hp==73 and G.armor_points()==7,9024)
+	_a(G.raw_count("wood_helmet")>0 and G.raw_count("anaconda_scale")>=5,9025)
+	_a(G.damage_player(50,"god-test",true)==0 and G.player_hp==73,9026)
+	_a(console.execute("hardness stone pickaxe").contains("3.000"),9027)
+	_a(not console.execute("tp 3 3 8").begins_with("Ошибка") and scene.player.global_position==Vector3(3,3,8),9028)
+	console.execute("tp spawn")
+	_a(scene.player.global_position==G.spawn_point,9029)
+	console.execute("cooldown reset")
+	_a(G.mother_cooldown==0,9030)
+	for mob in ["seam","elite","enemy1","enemy2","enemy3","enemy4","ghost","minion","mother","anaconda"]:
+		_a(not console.execute("spawn "+mob).begins_with("Ошибка"),9031)
+	_a(console._mobs("all").size()==10,9032)
+	console.execute("mob damage 19 all")
+	console.execute("mob speed 2.7 all")
+	console.execute("mob hp 111 nearest")
+	console.execute("mob tool pickaxe2 seam")
+	for mob in console._mobs("all"):
+		_a(Nav.combat_damage(mob,1)==19 and is_equal_approx(Nav.movement_speed(mob,1),2.7),9033)
+	_a(console._mobs("nearest")[0].hp==111,9034)
+	# Persistent crafting flag and live HP rebalance; new spawns use same base values.
+	console.execute("sword2 on")
+	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==188 and console._mobs("mother")[0].max_hp==1500 and console._mobs("anaconda")[0].max_hp==2850,9035)
+	var flag_save: Dictionary = G.to_save_dict()
+	_a(flag_save.sword2_crafted,9036)
+	console.execute("sword2 off")
+	_a(console._mobs("seam")[0].max_hp==50 and console._mobs("mother")[0].max_hp==500,9037)
+	# Anaconda deterministic probability boundaries and real scale reward.
+	var ana: Node = console._mobs("anaconda")[0]
+	var torch_cell := Vector3i(10,0,10)
+	G.wake_blocks[torch_cell] = {"kind":"torch"}
+	_a(not ana.try_break_torch(torch_cell,0.334) and ana.try_break_torch(torch_cell,0.333),9038)
+	_a(ana.torch_break_cd==5 and not ana.try_break_torch(torch_cell,0.0),9039)
+	ana._die()
+	_a(int(ana.get_meta("last_scale_drop"))>=6 and int(ana.get_meta("last_scale_drop"))<=22,9040)
+	console.execute("kill all")
+	await create_timer(1.6).timeout
+	_a(console._mobs("all").is_empty(),9041)
+	for cmd in ["setblock stone 5 2 8","fill planks 6 2 8 8 3 9","fill dirt 1"]:
+		_a(not console.execute(cmd).begins_with("Ошибка"),9042)
+	_a(G.wake_blocks[Vector3i(5,2,8)].kind=="stone" and G.wake_blocks[Vector3i(8,3,9)].kind=="planks",9043)
+	_a(console.execute("fill stone 20").begins_with("Ошибка") and console.execute("fill stone 0 0 0 100 100 100").begins_with("Ошибка"),9044)
+	console.execute("setblock bed 15 2 8")
+	console.execute("setblock air 15 2 9")
+	_a(not G.wake_blocks.has(Vector3i(15,2,8)),9045)
+	console.execute("setblock torch 9 1 8")
+	await physics_frame
+	var torch_body: StaticBody3D = scene.wake_voxels._bodies[Vector3i(9,1,8)]
+	_a(torch_body.collision_layer==32 and (scene.player.collision_mask&32)==0 and (scene.player.ray.collision_mask&32)!=0 and not G.wake_solid(Vector3i(9,1,8)),9046)
+	# Real obstruction-timer destruction: dirt hand=.75s, mob=1.5s, never arbitrary adjacent blocks.
+	var creature: CharacterBody3D = load("res://scripts/seam_creature.gd").new()
+	scene.wake_world.add_child(creature)
+	creature.set_physics_process(false)
+	var cell := Vector3i(20,1,8)
+	G.wake_blocks[cell] = {"kind":"dirt"}
+	var cache := {}
+	Nav.advance_mob_mining(creature,cell,"dirt",1.49,cache)
+	_a(G.wake_blocks.has(cell),9047)
+	Nav.advance_mob_mining(creature,cell,"dirt",0.02,cache)
+	_a(not G.wake_blocks.has(cell),9048)
+	creature.queue_free()
+	# Real camera-ray mining: cracks follow elapsed time; last pick hit still drops stone.
+	console.execute("fill air 29 4 7 33 7 13")
+	console.execute("setblock stone 30 5 8")
+	scene.player.global_position = Vector3(30.5,4,12)
+	scene.player.camera.look_at(Vector3(30.5,5.5,8.5),Vector3.UP)
+	G.set_slot(0,{"id":"pickaxe","count":1,"durability":1})
+	G.select_item_slot(0)
+	G.dev_mode = false
+	await physics_frame
+	await process_frame
+	var pickup_before := get_nodes_in_group("pickup").size()
+	scene.build._tick_mining(1.05)
+	_a(scene.build.cracks.visible and scene.build.cracks.stage==3,9066)
+	scene.build._tick_mining(2.0)
+	_a(not G.wake_blocks.has(Vector3i(30,5,8)) and G.get_slot(0).get("id","")=="" and get_nodes_in_group("pickup").size()==pickup_before+1,9067)
+	G.dev_mode = true
+	console.execute("setblock stone 30 5 8")
+	G.dev_mode = false
+	await physics_frame
+	await process_frame
+	pickup_before = get_nodes_in_group("pickup").size()
+	scene.build._place_cooldown = 0.0
+	scene.build._tick_mining(7.6)
+	_a(not G.wake_blocks.has(Vector3i(30,5,8)) and get_nodes_in_group("pickup").size()==pickup_before,9068)
+	G.dev_mode = true
+	console.execute("setblock torch 31 5 10")
+	scene.player.global_position = Vector3(29,5,10.5)
+	await physics_frame
+	await process_frame
+	_a(not scene.player.test_move(scene.player.global_transform,Vector3(4,0,0)),9069)
+	var q := PhysicsRayQueryParameters3D.create(Vector3(30,5.5,10.5),Vector3(33,5.5,10.5),32)
+	var hit: Dictionary = scene.player.get_world_3d().direct_space_state.intersect_ray(q)
+	_a(not hit.is_empty() and hit.collider.is_in_group("torch"),9070)
+	# Ten distinct real overlay textures and progress stages.
+	for i in range(10):
+		scene.build.cracks.show_progress(Vector3i(5,2,8),float(i)/10+0.01)
+		_a(scene.build.cracks.stage==i and scene.build.cracks.visible and scene.build.cracks._textures[i]!=null,9049)
+	scene.build.cracks.hide()
+	# Fog distance and far plane really follow render distance.
+	var settings: Node = root.get_node("GameSettings")
+	var old_r: int = settings.render_distance
+	settings.render_distance = 3
+	settings.apply_distance_fog(scene.get_node("WorldEnvironment").environment)
+	var env: Environment = scene.get_node("WorldEnvironment").environment
+	_a(env.fog_mode==Environment.FOG_MODE_DEPTH and env.fog_depth_end==40 and env.fog_density==1.0 and scene.player.camera.far==48,9050)
+	settings.render_distance = old_r
+	# Actual worker result: deterministic mesh, non-main thread, no scene Nodes in job.
+	var cm: Node = scene.wake_chunks
+	var job: RefCounted = cm._job_for(Vector2i(2,1))
+	var job2: RefCounted = cm._job_for(Vector2i(2,1))
+	var tid := WorkerThreadPool.add_task(job.run)
+	var tid2 := WorkerThreadPool.add_task(job2.run)
+	WorkerThreadPool.wait_for_task_completion(tid)
+	WorkerThreadPool.wait_for_task_completion(tid2)
+	_a(job._ug_tiles(Vector3i(0,-5,0),false)==preload("res://scripts/block_tex.gd").faces_for("dirt") and job._ug_tiles(Vector3i(0,-17,0),false)==preload("res://scripts/block_tex.gd").faces_for("stone"),9074)
+	_a(job.result.worker_id!=OS.get_main_thread_id() and cm.worker_chunk_count>=9 and cm.last_worker_id!=OS.get_main_thread_id(),9051)
+	_a(job.result.solids==job2.result.solids and job.result.geometry.stream.v==job2.result.geometry.stream.v,9052)
+	_a(job.grass_tint(4,5)==job2.grass_tint(4,5) and job.grass_tint(4,5)!=job.grass_tint(40,50),9053)
+	var reagent_target := 0
+	for i in range(1000): reagent_target += job.settlement_reagent_target(Vector2i(i,100))
+	_a(float(reagent_target)/1000.0>12.6 and float(reagent_target)/1000.0<12.9,9054)
+	var epoch_cm: Node3D = load("res://scripts/chunk_manager.gd").new()
+	root.add_child(epoch_cm)
+	epoch_cm.set_process(false)
+	epoch_cm._queue_job(Vector2i(1,0))
+	var old_task: int = epoch_cm._jobs[Vector2i(1,0)].id
+	epoch_cm._terrain_edited(Vector3i(16,0,0))
+	while not WorkerThreadPool.is_task_completed(old_task): await process_frame
+	epoch_cm._poll_jobs(1)
+	_a(epoch_cm.get_loaded_count()==0 and Vector2i(1,0) in epoch_cm._pending,9073)
+	epoch_cm.queue_free()
+	print("SMOKE: v09 thread=%s main=%s worker_chunks=%d settlement_target_mean=%.3f armor wood=7 scale=15 damage10=8/5" % [job.result.worker_id,OS.get_main_thread_id(),cm.worker_chunk_count,float(reagent_target)/1000.0])
+	# Full-inventory equipment drag/swap: neither item nor individual durability is lost.
+	var ui: Node = get_first_node_in_group("inventory_ui")
+	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{"id":"stone","count":100})
+	G.set_slot(0,{"id":"pickaxe2","count":1,"durability":123})
+	G.armor[0] = {"id":"wood_helmet","count":1,"durability":78}
+	ui._on_armor_clicked(0,MOUSE_BUTTON_LEFT,false)
+	ui._on_slot_clicked(0,MOUSE_BUTTON_LEFT,false)
+	ui.close()
+	_a(G.armor[0].id=="wood_helmet" and G.armor[0].durability==78 and G.get_slot(0).id=="pickaxe2" and G.get_slot(0).durability==123,9063)
+	console.execute("world dream")
+	_a(G.is_dream() and not console.execute("setblock deep_stone 10 5 10").begins_with("Ошибка"),9055)
+	_a(G.dream_blocks[Vector3i(10,5,10)].kind=="deep_stone",9056)
+	console.execute("fill planks 12 5 10 14 5 12")
+	_a(G.dream_blocks[Vector3i(14,5,12)].kind=="planks",9057)
+	console.execute("world wake")
+	_a(not G.is_dream(),9058)
+	var hud: Node = scene.get_node("HUD")
+	var n: int = hud._chat.size()
+	hud.add_chat("Сон. ЛКМ — блок")
+	_a(hud._chat.size()==n and hud._name_label.offset_top<hud._hp_text.offset_top,9059)
+	console.close()
+	scene.queue_free()
+	await process_frame
+	current_scene = null
+	G.reset_state()
+	_v09_done = true
+	print("SMOKE: v0.9 checks done")

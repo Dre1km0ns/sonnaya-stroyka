@@ -27,6 +27,7 @@ var mouse_sens: float = MOUSE_SENS_DEFAULT
 
 
 func _ready() -> void:
+	ray.collision_mask = 1|4|8|16|32
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	add_to_group("player")
 	var gsets := get_node_or_null("/root/GameSettings")
@@ -90,9 +91,9 @@ func _physics_process(delta: float) -> void:
 
 	if flying:
 		var y_move := 0.0
-		if Input.is_action_pressed("jump"):
+		if Input.is_action_pressed("jump") and not GameState.ui_blocked():
 			y_move += 1.0
-		if Input.is_action_pressed("fly_down"):
+		if Input.is_action_pressed("fly_down") and not GameState.ui_blocked():
 			y_move -= 1.0
 		velocity.x = direction.x * FLY_SPEED
 		velocity.z = direction.z * FLY_SPEED
@@ -100,7 +101,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		if not is_on_floor():
 			velocity.y -= gravity * delta
-		if Input.is_action_just_pressed("jump") and is_on_floor():
+		if Input.is_action_just_pressed("jump") and is_on_floor() and not GameState.ui_blocked():
 			velocity.y = JUMP_VELOCITY
 		if direction != Vector3.ZERO:
 			velocity.x = direction.x * speed

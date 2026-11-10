@@ -50,7 +50,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 30.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 8
+const SAVE_FORMAT := 9
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
 const REAGENT_NAMES: Array[String] = ["реагент1", "реагент2", "реагент3"]
@@ -141,6 +141,7 @@ var selected_anchor: AnchorType = AnchorType.NAIL
 var last_hint: String = ""
 var awake_time: float = 0.0
 var day_time: float = 0.0
+var moon_energy := 0.47
 var craft_menu_open: bool = false
 var inventory_open: bool = false
 var paused: bool = false
@@ -183,6 +184,7 @@ var world_seed_wake: int = 1337
 var world_seed_dream: int = 9001
 ## Снятые клетки процедурного террейна яви: Vector3i -> kind ("hill"/"ruin"/"ground").
 var removed_terrain: Dictionary = {}
+var removed_dream_terrain: Dictionary = {}
 ## Индекс снятых клеток по чанкам 16×16 (Vector2i → Array[Vector3i]) — генерации не нужно перебирать всё.
 var removed_by_chunk: Dictionary = {}
 
@@ -196,6 +198,7 @@ func _ready() -> void:
 
 
 func ui_blocked() -> bool:
+	if console_open: return true
 	return Engine.get_process_frames() <= modal_closed_frame + 1 or storage_open or craft_menu_open or inventory_open or paused or death_open or pillow_open
 
 var pillow_open: bool = false
@@ -206,6 +209,12 @@ var mother_defeated := false
 var dream_bonus_seconds := 0.0
 var idea_eaten: Dictionary = {}
 var world_storage: Dictionary = {} # String cell key -> 27 slots; shared catcher storage across worlds.
+const ArmorRules := preload("res://scripts/armor_rules.gd")
+var armor: Array = [{},{},{},{}]
+var sword2_crafted := false
+var console_open := false
+var god_mode := false
+var dev_fly := false
 var active_bed := ""
 var creation_spawn := DEFAULT_SPAWN
 var tutorial_enabled := true
@@ -234,6 +243,11 @@ static func derive_dream_seed(s: int) -> int:
 
 
 func reset_state() -> void:
+	armor = [{},{},{},{}]
+	sword2_crafted = false
+	console_open = false
+	god_mode = false
+	dev_fly = false
 	storage_open = false
 	mother_defeated = false
 	dream_bonus_seconds = 0.0
@@ -268,6 +282,7 @@ func reset_state() -> void:
 	last_mined_kind = ""
 	last_mined_cell = Vector3i.ZERO
 	block_stash = {}
+	removed_dream_terrain = {}
 	removed_terrain = {}
 	removed_by_chunk = {}
 	pouch = {"reagent1": 0, "reagent2": 0, "reagent3": 0, "dust": 0}
@@ -281,6 +296,7 @@ func reset_state() -> void:
 	pillow_open = false
 	_boss_count = 0
 	_hp_regen_cd = 0.0
+	moon_energy = 0.47
 	day_time = NEW_WORLD_TIME
 	player_hp = PLAYER_MAX_HP
 	_combo_log = []
@@ -310,7 +326,7 @@ func is_dev() -> bool:
 
 
 const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
-	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth"]
+	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
 
@@ -770,7 +786,7 @@ func special_display_count(id: String) -> int:
 
 
 func recipe_defs() -> Array:
-	return [
+	var recipes := [
 		{"id": "nail", "name": "Гвоздь", "where": "dream", "dust": NAIL_CRAFT_DUST, "gives": "nails"},
 		{"id": "wedge", "name": "Клин", "where": "dream", "dust": WEDGE_CRAFT_DUST, "gives": "wedges"},
 		{"id": "anchor3", "name": "Якорь3", "where": "dream", "dust": ANCHOR3_CRAFT_DUST, "gives": "anchors3"},
@@ -793,6 +809,12 @@ func recipe_defs() -> Array:
 		{"id": "heal2", "name": "Хилка2 (+40 HP)", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 3, "item": "heal2"},
 		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 400, "item": "idea_catcher"},
 	]
+	for tier in ["wood","scale"]:
+		for i in range(4):
+			var id: String = tier+"_"+ArmorRules.PARTS[i]
+			recipes.append({"id":id,"name":ItemDB.display_name(id),"where":"sawmill_plus" if tier=="wood" else "lathe",
+				"items":{"planks" if tier=="wood" else "anaconda_scale":ArmorRules.COST[i]},"item":id})
+	return recipes
 
 
 func find_recipe(rid: String) -> Dictionary:
@@ -923,7 +945,7 @@ func mine_wake_block(cell: Vector3i) -> bool:
 	if is_dream():
 		set_hint("Киркой пользуются в яви.")
 		return false
-	if not selected_is("pickaxe") and not selected_is("pickaxe2"):
+	if not selected_is("pickaxe") and not selected_is("pickaxe2") and get_selected_item().get("id","")!="":
 		set_hint("Чтобы ломать блоки яви, возьми кирку.")
 		return false
 	if not wake_blocks.has(cell):
@@ -942,7 +964,7 @@ func mine_wake_block(cell: Vector3i) -> bool:
 		spawn_point = creation_spawn
 	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
-	set_hint("Кирка: выпал блок «%s»." % block_display_name(kind), false)
+	set_hint(("Добыт блок «%s»." if Mining.drops(kind,str(get_selected_item().get("id",""))) else "Блок «%s» разрушен без кирки: дропа нет.") % block_display_name(kind),false)
 	return true
 
 
@@ -1071,6 +1093,7 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
 			return false
 	inventory_changed.emit()
+	if rid == "sword2": set_sword2_flag(true)
 	set_hint("Скрафчено: %s." % str(rec.get("name", rid)))
 	return true
 
@@ -1169,7 +1192,7 @@ func combo_damage_recent() -> int:
 
 func damage_player(amount: int, source: String = "", ignore_iframes: bool = false) -> int:
 	## Возвращает фактический урон. i-frames 0.5 с после удара ≥10; за любые 3 с — не больше 70 (запрет ваншот-цепочек).
-	if amount <= 0 or player_hp <= 0:
+	if god_mode or amount <= 0 or player_hp <= 0:
 		return 0
 	if _iframes > 0.0 and not ignore_iframes:
 		return 0
@@ -1179,9 +1202,10 @@ func damage_player(amount: int, source: String = "", ignore_iframes: bool = fals
 			filtered.append(e)
 	_combo_log = filtered
 	var allowed := maxi(0, COMBO_CAP - combo_damage_recent())
-	var dmg := mini(amount, allowed)
+	var dmg := mini(ArmorRules.reduce(amount,armor_points()),allowed)
 	if dmg <= 0:
 		return 0
+	wear_armor(amount)
 	_combo_log.append([_clock, dmg])
 	player_hp = maxi(0, player_hp - dmg)
 	_hp_regen_cd = PLAYER_REGEN_DELAY
@@ -1292,6 +1316,10 @@ func collect_death_drop() -> Array:
 		if str(sl.get("id", "")) != "" and int(sl.get("count", 0)) > 0:
 			out.append(sl.duplicate(true))
 			inv_wake[i] = _empty_slot()
+	for i in range(4):
+		if not armor[i].is_empty():
+			out.append(armor[i].duplicate(true))
+			armor[i] = {}
 	for pid in pouch.keys():
 		if int(pouch[pid]) > 0:
 			out.append({"id": str(pid), "count": int(pouch[pid])})
@@ -1454,7 +1482,7 @@ func block_display_name(kind: String) -> String:
 
 
 func is_placeable_block(id: String) -> bool:
-	return id in ["drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
+	return id in ["bedrock", "drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
 		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin"]
 
 
@@ -1645,7 +1673,7 @@ func enter_dream() -> void:
 	awake_time = 0.0
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
-	set_hint("Сон. ЛКМ — блок, ПКМ — снять, R — сменить якорь, Q — заякорить, C — меню крафта, F — проснуться.")
+	set_hint("Сон. ЛКМ — блок, ПКМ — снять, R — сменить якорь, Q — заякорить, C — меню крафта, F — проснуться.",false)
 
 
 func resolve_wake() -> Dictionary:
@@ -1766,6 +1794,8 @@ func count_enemies_in_tree(tree: SceneTree) -> int:
 func to_save_dict() -> Dictionary:
 	return {
 		"version": SAVE_FORMAT,
+		"armor":armor.duplicate(true),
+		"sword2_crafted":sword2_crafted,
 		"mother_defeated": mother_defeated,
 		"dream_bonus_seconds": dream_bonus_seconds,
 		"idea_eaten": idea_eaten,
@@ -1786,6 +1816,7 @@ func to_save_dict() -> Dictionary:
 		"anchors3": anchors3,
 		"beacons": beacons,
 		"day_time": day_time,
+		"moon_energy":moon_energy,
 		"selected_anchor": int(selected_anchor),
 		"selected_slot": selected_slot,
 		"item_slots": inv_wake.duplicate(true),
@@ -1808,6 +1839,7 @@ func to_save_dict() -> Dictionary:
 		"dream_blocks": _blocks_to_json(dream_blocks),
 		"pending_anchors": _anchors_to_json(pending_anchors),
 		"removed_terrain": _cells_kind_to_json(removed_terrain),
+		"removed_dream_terrain":_cells_kind_to_json(removed_dream_terrain),
 		"boss_next_mine": boss_next_mine,
 		"player_hp": player_hp,
 	}
@@ -1823,6 +1855,11 @@ static func _seed_val(v: Variant, fallback: int) -> int:
 
 
 func apply_save_dict(data: Dictionary) -> void:
+	armor = [{},{},{},{}]
+	var saved_armor: Array = data.get("armor",[])
+	for i in range(mini(4,saved_armor.size())):
+		if ArmorRules.slot(saved_armor[i].get("id",""))==i: armor[i]=saved_armor[i].duplicate(true)
+	sword2_crafted = bool(data.get("sword2_crafted",false))
 	mother_defeated = bool(data.get("mother_defeated", false))
 	dream_bonus_seconds = maxf(0.0, float(data.get("dream_bonus_seconds", 0.0)))
 	idea_eaten = data.get("idea_eaten", {}).duplicate(true)
@@ -1841,6 +1878,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	clarity = float(data.get("clarity", CLARITY_MAX))
 	awake_time = float(data.get("awake_time", 0.0))
 	day_time = float(data.get("day_time", 0.0))
+	moon_energy = clampf(float(data.get("moon_energy",0.47)),0.0,10.0)
 	world_seed_wake = _seed_val(data.get("world_seed_wake", null), world_seed_wake if world_folder != "" else 1337)
 	world_seed_dream = _seed_val(data.get("world_seed_dream", null), world_seed_dream if world_folder != "" else 9001)
 	if data.has("world_seed"):
@@ -1915,6 +1953,7 @@ func apply_save_dict(data: Dictionary) -> void:
 		_migrate_beds(dream_blocks)
 	pending_anchors = _anchors_from_json(data.get("pending_anchors", []))
 	removed_terrain = _cells_kind_from_json(data.get("removed_terrain", {}))
+	removed_dream_terrain = _cells_kind_from_json(data.get("removed_dream_terrain",{}))
 	_rebuild_removed_index()
 	boss_next_mine = bool(data.get("boss_next_mine", false))
 	mother_cooldown = maxf(0.0, float(data.get("mother_cooldown", 0.0)))
@@ -2093,9 +2132,11 @@ func dream_clarity_max() -> float:
 	return CLARITY_MAX + dream_bonus_seconds * CLARITY_DRAIN_PER_SEC
 
 static func tool_max(id: String) -> int:
+	if ArmorRules.slot(id)>=0: return ArmorRules.durability(id)
 	return 100 if id in ["pickaxe", "sword"] else (500 if id in ["pickaxe2", "sword2"] else 0)
 
 func wear_tool(amount: int) -> bool:
+	if str(get_selected_item().get("id","")) not in ["pickaxe","pickaxe2","sword","sword2"]: return false
 	var d := get_selected_item()
 	var id := str(d.get("id", ""))
 	if dev_mode or tool_max(id) == 0:
@@ -2265,6 +2306,7 @@ func toggle_door(c: Vector3i) -> bool:
 
 
 func wake_solid(c: Vector3i) -> bool:
+	if wake_blocks.get(c,{}).get("kind","")=="torch": return false
 	if not wake_blocks.has(c):
 		return false
 	var root_at := root_cell(wake_blocks,c)
@@ -2328,3 +2370,48 @@ func _migrate_beds(source: Dictionary) -> void:
 		elif source[other].get("root", "") != cell_key(c):
 			# Не перезаписывать соседнюю постройку при загрузке старого одноклеточного ложа.
 			source[c]["legacy_compact"] = true
+
+
+func armor_points() -> int:
+	var total := 0
+	for d in armor:
+		if not d.is_empty() and int(d.get("durability",tool_max(d.get("id",""))))>0:
+			total += ArmorRules.points(d.get("id",""))
+	return total
+
+func equip_armor_from_slot(index: int) -> bool:
+	var d := get_slot(index).duplicate(true)
+	var a := ArmorRules.slot(d.get("id",""))
+	if a<0: return false
+	var old: Dictionary = armor[a].duplicate(true)
+	armor[a] = d
+	set_slot(index,old)
+	inventory_changed.emit()
+	return true
+
+func wear_armor(raw_damage: int) -> void:
+	if dev_mode: return
+	for i in range(4):
+		var d: Dictionary = armor[i]
+		if d.is_empty(): continue
+		d["durability"] = int(d.get("durability",tool_max(d.id)))-maxi(1,raw_damage/20)
+		if int(d.durability)<=0:
+			set_hint("Сломалась броня: "+ItemDB.display_name(d.id),false)
+			armor[i] = {}
+	inventory_changed.emit()
+
+func set_sword2_flag(on: bool) -> void:
+	sword2_crafted = on
+	for enemy in get_tree().get_nodes_in_group("enemy"):
+		if not is_instance_valid(enemy) or enemy.is_in_group("anaconda"): continue
+		var base := int(enemy.get_meta("base_max_hp",enemy.get("max_hp")))
+		apply_enemy_scaling(enemy,base,enemy.is_in_group("block_mother"))
+
+func apply_enemy_scaling(enemy: Node,base: int,mother: bool = false) -> void:
+	var fraction := float(enemy.get("hp"))/maxf(1.0,float(enemy.get("max_hp")))
+	enemy.set_meta("base_max_hp",base)
+	var mult := (3.0 if mother else 3.75) if sword2_crafted else 1.0
+	var hp_max := ceili(base*mult)
+	enemy.set("max_hp",hp_max)
+	enemy.set("hp",maxi(0,ceili(hp_max*fraction)))
+	load("res://scripts/enemy_visuals.gd").update_hp_bar(enemy,enemy.get("hp"),hp_max)

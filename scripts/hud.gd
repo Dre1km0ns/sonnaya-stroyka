@@ -199,6 +199,7 @@ func _build_chat() -> void:
 
 
 func add_chat(text: String, color: Color = Color(1, 1, 1)) -> void:
+	if text.begins_with("Сон. ЛКМ"): return
 	if text.strip_edges() == "":
 		return
 	if text == _last_chat_text and _time - _last_chat_time < 4.0:
@@ -452,9 +453,9 @@ func _update_phase_label() -> void:
 
 func _build_labels() -> void:
 	var root: Control = $Root
-	_name_label = _mk_center_label(-96, 18)
+	_name_label = _mk_center_label(-120,18)
 	root.add_child(_name_label)
-	_toast_label = _mk_center_label(-124, 20)
+	_toast_label = _mk_center_label(-150,20)
 	_toast_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.5))
 	root.add_child(_toast_label)
 	_dev_badge = Label.new()
@@ -507,11 +508,12 @@ func show_toast(text: String) -> void:
 func _tick_fades(delta: float) -> void:
 	_name_t = maxf(0.0, _name_t - delta)
 	_toast_t = maxf(0.0, _toast_t - delta)
-	_name_label.modulate.a = clampf(_name_t / 0.5, 0.0, 1.0)
-	_toast_label.modulate.a = clampf(_toast_t / 0.6, 0.0, 1.0)
+	_name_label.modulate.a = 0.0 if GameState.ui_blocked() else clampf(_name_t / 0.5, 0.0, 1.0)
+	_toast_label.modulate.a = 0.0 if GameState.ui_blocked() else clampf(_toast_t / 0.6, 0.0, 1.0)
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.console_open: return
 	if event.is_action_pressed("toggle_debug"):
 		_debug_label.visible = not _debug_label.visible
 		get_viewport().set_input_as_handled()
