@@ -5,6 +5,7 @@ extends Node
 
 const ItemDB := preload("res://scripts/item_db.gd")
 
+signal placed_cells_changed(is_dream: bool, cells: Array)
 signal world_changed(is_dream: bool)
 signal inventory_changed
 signal clarity_changed(value: float, max_value: float)
@@ -2200,9 +2201,12 @@ static func shape_part(kind: String) -> String:
 func can_place_shape(source: Dictionary, c: Vector3i, kind: String) -> bool:
 	return not source.has(c) and (shape_part(kind) == "" or not source.has(c + part_offset(kind)))
 
-func add_shape_parts(source: Dictionary, c: Vector3i, kind: String) -> void:
-	if shape_part(kind) != "":
-		source[c + part_offset(kind)] = {"kind": shape_part(kind), "root": cell_key(c)}
+func add_shape_parts(source: Dictionary,c: Vector3i,kind: String) -> void:
+	var cells: Array = [c]
+	if shape_part(kind)!="":
+		source[c+part_offset(kind)]={"kind":shape_part(kind),"root":cell_key(c)}
+		cells.append(c+part_offset(kind))
+	placed_cells_changed.emit(is_same(source,dream_blocks),cells)
 
 func root_cell(source: Dictionary, c: Vector3i) -> Vector3i:
 	return key_cell(str(source[c]["root"])) if source.has(c) and source[c].has("root") else c
@@ -2212,6 +2216,7 @@ func remove_shape(source: Dictionary, c: Vector3i) -> void:
 	if shape_part(kind) != "" and source.get(c+part_offset(kind),{}).get("root", "") == cell_key(c):
 		source.erase(c + part_offset(kind))
 	source.erase(c)
+	placed_cells_changed.emit(is_same(source,dream_blocks),[c,c+part_offset(kind)])
 
 func storage_slots(c: Vector3i) -> Array:
 	var k := cell_key(c)
@@ -2304,8 +2309,7 @@ func rotate_door(c: Vector3i) -> bool:
 	c = root_cell(source,c)
 	if source.get(c,{}).get("kind","")!="door": return false
 	source[c]["facing"] = posmod(int(source[c].get("facing",0))+1,4)
-	for vox in get_tree().get_nodes_in_group("voxel_world"):
-		if bool(vox.is_dream_layer)==is_dream(): vox._rebuild_from_state()
+	placed_cells_changed.emit(is_dream(),[c])
 	return true
 
 func toggle_door(c: Vector3i) -> bool:
@@ -2314,9 +2318,7 @@ func toggle_door(c: Vector3i) -> bool:
 	if source.get(c, {}).get("kind", "") != "door":
 		return false
 	source[c]["open"] = not bool(source[c].get("open", false))
-	for vox in get_tree().get_nodes_in_group("voxel_world"):
-		if bool(vox.is_dream_layer) == is_dream():
-			vox._rebuild_from_state()
+	placed_cells_changed.emit(is_dream(),[c])
 	Sfx.play("door", get_tree().root)
 	return true
 
@@ -2362,9 +2364,6 @@ func destroy_wake_structure(c: Vector3i, respect_beacon: bool = false) -> bool:
 	if active_bed == cell_key(c):
 		active_bed = ""
 		spawn_point = creation_spawn
-	for vox in get_tree().get_nodes_in_group("voxel_world"):
-		if not vox.is_dream_layer:
-			vox._rebuild_from_state()
 	inventory_changed.emit()
 	return true
 
@@ -2431,3 +2430,9 @@ func apply_enemy_scaling(enemy: Node,base: int,mother: bool = false) -> void:
 	enemy.set("max_hp",hp_max)
 	enemy.set("hp",maxi(0,ceili(hp_max*fraction)))
 	load("res://scripts/enemy_visuals.gd").update_hp_bar(enemy,enemy.get("hp"),hp_max)
+
+static func ray_cell(aim: Dictionary) -> Vector3i:
+	var collider: Object = aim.get("collider")
+	if collider and collider.has_meta("voxel_cell"): return collider.get_meta("voxel_cell")
+	var inside: Vector3 = aim.get("position",Vector3.ZERO)-aim.get("normal",Vector3.UP)*0.02
+	return Vector3i(floori(inside.x),floori(inside.y),floori(inside.z))

@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 0 (аудит и baseline) завершён. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 10 ноября 2026, МСК. Текущий этап: 1 (инкрементальные блоки) — код и измерения готовы; расширенный smoke проверяется. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -33,7 +33,7 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 3 | Полная русская консоль всех систем, описания/примеры/help/Tab | TODO |
 | 4 | Terraria quick heal: первый подходящий слот по номеру, оба уровня в hotbar/quick slot | TODO |
 | 5 | Мечи 7/13/23 dmg; sword3 = sword2+5 scales на Станке, 700 durability, иконка/текстура; HP flag перенос на sword3, миграция старого sword2 | TODO |
-| 6 | Инкрементальные блоки + dirty cells/chunks; обычные объединить в mesh/коллизии, интерактивы отдельно | В работе: заготовка `/workspace/v010/vox_header.gd`, НЕ ПРИМЕНЕНА |
+| 6 | Инкрементальные блоки + dirty cells/chunks; обычные объединить в mesh/коллизии, интерактивы отдельно | Готова основа: dirty signals, batching, hidden-face mesh, X-merged collision, локальная замена интерактивов; smoke/метрики добавлены. Трансфер/ChunkManager отдельно впереди. |
 | 7 | Единственная sync при переходе; симметричный sleep миров; lazy Dream | TODO |
 | 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | TODO |
 | 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | TODO |
@@ -63,5 +63,14 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 5. Финальные screenshots review, зелёный smoke без leaks, changelog, main push, ZIP/upload/trash one attempt; в результате все цифры/ограничения и ссылки.
 
 ## Внешние артефакты
-HANDOFF Drive: первая загрузка ожидается сразу после коммита этапа 0.
+HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ/view (этап 0; обновить в конце).
 Релиз ZIP v0.10: ещё не создан.
+
+## Этап 1: фактические изменения и результат
+- `placed_cells_changed` обновляет только dirty cells; обычные блоки по чанкам (16×16), скрытые внутренние грани, коллизии объединены горизонтальными полосами; интерактивы отдельно. Удалены production full-rebuild из BuildController/дверей/уничтожения мобами/пробуждения.
+- Picking/добыча BuildController распознают `placed_chunk`, рассчитывают клетку из точки+нормали. Мобы уже использовали этот алгоритм.
+- Parse bad=0; первый smoke выявил нестабильность проверок физики открытой двери, повторный smoke зелёный (debug оставлен на случай повтора). Нужны повторные прогоны после двери/миров.
+- 1000 последовательных размещений: CPU avg **7.429→2.612 ms**, p95 **14.156→4.940 ms**, max **22.162→9.029 ms**. Mesh/body **1000/1000→3/3**, nodes **3004→13**. Удаление p95 **13.320→5.215 ms**. Это этап 1, не финальная производительность.
+- Walking software-renderer avg 39.919→47.760 ms (регрессия/шум; не утверждать оптимизацию FPS). Остальные этапы ещё не внедрены.
+- Новые строки измерений в benchmarks/v0.10.json, лог /workspace/v010/suite_stage1.log. Extended suite всё ещё требует настоящую water fixture (старая water_cells=0 невалидна).
+- Дальше: лёгкие двери + F3 + potion/sword3/миграция + русская консоль; затем ChunkManager/вода/AI/pickup/TransferPlan; в конце полный verification/pipeline.

@@ -148,6 +148,7 @@ func enter_dream() -> void:
 				var c := Vector3i(x, 0, z)
 				GameState.place_dream_block(c, "drift")
 				dream_voxels.add_block(c, GameState.dream_blocks[c])
+	dream_voxels.flush_dirty()
 	player.global_position = Vector3(0, 3, 0)
 	if "flying" in player:
 		player.set("flying", true)
@@ -162,10 +163,6 @@ func wake_up() -> void:
 	var result := GameState.resolve_wake()
 	_apply_visibility(false)
 	_tint_dream(false)
-	if wake_voxels.has_method("_rebuild_from_state"):
-		wake_voxels.call("_rebuild_from_state")
-	if dream_voxels and dream_voxels.has_method("_rebuild_from_state"):
-		dream_voxels.call("_rebuild_from_state")
 	player.global_position = GameState.spawn_point
 	player.velocity = Vector3.ZERO
 	if "flying" in player:

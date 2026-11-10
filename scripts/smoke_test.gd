@@ -598,6 +598,7 @@ func _run() -> void:
 		_fails.append("v0.8 aborted")
 	await _v09_checks()
 	if not _v09_done: _fails.append("v0.9 aborted")
+	await _v010_build_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -2055,7 +2056,9 @@ func _v091_door_checks(scene: Node,console: Node) -> void:
 		await physics_frame
 		var hinge_open: Vector3 = vox._meshes[c].position+vox._meshes[c].basis*Vector3(-0.5,0,0)
 		_a(hinge_open.distance_to(hinge_closed)<0.0001 and not G.wake_solid(c),9205)
-		_a(scene.player.get_world_3d().direct_space_state.intersect_ray(q).is_empty(),9206)
+		var debug_hit: Dictionary = scene.player.get_world_3d().direct_space_state.intersect_ray(q)
+		if not debug_hit.is_empty(): print("DOOR DEBUG ",facing," ",debug_hit," state=",G.wake_blocks[c]," body=",vox._bodies[c].position," rot=",vox._bodies[c].rotation)
+		_a(debug_hit.is_empty(),9206)
 		_a(not scene.player.test_move(scene.player.global_transform,-normal*3),9207)
 		var leaf_center: Vector3 = vox._bodies[c].position
 		var leaf_normal: Vector3 = vox._bodies[c].basis*Vector3.BACK
@@ -2089,3 +2092,27 @@ func _v091_door_checks(scene: Node,console: Node) -> void:
 	G.remove_shape(G.wake_blocks,d)
 	vox._rebuild_from_state()
 	print("SMOKE: door 4 facings, hinge, player collision, open-leaf ray, console, save OK")
+
+func _v010_build_checks() -> void:
+	var G: Node = root.get_node("GameState")
+	G.reset_state();G.current_world=G.World.DREAM
+	var vox: Node3D=load("res://scripts/voxel_world.gd").new()
+	vox.is_dream_layer=true;root.add_child(vox);vox.set_process(false)
+	var sync_before: int=vox.sync_count
+	for i in range(1000):
+		G.place_dream_block(Vector3i(1024+i%40,5+int(i/400),int(i/40)%10),"planks")
+	vox.flush_dirty()
+	_a(vox._placed_chunks.size()==3 and vox._meshes.is_empty() and vox._bodies.is_empty(),10001)
+	_a(vox._data.size()==1000 and vox.sync_count==sync_before,10002)
+	var rebuilt: int=vox.mesh_rebuild_count
+	var c:=Vector3i(1039,5,0)
+	G.remove_dream_block(c);vox.flush_dirty()
+	_a(not vox._data.has(c) and vox.mesh_rebuild_count==rebuilt+2,10003)
+	var b:=Vector3i(1100,5,0)
+	G.place_dream_block(b,"bed");vox.flush_dirty()
+	_a(vox._bodies.has(b) and vox._data.has(b+Vector3i.BACK),10004)
+	G.remove_dream_block(b+Vector3i.BACK);vox.flush_dirty()
+	_a(not vox._bodies.has(b) and not vox._data.has(b+Vector3i.BACK),10005)
+	_a(vox.sync_count==sync_before,10006)
+	vox.queue_free();await process_frame;G.reset_state()
+	print("SMOKE: v0.10 incremental 1000 blocks / 3 meshes+bodies, boundary neighbours, multicell remove, no full resync OK")

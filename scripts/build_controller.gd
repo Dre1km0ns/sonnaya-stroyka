@@ -153,7 +153,7 @@ func _place_at(cell: Vector3i) -> void:
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
 	if GameState.place_dream_block(cell, kind, facing):
-		dream_voxels._rebuild_from_state()
+		dream_voxels.sync_cells([cell])
 		if kind != "drift":
 			GameState.set_hint("%s [%d,%d,%d]. Заякорь гвоздём, чтобы унести в явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])
 		else:
@@ -171,11 +171,11 @@ func _try_remove() -> void:
 	if not aim.get("hit", false):
 		return
 	var collider = aim["collider"]
-	if collider == null or not collider.has_meta("voxel_cell"):
+	if collider == null or not (collider.has_meta("voxel_cell") or collider.has_meta("placed_chunk")):
 		return
 	if not bool(collider.get_meta("is_dream")):
 		return
-	var cell: Vector3i = collider.get_meta("voxel_cell")
+	var cell: Vector3i = GameState.ray_cell(aim)
 	if GameState.remove_dream_block(cell):
 		dream_voxels.remove_block(cell)
 		GameState.set_hint("Снят блок [%d,%d,%d]" % [cell.x, cell.y, cell.z], false)
@@ -189,10 +189,10 @@ func _try_mine_wake() -> void:
 	var collider = aim["collider"]
 	if collider == null:
 		return
-	if collider.has_meta("voxel_cell"):
+	if collider.has_meta("voxel_cell") or collider.has_meta("placed_chunk"):
 		if bool(collider.get_meta("is_dream")):
 			return
-		var cell: Vector3i = collider.get_meta("voxel_cell")
+		var cell: Vector3i = GameState.ray_cell(aim)
 		if GameState.mine_wake_block(cell):
 			var kind := str(GameState.last_mined_kind)
 			for vox in get_tree().get_nodes_in_group("voxel_world"):
@@ -246,7 +246,7 @@ func _try_place_beacon() -> void:
 		GameState.set_hint("Нет маяков. Крафт во сне: %d осыпи + 1 реагент3." % GameState.BEACON_CRAFT_DUST)
 		return
 	if GameState.place_wake_block(cell, "beacon"):
-		vox._rebuild_from_state()
+		vox.sync_cells([cell])
 		GameState.set_hint("Маяк установлен.")
 	else:
 		GameState.add_item_count("beacon", 1)
@@ -312,7 +312,7 @@ func _try_place_torch() -> void:
 	if not GameState.consume_item("torch", 1):
 		return
 	if GameState.place_wake_block(cell, "torch"):
-		vox._rebuild_from_state()
+		vox.sync_cells([cell])
 	else:
 		GameState.add_item("torch", "Факел", 1)
 
@@ -372,7 +372,7 @@ func _try_place_wake_item() -> void:
 	if not GameState.consume_placeable(id):
 		return
 	if GameState.place_wake_block(cell, id):
-		vox._rebuild_from_state()
+		vox.sync_cells([cell])
 	else:
 		GameState.add_mined_block(id, 1)
 
@@ -533,8 +533,8 @@ func _tick_mining(delta: float) -> void:
 		return
 	var cell: Vector3i
 	var kind := ""
-	if collider.has_meta("voxel_cell"):
-		cell = collider.get_meta("voxel_cell")
+	if collider.has_meta("voxel_cell") or collider.has_meta("placed_chunk"):
+		cell = GameState.ray_cell(aim)
 		cell = GameState.root_cell(GameState.wake_blocks, cell)
 		kind = str(GameState.wake_blocks.get(cell, {}).get("kind", ""))
 	elif collider.has_meta("terrain_chunk") or collider.has_meta("terrain_cell"):

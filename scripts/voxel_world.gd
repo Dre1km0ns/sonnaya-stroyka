@@ -1,95 +1,162 @@
 extends Node3D
-## Визуализация и коллизии воксельных блоков для Яви или Сна.
-
-@export var is_dream_layer: bool = false
-@export var block_size: float = 1.0
-
-var _meshes: Dictionary = {} # Vector3i -> MeshInstance3D
-var _bodies: Dictionary = {} # Vector3i -> StaticBody3D
-
-const COLOR_WAKE := Color(0.72, 0.58, 0.42)       # охра
-const COLOR_WAKE_MOUTH := Color(0.75, 0.25, 0.35) # рот — мутация
-const COLOR_DREAM := Color(0.55, 0.48, 0.85)      # индиго
-const COLOR_DREAM_ANCHORED := Color(0.98, 0.72, 0.55) # персик шов
-const COLOR_DREAM_PEACH := Color(0.95, 0.70, 0.62)
+## Ordinary blocks: hidden-face chunk meshes + merged X collision regions.
+## Interactives: one cached mesh/body per root. Dirty cells coalesce until flush.
+@export var is_dream_layer := false
+@export var block_size := 1.0
 const BlockTex := preload("res://scripts/block_tex.gd")
-
-
+const SPECIAL := ["torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
+const PARTS := ["bed_foot","door_top","catcher_top"]
+var _meshes: Dictionary = {}
+var _bodies: Dictionary = {}
+var _data: Dictionary = {}
+var _ordinary: Dictionary = {}
+var _placed_chunks: Dictionary = {}
+var _dirty_cells: Dictionary = {}
+var _dirty_chunks: Dictionary = {}
+var sync_count := 0
+var mesh_rebuild_count := 0
+var cells_changed := 0
+var flush_usec := 0
+static var _shapes: Dictionary = {}
 func _ready() -> void:
 	add_to_group("voxel_world")
-	if is_dream_layer:
-		GameState.world_changed.connect(_on_world)
-	else:
-		GameState.world_changed.connect(_on_world)
-		GameState.wake_resolved.connect(_on_wake_resolved)
-	_rebuild_from_state()
-
-
-func _on_world(_is_dream: bool) -> void:
-	_rebuild_from_state()
-
-
-func _on_wake_resolved(_t: int, _d: int, _m: int) -> void:
-	_rebuild_from_state()
-
-
+	GameState.world_changed.connect(_on_world)
+	GameState.placed_cells_changed.connect(_changed)
+	sync_from_state()
+func _on_world(_dream: bool) -> void:
+	if _active() or (is_dream_layer and GameState.dream_blocks.is_empty()): sync_from_state()
+func _active() -> bool:
+	return GameState.is_dream()==is_dream_layer
+func _state_at(c: Vector3i) -> Dictionary:
+	if not is_dream_layer: return GameState.wake_blocks.get(c,{})
+	if GameState.dream_blocks.has(c): return GameState.dream_blocks[c]
+	var d: Dictionary = GameState.wake_blocks.get(c,{})
+	return d if d.get("kind","") in ["idea_catcher","catcher_top"] else {}
+func _changed(dream: bool,cells: Array) -> void:
+	for c in cells:
+		if dream==is_dream_layer or (is_dream_layer and (_data.get(c,{}).get("kind","") in ["idea_catcher","catcher_top"] or GameState.wake_blocks.get(c,{}).get("kind","") in ["idea_catcher","catcher_top"])):
+			_dirty_cells[c] = true
+func _process(_dt: float) -> void:
+	if _active(): flush_dirty(3000)
 func _rebuild_from_state() -> void:
-	_clear_all()
+	# Compatibility/resync entry point. Never destroy unchanged objects.
+	sync_from_state()
+func sync_from_state() -> void:
+	sync_count += 1
+	var keys := {}
+	for c in _data: keys[c]=true
 	var source: Dictionary = GameState.dream_blocks if is_dream_layer else GameState.wake_blocks
+	for c in source: keys[c]=true
 	if is_dream_layer:
-		source = source.duplicate(true)
 		for c in GameState.wake_blocks:
-			if GameState.wake_blocks[c].get("kind", "") in ["idea_catcher", "catcher_top"]:
-				source[c] = GameState.wake_blocks[c]
-	for cell in source.keys():
-		var data: Dictionary = source[cell]
-		_spawn_visual(cell, data)
-
-
+			if GameState.wake_blocks[c].get("kind","") in ["idea_catcher","catcher_top"]: keys[c]=true
+	for c in keys: _dirty_cells[c]=true
+	flush_dirty()
 func _clear_all() -> void:
-	for c in _meshes.keys():
-		var m: Node = _meshes[c]
-		if is_instance_valid(m):
-			m.queue_free()
-	for c in _bodies.keys():
-		var b: Node = _bodies[c]
-		if is_instance_valid(b):
-			b.queue_free()
-	_meshes.clear()
-	_bodies.clear()
-
-
-func cell_to_world(cell: Vector3i) -> Vector3:
-	return Vector3(cell) * block_size + Vector3.ONE * (block_size * 0.5)
-
-
-func world_to_cell(pos: Vector3) -> Vector3i:
-	return Vector3i(floori(pos.x / block_size), floori(pos.y / block_size), floori(pos.z / block_size))
-
-
-func has_block(cell: Vector3i) -> bool:
-	return _meshes.has(cell)
-
-
-func add_block(cell: Vector3i, data: Dictionary) -> void:
-	if _meshes.has(cell):
-		return
-	_spawn_visual(cell, data)
-
-
-func remove_block(cell: Vector3i) -> void:
-	if _meshes.has(cell):
-		_meshes[cell].queue_free()
-		_meshes.erase(cell)
-	if _bodies.has(cell):
-		_bodies[cell].queue_free()
-		_bodies.erase(cell)
-
-
-func refresh_block(cell: Vector3i, data: Dictionary) -> void:
-	remove_block(cell)
-	_spawn_visual(cell, data)
-
+	for c in _meshes.keys(): _remove_visual(c)
+	for root in _placed_chunks.values(): root.queue_free()
+	_placed_chunks.clear();_ordinary.clear();_data.clear();_dirty_cells.clear();_dirty_chunks.clear()
+func cell_to_world(c: Vector3i) -> Vector3:
+	return Vector3(c)*block_size+Vector3.ONE*block_size*0.5
+func world_to_cell(p: Vector3) -> Vector3i:
+	return Vector3i(floori(p.x/block_size),floori(p.y/block_size),floori(p.z/block_size))
+func _chunk(c: Vector3i) -> Vector2i:
+	return Vector2i(floori(float(c.x)/16),floori(float(c.z)/16))
+func _mark(c: Vector3i) -> void:
+	var ck := _chunk(c);_dirty_chunks[ck]=true
+	for d in [Vector3i.LEFT,Vector3i.RIGHT,Vector3i.FORWARD,Vector3i.BACK]:
+		var nb := _chunk(c+d)
+		if nb!=ck and _ordinary.has(nb): _dirty_chunks[nb]=true
+func has_block(c: Vector3i) -> bool:
+	return _data.has(c) or not _state_at(c).is_empty()
+func add_block(c: Vector3i,_d: Dictionary) -> void:
+	_dirty_cells[c]=true
+func refresh_block(c: Vector3i,_d: Dictionary) -> void:
+	sync_cells([c])
+func remove_block(c: Vector3i) -> void:
+	# Called after GameState mutation; consult old cache to remove multi-cell roots.
+	sync_cells([c])
+func sync_cells(cells: Array) -> void:
+	for c in cells:
+		_dirty_cells[c]=true
+		var old: Dictionary = _data.get(c,{})
+		if old.has("root"): _dirty_cells[GameState.key_cell(old.root)]=true
+		var now := _state_at(c)
+		if now.has("root"): _dirty_cells[GameState.key_cell(now.root)]=true
+		for kind in [old.get("kind",""),now.get("kind","")]:
+			if GameState.shape_part(kind)!="": _dirty_cells[c+GameState.part_offset(kind)]=true
+	flush_dirty(3000)
+func _remove_visual(c: Vector3i) -> void:
+	if _meshes.has(c):
+		_meshes[c].queue_free();_meshes.erase(c)
+	if _bodies.has(c):
+		_bodies[c].collision_layer=0;_bodies[c].queue_free();_bodies.erase(c)
+	var ck := _chunk(c)
+	if _ordinary.has(ck) and _ordinary[ck].erase(c): _mark(c)
+func _apply_cell(c: Vector3i) -> void:
+	var d := _state_at(c)
+	if d==_data.get(c,{}): return
+	_remove_visual(c)
+	_data.erase(c)
+	if d.is_empty(): return
+	_data[c]=d.duplicate(true);cells_changed+=1
+	var kind: String = d.get("kind","drift")
+	if kind in PARTS: return
+	if kind in SPECIAL:
+		_spawn_visual(c,d)
+	else:
+		var ck := _chunk(c)
+		if not _ordinary.has(ck): _ordinary[ck]={}
+		_ordinary[ck][c]=d.duplicate(true);_mark(c)
+func flush_dirty(budget_us: int=0) -> void:
+	var start := Time.get_ticks_usec()
+	for c in _dirty_cells.keys(): _apply_cell(c)
+	_dirty_cells.clear()
+	for ck in _dirty_chunks.keys():
+		_build_placed_chunk(ck);_dirty_chunks.erase(ck)
+		if budget_us>0 and Time.get_ticks_usec()-start>=budget_us: break
+	flush_usec=Time.get_ticks_usec()-start
+func _build_placed_chunk(ck: Vector2i) -> void:
+	if _placed_chunks.has(ck):
+		var old: Node3D = _placed_chunks[ck]
+		for child in old.get_children():
+			if child is CollisionObject3D: child.collision_layer=0
+		old.queue_free();_placed_chunks.erase(ck)
+	var cells: Dictionary = _ordinary.get(ck,{})
+	if cells.is_empty(): _ordinary.erase(ck);return
+	var base := Vector3(ck.x*16,0,ck.y*16)
+	var stream := BlockTex.new_stream()
+	for c in cells:
+		var d: Dictionary = cells[c]
+		var kind: String = d.get("kind","drift")
+		if kind=="drift" and is_dream_layer: kind="drift_anchored" if d.get("anchored",false) else "drift_dream"
+		if d.get("mutant",false): kind="mouth"
+		var mask := 0
+		for i in range(6):
+			var nb: Vector3i = c+Vector3i(BlockTex.FACES[i][0])
+			var nd: Dictionary = _data.get(nb,{})
+			if not nd.is_empty() and nd.get("kind","") not in SPECIAL+PARTS: mask|=1<<i
+		var tint := Color(0.6,1,0.85) if is_dream_layer and d.get("anchored",false) else Color.WHITE
+		BlockTex.emit_box(stream,Vector3(c)-base,Vector3.ONE,tint,mask,BlockTex.faces_for(kind))
+	var root := Node3D.new();root.position=base;root.name="Placed_%d_%d"%[ck.x,ck.y];add_child(root)
+	var mesh := MeshInstance3D.new();mesh.mesh=BlockTex.stream_to_mesh(stream);root.add_child(mesh)
+	var body := StaticBody3D.new();body.collision_layer=4 if _active() else 0;body.collision_mask=0
+	body.set_meta("_saved_layer",4);body.set_meta("placed_chunk",ck);body.set_meta("is_dream",is_dream_layer);root.add_child(body)
+	# Merge contiguous horizontal solids into collision regions; no per-cube Node.
+	var visited := {}
+	for c in cells:
+		if visited.has(c): continue
+		var low: Vector3i=c
+		while cells.has(low+Vector3i.LEFT) and not visited.has(low+Vector3i.LEFT): low+=Vector3i.LEFT
+		var length := 0
+		while cells.has(low+Vector3i.RIGHT*length): visited[low+Vector3i.RIGHT*length]=true;length+=1
+		var size := Vector3(length,1,1)
+		if not _shapes.has(size):
+			var shape := BoxShape3D.new();shape.size=size;_shapes[size]=shape
+		var owner_id := body.create_shape_owner(body)
+		body.shape_owner_set_transform(owner_id,Transform3D(Basis.IDENTITY,Vector3(low)-base+Vector3(length*0.5,0.5,0.5)))
+		body.shape_owner_add_shape(owner_id,_shapes[size])
+	_placed_chunks[ck]=root;mesh_rebuild_count+=1
 
 func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	## v0.6: пиксельные текстуры из общего атласа (BlockTex) вместо однотонных цветов.
@@ -197,13 +264,15 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		mi.add_child(top)
 
 	var body := StaticBody3D.new()
-	body.collision_layer = 4 # blocks
+	body.collision_layer = 4 if _active() else 0 # blocks
+	body.set_meta("_saved_layer",4)
 	body.collision_mask = 0
 	body.position = mi.position
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	if kind == "torch":
-		body.collision_layer = 32 # pick ray only; player/mobs ignore this layer
+		body.collision_layer = 32 if _active() else 0
+		body.set_meta("_saved_layer",32)
 		shape.size = Vector3(0.28,0.85,0.28)
 	elif kind == "workbench":
 		shape.size = Vector3(block_size, block_size * 1.2, block_size)
