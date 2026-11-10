@@ -13,6 +13,7 @@ world wake|dream · cooldown reset · sword2 [on|off|toggle]
 hardness <block> [hand|pickaxe|pickaxe2] · armor give wood|scale
 setblock <block|air> [x y z] (без координат — блок под прицелом)
 fill <block|air> x1 y1 z1 x2 y2 z2 · fill <block|air> <radius>
+door toggle|rotate [x y z] (без координат — дверь под прицелом)
 fill: не более 4096 клеток, радиус ≤7; заменяет блоки и хранилища.
 ↑/↓ история · Tab дополнение (повтор — следующий вариант) · ~ / Esc закрыть"""
 var history: Array[String] = []
@@ -112,7 +113,7 @@ func history_step(direction: int) -> void:
 	entry.text = history[history_index] if history_index<history.size() else _draft
 	entry.caret_column = entry.text.length()
 func completion_candidates(prefix: String) -> Array[String]:
-	var all: Array[String] = ["help","seed","moon ","kill all","god","fly","heal","hp ","time day","time night","time ","tp spawn","tp ","world wake","world dream","cooldown reset","sword2 on","sword2 off","sword2 toggle","armor give wood","armor give scale","mob hp ","mob damage ","mob speed ","mob tool hand","mob tool pickaxe","mob tool pickaxe2"]
+	var all: Array[String] = ["door toggle","door rotate","help","seed","moon ","kill all","god","fly","heal","hp ","time day","time night","time ","tp spawn","tp ","world wake","world dream","cooldown reset","sword2 on","sword2 off","sword2 toggle","armor give wood","armor give scale","mob hp ","mob damage ","mob speed ","mob tool hand","mob tool pickaxe","mob tool pickaxe2"]
 	for id in MOB_IDS: all.append("spawn "+id)
 	for id in DB.all_icon_ids():
 		if id=="unknown": continue
@@ -285,6 +286,7 @@ func _execute(a: PackedStringArray) -> String:
 			if a.size()<2: return "Ошибка: hardness <block> [hand|pickaxe|pickaxe2]"
 			var tool := a[2] if a.size()>2 and a[2]!="hand" else ""
 			return "%s: твёрдость %.2f · %s: %.3f с · дроп %s" % [a[1],Mining.hardness(a[1]),"рука" if tool=="" else tool,Mining.seconds(a[1],tool),Mining.drops(a[1],tool)]
+		"door": return _edit_door(a)
 		"setblock","fill": return _edit_blocks(a)
 	return "Ошибка: неизвестная команда. help — список."
 func _spawn(a: PackedStringArray) -> String:
@@ -374,3 +376,18 @@ func _edit_blocks(a: PackedStringArray) -> String:
 	if vox: vox._rebuild_from_state()
 	GameState.inventory_changed.emit()
 	return "Изменено клеток: %d · %s · %s → %s" % [count,kind,lo,hi]
+
+func _edit_door(a: PackedStringArray) -> String:
+	if a.size() not in [2,5] or a[1] not in ["toggle","rotate"]: return "Ошибка: door toggle|rotate [x y z]"
+	var cell := Vector3i.ZERO
+	if a.size()==5:
+		for i in range(2,5):
+			if not a[i].is_valid_int(): return "Ошибка: координаты — целые."
+		cell = Vector3i(int(a[2]),int(a[3]),int(a[4]))
+	else:
+		var aim: Dictionary = _player().get_look_ray()
+		var collider: Object = aim.get("collider")
+		if not collider or not collider.has_meta("voxel_cell"): return "Ошибка: наведи прицел на дверь."
+		cell = collider.get_meta("voxel_cell")
+	var ok: bool = GameState.toggle_door(cell) if a[1]=="toggle" else GameState.rotate_door(cell)
+	return "Дверь: "+a[1] if ok else "Ошибка: здесь нет двери."

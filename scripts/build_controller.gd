@@ -150,7 +150,9 @@ func _place_at(cell: Vector3i) -> void:
 				return
 			kind = item_kind
 			break
-	if GameState.place_dream_block(cell, kind):
+	var forward: Vector3 = -player.camera.global_transform.basis.z
+	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
+	if GameState.place_dream_block(cell, kind, facing):
 		dream_voxels._rebuild_from_state()
 		if kind != "drift":
 			GameState.set_hint("%s [%d,%d,%d]. Заякорь гвоздём, чтобы унести в явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])

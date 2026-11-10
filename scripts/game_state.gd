@@ -1709,6 +1709,9 @@ func resolve_wake() -> Dictionary:
 			"kind": kind,
 			"mutant": mutant,
 		}
+		if kind=="door":
+			wake_blocks[cell]["facing"] = int(data.get("facing",0))
+			wake_blocks[cell]["open"] = bool(data.get("open",false))
 		add_shape_parts(wake_blocks, cell, kind)
 		transferred += 1
 
@@ -1736,10 +1739,11 @@ func resolve_wake() -> Dictionary:
 	return {"transferred": transferred, "dust": dust_gained, "mutations": mutations}
 
 
-func place_dream_block(cell: Vector3i, kind: String = "drift") -> bool:
+func place_dream_block(cell: Vector3i, kind: String = "drift", facing: int = 0) -> bool:
 	if not can_place_shape(dream_blocks, cell, kind):
 		return false
 	dream_blocks[cell] = {"kind": kind, "anchored": false, "mutant": false}
+	if kind=="door": dream_blocks[cell]["facing"] = posmod(facing,4)
 	add_shape_parts(dream_blocks, cell, kind)
 	return true
 
@@ -2293,6 +2297,15 @@ func break_storage(c: Vector3i) -> bool:
 				set_hint("Сначала опустоши хранилище.")
 				return false
 		world_storage.erase(cell_key(c))
+	return true
+
+func rotate_door(c: Vector3i) -> bool:
+	var source := dream_blocks if is_dream() else wake_blocks
+	c = root_cell(source,c)
+	if source.get(c,{}).get("kind","")!="door": return false
+	source[c]["facing"] = posmod(int(source[c].get("facing",0))+1,4)
+	for vox in get_tree().get_nodes_in_group("voxel_world"):
+		if bool(vox.is_dream_layer)==is_dream(): vox._rebuild_from_state()
 	return true
 
 func toggle_door(c: Vector3i) -> bool:

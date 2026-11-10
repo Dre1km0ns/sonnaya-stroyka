@@ -266,14 +266,13 @@ static func sword2_mesh() -> ArrayMesh:
 
 
 static func station_mesh(kind: String) -> ArrayMesh:
+	if kind == "door": return wooden_door_mesh()
 	if kind == "lathe":
 		return lathe_mesh()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	if kind == "door":
-		_mesh_part(st, "planks", Vector3(-0.5,-1,-0.08), Vector3(1,2,0.16))
-		_mesh_part(st, "beacon", Vector3(0.32,-0.12,-0.13), Vector3(0.1,0.12,0.08))
-	elif kind == "chest":
+
+	if kind == "chest":
 		_mesh_part(st, "planks", Vector3(-0.45,-0.5,-0.45), Vector3(0.9,0.75,0.9))
 		_mesh_part(st, "log", Vector3(-0.47,0.24,-0.47), Vector3(0.94,0.15,0.94))
 		_mesh_part(st, "beacon", Vector3(-0.08,0.05,0.46), Vector3(0.16,0.18,0.04))
@@ -350,3 +349,32 @@ static func _kenney_pickaxe_mesh(stone: bool) -> ArrayMesh:
 		result.surface_set_material(surface,mat)
 	model.free()
 	return result
+
+static var _door_mesh: ArrayMesh
+static func wooden_door_mesh() -> ArrayMesh:
+	if _door_mesh: return _door_mesh
+	var packed: PackedScene = load("res://assets/models/kenney/wooden_door.glb")
+	var model := packed.instantiate()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Source is in YZ, height 2.1; adapted leaf occupies 1×2 blocks in XY.
+	var door_material: StandardMaterial3D
+	var fit := Transform3D(Basis(Vector3(0,0,-0.16/0.15),Vector3(0,2.0/2.1,0),Vector3(1.0/0.9,0,0)),Vector3(-0.5,-1,0))
+	for part in model.find_children("*","MeshInstance3D",true,false):
+		var xf: Transform3D = part.transform
+		var ancestor: Node3D = part.get_parent()
+		while ancestor and ancestor!=model:
+			xf = ancestor.transform*xf
+			ancestor = ancestor.get_parent()
+		for surface in range(part.mesh.get_surface_count()):
+			st.append_from(part.mesh,surface,fit*xf)
+			if door_material==null:
+				var mat: StandardMaterial3D = part.mesh.surface_get_material(surface).duplicate()
+				mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+				mat.albedo_color = Color(0.85,0.85,0.85)
+				mat.metallic = 0.0
+				door_material = mat
+				st.set_material(mat)
+	_door_mesh = st.commit()
+	model.free()
+	return _door_mesh

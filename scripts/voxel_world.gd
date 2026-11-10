@@ -123,10 +123,14 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "bed" and not data.get("legacy_compact",false):
 		mi.position.z += 0.5
 	if kind == "door":
+		var facing := int(data.get("facing",0))*PI/2.0
 		mi.position.y += 0.5
-		if bool(data.get("open", false)):
-			mi.rotation.y = PI / 2.0
-			mi.position.x -= 0.4
+		mi.rotation.y = facing
+		if bool(data.get("open",false)):
+			# Rotate about the real left hinge, never about the middle of the leaf.
+			var hinge := mi.position+Basis(Vector3.UP,facing)*Vector3(-0.5,0,0)
+			mi.rotation.y += PI/2.0
+			mi.position = hinge+Basis(Vector3.UP,mi.rotation.y)*Vector3(0.5,0,0)
 	add_child(mi)
 	_meshes[cell] = mi
 	if kind == "torch":
@@ -210,8 +214,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	elif kind == "door":
 		shape.size = Vector3(1.0, 2.0, 0.16)
 		body.rotation = mi.rotation
-		if bool(data.get("open", false)):
-			body.collision_layer = 0
+		# The opened leaf remains physical and ray-selectable at its hinged position.
 	elif kind == "idea_catcher":
 		shape.size = Vector3(0.9, 2.0, 0.9)
 		body.position.y += 0.5

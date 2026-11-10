@@ -1955,6 +1955,7 @@ func _v09_checks() -> void:
 		_a(pixels>prev_pixels and pixels<130,9104)
 		prev_pixels = pixels
 	_a(scene.build.cracks._mat.albedo_color==Color.WHITE,9105)
+	await _v091_door_checks(scene,console)
 	# Fog distance and far plane really follow render distance.
 	var settings: Node = root.get_node("GameSettings")
 	var old_r: int = settings.render_distance
@@ -2025,3 +2026,66 @@ func _v09_checks() -> void:
 	G.reset_state()
 	_v09_done = true
 	print("SMOKE: v0.9 checks done")
+
+func _v091_door_checks(scene: Node,console: Node) -> void:
+	var G: Node = root.get_node("GameState")
+	var c := Vector3i(80,5,80)
+	var vox: Node
+	for candidate in get_nodes_in_group("voxel_world"):
+		if not candidate.is_dream_layer and scene.is_ancestor_of(candidate): vox = candidate
+	var mesh: ArrayMesh = preload("res://scripts/block_tex.gd").wooden_door_mesh()
+	_a(is_equal_approx(mesh.get_aabb().size.y,2.0) and mesh.get_aabb().size.x<1.1 and mesh.get_aabb().size.z<0.3,9200)
+	_a(mesh.surface_get_material(0).texture_filter==BaseMaterial3D.TEXTURE_FILTER_NEAREST,9201)
+	for facing in range(4):
+		G.wake_blocks[c] = {"kind":"door","facing":facing,"open":false}
+		G.add_shape_parts(G.wake_blocks,c,"door")
+		vox._rebuild_from_state()
+		await physics_frame
+		await physics_frame
+		var center := Vector3(c)+Vector3(0.5,1,0.5)
+		var normal := Basis(Vector3.UP,float(facing)*PI/2)*Vector3.BACK
+		var q := PhysicsRayQueryParameters3D.create(center+normal*2,center-normal*2,4)
+		var hit: Dictionary = scene.player.get_world_3d().direct_space_state.intersect_ray(q)
+		_a(not hit.is_empty() and hit.collider.get_meta("voxel_cell")==c,9202)
+		var hinge_closed: Vector3 = vox._meshes[c].position+vox._meshes[c].basis*Vector3(-0.5,0,0)
+		scene.player.global_position = Vector3(c)+Vector3(0.5,0.05,0.5)+normal*1.5
+		_a(scene.player.test_move(scene.player.global_transform,-normal*3),9203)
+		_a(console.execute("door toggle 80 6 80")=="Дверь: toggle",9204) # upper half routes to root
+		await physics_frame
+		await physics_frame
+		var hinge_open: Vector3 = vox._meshes[c].position+vox._meshes[c].basis*Vector3(-0.5,0,0)
+		_a(hinge_open.distance_to(hinge_closed)<0.0001 and not G.wake_solid(c),9205)
+		_a(scene.player.get_world_3d().direct_space_state.intersect_ray(q).is_empty(),9206)
+		_a(not scene.player.test_move(scene.player.global_transform,-normal*3),9207)
+		var leaf_center: Vector3 = vox._bodies[c].position
+		var leaf_normal: Vector3 = vox._bodies[c].basis*Vector3.BACK
+		var leaf_ray := PhysicsRayQueryParameters3D.create(leaf_center+leaf_normal*0.5,leaf_center-leaf_normal*0.5,4)
+		hit = scene.player.get_world_3d().direct_space_state.intersect_ray(leaf_ray)
+		_a(not hit.is_empty() and hit.collider.get_meta("voxel_cell")==c,9208) # opened leaf remains clickable
+		scene.player.camera.look_at(leaf_center)
+		_a(scene.build._toggle_aimed_door(),9209) # real RMB interaction path closes the opened leaf
+		await physics_frame
+		await physics_frame
+		_a(G.wake_solid(c),9210)
+	_a(console.execute("door rotate 80 5 80")=="Дверь: rotate" and G.wake_blocks[c].facing==0,9211)
+	_a(console.completion_candidates("door ").size()==2 and console.execute("help").contains("door toggle"),9212)
+	var saved: Dictionary = G._blocks_from_json(G._blocks_to_json(G.wake_blocks))
+	_a(saved[c].facing==0 and not saved[c].open and saved[c+Vector3i.UP].root==G.cell_key(c),9213)
+	G.remove_shape(G.wake_blocks,c)
+	vox._rebuild_from_state()
+	console.execute("world dream")
+	scene.player.set_physics_process(false)
+	G.set_slot(0,{"id":"door","count":1})
+	G.select_item_slot(0)
+	scene.player.camera.look_at(scene.player.camera.global_position+Vector3.LEFT)
+	var d := Vector3i(90,5,80)
+	scene.build._place_at(d)
+	_a(G.dream_blocks[d].facing==1 and G.dream_blocks.has(d+Vector3i.UP),9214)
+	G.dream_blocks[d]["open"] = true
+	G.select_anchor(G.AnchorType.NAIL)
+	_a(G.try_place_anchor(d),9215)
+	G.resolve_wake()
+	_a(G.wake_blocks[d].facing==1 and G.wake_blocks[d].open and G.wake_blocks.has(d+Vector3i.UP),9216)
+	G.remove_shape(G.wake_blocks,d)
+	vox._rebuild_from_state()
+	print("SMOKE: door 4 facings, hinge, player collision, open-leaf ray, console, save OK")

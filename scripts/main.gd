@@ -1172,7 +1172,7 @@ func _capture_v08() -> void:
 	get_tree().quit(0)
 
 func _want_shots09() -> bool:
-	return "--shots09" in OS.get_cmdline_user_args() or "--shots091" in OS.get_cmdline_user_args()
+	return "--shots09" in OS.get_cmdline_user_args() or "--shots091" in OS.get_cmdline_user_args() or "--door-shots" in OS.get_cmdline_user_args()
 
 func _v09_camera(at: Vector3,from: Vector3) -> void:
 	_v7_goto(from)
@@ -1180,6 +1180,9 @@ func _v09_camera(at: Vector3,from: Vector3) -> void:
 	player.camera.look_at(at,Vector3.UP)
 
 func _capture_v09() -> void:
+	if "--door-shots" in OS.get_cmdline_user_args():
+		await _capture_v091_door()
+		return
 	if "--shots091" in OS.get_cmdline_user_args():
 		await _capture_v091()
 		return
@@ -1302,4 +1305,34 @@ func _capture_v091() -> void:
 	await _wait(0.2)
 	await _save_shot("v091_moon056.png")
 	print("SHOT091 complete")
+	get_tree().quit(0)
+
+func _capture_v091_door() -> void:
+	await _wait(1.0)
+	var console := get_tree().get_first_node_in_group("dev_console")
+	console.execute("god")
+	console.execute("time day")
+	GameState.tutorial_enabled = false
+	console.execute("fill air -3 0 4 10 6 13")
+	console.execute("fill stone 1 0 8 3 2 8")
+	console.execute("fill air 2 0 8 2 1 8")
+	console.execute("setblock door 2 0 8")
+	_v09_camera(Vector3(2.5,1.0,8.5),Vector3(3.6,-0.25,10.9))
+	build.set_process(false)
+	build._hand_root.hide()
+	await _wait(0.5)
+	await _save_shot("v091_door_closed.png")
+	console.execute("door toggle 2 0 8")
+	await _wait(0.4)
+	await _save_shot("v091_door_open.png")
+	console.execute("door toggle 2 0 8")
+	_v09_camera(Vector3(2.5,1.0,8.5),Vector3(0.7,0,5.2))
+	await _wait(0.3)
+	await _save_shot("v091_door_back.png")
+	console.execute("setblock door 7 0 8")
+	console.execute("door rotate 7 0 8")
+	_v09_camera(Vector3(7.5,1.0,8.5),Vector3(11.2,0.0,10))
+	await _wait(0.3)
+	await _save_shot("v091_door_rotated.png")
+	print("DOOR SHOTS complete")
 	get_tree().quit(0)
