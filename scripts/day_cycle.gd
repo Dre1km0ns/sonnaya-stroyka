@@ -14,7 +14,7 @@ var _sky_t: float = 0.0
 
 const SUN_MAX_ENERGY := 1.15
 ## v0.7: луна ярче — ночью без факелов видно силуэты мира.
-const MOON_MAX_ENERGY := 0.47
+const MOON_MAX_ENERGY := 0.56
 var moon_energy := MOON_MAX_ENERGY
 const MOON_COLOR := Color(0.62, 0.72, 1.0)
 

@@ -33,7 +33,7 @@ func _init() -> void:
 	_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(_icon)
 	_count = Label.new()
 	_count.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)

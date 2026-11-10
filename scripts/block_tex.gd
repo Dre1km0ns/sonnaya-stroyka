@@ -310,19 +310,7 @@ static func tool_mesh(kind: String) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var head := "stone" if kind.ends_with("2") else "planks"
 	if kind.begins_with("pickaxe"):
-		var steel := kind.ends_with("2")
-		var texture := "tool_stone" if steel else "tool_wood"
-		_mesh_part(st,"tool_wood",Vector3(-0.045,-0.5,-0.045),Vector3(0.09,0.86,0.09))
-		_mesh_part(st,"log",Vector3(-0.058,-0.49,-0.058),Vector3(0.116,0.065,0.116))
-		# Joined angled beams: a continuous curved pick-head, never floating stair fragments.
-		for sign_x in [-1.0,1.0]:
-			var curve := [Vector3(0,0.35,0),Vector3(sign_x*0.18,0.36,0),Vector3(sign_x*0.33,0.29,0),Vector3(sign_x*0.45,0.10,0)]
-			for i in range(3):
-				_tool_segment(st,texture,curve[i],curve[i+1],0.11-i*0.023,0.14 if steel else 0.11)
-
-		_mesh_part(st,texture,Vector3(-0.08,0.26,-0.07),Vector3(0.16,0.12,0.14))
-		for y in [0.2,0.23]:
-			_mesh_part(st,"planks",Vector3(-0.07,y,-0.07),Vector3(0.14,0.017,0.14))
+		return _kenney_pickaxe_mesh(kind.ends_with("2"))
 
 	else:
 		_mesh_part(st,"log",Vector3(-0.04,-0.4,-0.04),Vector3(0.08,0.24,0.08))
@@ -334,8 +322,31 @@ static func tool_mesh(kind: String) -> ArrayMesh:
 	return st.commit()
 
 
-static func _tool_segment(st: SurfaceTool,kind: String,a: Vector3,b: Vector3,thick: float,depth: float) -> void:
-	var direction := b-a
-	var part := cube_mesh(kind,Vector3(direction.length()+0.045,thick,depth))
-	var basis := Basis(Vector3.BACK,atan2(direction.y,direction.x))
-	st.append_from(part,0,Transform3D(basis,(a+b)*0.5))
+# Ready-made CC0 geometry: Kenney / Survival Kit, original GLB kept in assets/models.
+# Only UV/material adaptation and scale/grip translation; no hand-made replacement mesh.
+static func _kenney_pickaxe_mesh(stone: bool) -> ArrayMesh:
+	var source: PackedScene = load("res://assets/models/kenney/pickaxe.glb")
+	var model := source.instantiate()
+	var parts := model.find_children("*","MeshInstance3D",true,false)
+	var source_mesh: Mesh = (model as MeshInstance3D).mesh if model is MeshInstance3D else parts[0].mesh
+	var result := ArrayMesh.new()
+	for surface in range(source_mesh.get_surface_count()):
+		var arrays := source_mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var uvs := PackedVector2Array()
+		for i in range(vertices.size()):
+			var v := vertices[i]
+			uvs.append(Vector2((v.x+0.013)/0.026,(0.20-v.y)/0.20) if surface==0 else Vector2((v.x+0.09)/0.18,(0.24-v.y)/0.08))
+			vertices[i] = (v-Vector3(0,0.07,0))*4.0
+		arrays[Mesh.ARRAY_VERTEX] = vertices
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		var mat := StandardMaterial3D.new()
+		var name := "handle" if surface==0 else ("stone_head" if stone else "wood_head")
+		mat.albedo_texture = load("res://assets/textures/pickaxe_%s.png" % name)
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		mat.albedo_color = Color(0.83,0.83,0.83) if surface==0 else (Color(0.72,0.72,0.72) if stone else Color(0.82,0.82,0.82))
+		mat.roughness = 1.0
+		result.surface_set_material(surface,mat)
+	model.free()
+	return result

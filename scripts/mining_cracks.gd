@@ -10,9 +10,9 @@ func _ready() -> void:
 	mesh = tex.stream_to_mesh(stream,_mat)
 	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_mat.albedo_color = Color(0.28,0.22,0.17,0.94)
+	_mat.albedo_color = Color.WHITE
 	_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_mat.cull_mode = BaseMaterial3D.CULL_BACK
 	_mat.render_priority = 1
 	material_override = _mat
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

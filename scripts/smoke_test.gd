@@ -602,11 +602,13 @@ func _run() -> void:
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
 		return
-	print("SMOKE: OK v0.9 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
+	print("SMOKE: OK v0.9.1 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
 	])
+	# Quiesce old fixtures: no mob may start a new sound during audio teardown.
+	paused = true
 	# Остановить тестовые звуки и дать аудиопотоку освободить playback до закрытия движка.
 	for audio in root.find_children("*","AudioStreamPlayer",true,false)+root.find_children("*","AudioStreamPlayer3D",true,false):
 		audio.stop()
@@ -1180,7 +1182,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(load("res://scripts/seam_creature.gd").HIT_DAMAGE > 0 and load("res://scripts/enemy_ghost.gd").HIT_DAMAGE > 0, 1162)
 	# --- Луна ярче ---
 	var dcs: GDScript = load("res://scripts/day_cycle.gd")
-	_a(is_equal_approx(dcs.MOON_MAX_ENERGY,0.47),1165)
+	_a(is_equal_approx(dcs.MOON_MAX_ENERGY,0.56),1165)
 	# --- Мир: 30 уровней вниз, бедрок y=-31, пещеры/гнёзда, вода ---
 	_a(G.BEDROCK_Y == -31, 1167)
 	var anchor := Node3D.new()
@@ -1933,6 +1935,26 @@ func _v09_checks() -> void:
 		scene.build.cracks.show_progress(Vector3i(5,2,8),float(i)/10+0.01)
 		_a(scene.build.cracks.stage==i and scene.build.cracks.visible and scene.build.cracks._textures[i]!=null,9049)
 	scene.build.cracks.hide()
+	# v0.9.1: real imported model geometry, materials, filtering and ten sparse alpha masks.
+	var bt091: GDScript = load("res://scripts/block_tex.gd")
+	for tool in ["pickaxe","pickaxe2"]:
+		var mesh091: ArrayMesh = bt091.tool_mesh(tool)
+		_a(mesh091.get_surface_count()==2 and mesh091.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()==36,9100)
+		_a(mesh091.surface_get_material(0).texture_filter==BaseMaterial3D.TEXTURE_FILTER_NEAREST,9101)
+	var prev_pixels := 0
+	for texture in scene.build.cracks._textures:
+		var im: Image = texture.get_image()
+		var pixels := 0
+		_a(im.get_width()==16 and im.get_height()==16,9102)
+		for y in range(16):
+			for x in range(16):
+				var color := im.get_pixel(x,y)
+				if color.a>0:
+					pixels += 1
+					_a(color.a>=0.6 and color.a<=0.8 and color.r<0.15,9103)
+		_a(pixels>prev_pixels and pixels<130,9104)
+		prev_pixels = pixels
+	_a(scene.build.cracks._mat.albedo_color==Color.WHITE,9105)
 	# Fog distance and far plane really follow render distance.
 	var settings: Node = root.get_node("GameSettings")
 	var old_r: int = settings.render_distance
@@ -1991,6 +2013,15 @@ func _v09_checks() -> void:
 	scene.queue_free()
 	await process_frame
 	current_scene = null
+	G.reset_state()
+	var moon_old: Dictionary = G.to_save_dict()
+	moon_old.erase("moon_revision")
+	moon_old.moon_energy = 0.47
+	G.apply_save_dict(moon_old)
+	_a(is_equal_approx(G.moon_energy,0.56),9106)
+	G.moon_energy = 0.47
+	G.apply_save_dict(G.to_save_dict())
+	_a(is_equal_approx(G.moon_energy,0.47),9107)
 	G.reset_state()
 	_v09_done = true
 	print("SMOKE: v0.9 checks done")

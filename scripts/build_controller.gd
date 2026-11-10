@@ -444,6 +444,10 @@ func _ensure_hand_tools() -> void:
 			tool.position = Vector3(0.02,0.04,-0.12)
 		tool.rotation_degrees = Vector3(-20, 20, -28)
 		tool.scale = Vector3.ONE * 0.6
+		if id.begins_with("pickaxe"):
+			tool.position = Vector3(0.08,-0.16,-0.08)
+			tool.rotation_degrees = Vector3(-12,-24,25)
+			tool.scale = Vector3.ONE*0.58
 		_hand_root.add_child(tool)
 		match id:
 			"pickaxe": _pickaxe_view = tool

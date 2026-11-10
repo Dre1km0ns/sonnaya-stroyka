@@ -141,7 +141,7 @@ var selected_anchor: AnchorType = AnchorType.NAIL
 var last_hint: String = ""
 var awake_time: float = 0.0
 var day_time: float = 0.0
-var moon_energy := 0.47
+var moon_energy := 0.56
 var craft_menu_open: bool = false
 var inventory_open: bool = false
 var paused: bool = false
@@ -296,7 +296,7 @@ func reset_state() -> void:
 	pillow_open = false
 	_boss_count = 0
 	_hp_regen_cd = 0.0
-	moon_energy = 0.47
+	moon_energy = 0.56
 	day_time = NEW_WORLD_TIME
 	player_hp = PLAYER_MAX_HP
 	_combo_log = []
@@ -1817,6 +1817,7 @@ func to_save_dict() -> Dictionary:
 		"beacons": beacons,
 		"day_time": day_time,
 		"moon_energy":moon_energy,
+		"moon_revision":1,
 		"selected_anchor": int(selected_anchor),
 		"selected_slot": selected_slot,
 		"item_slots": inv_wake.duplicate(true),
@@ -1878,7 +1879,9 @@ func apply_save_dict(data: Dictionary) -> void:
 	clarity = float(data.get("clarity", CLARITY_MAX))
 	awake_time = float(data.get("awake_time", 0.0))
 	day_time = float(data.get("day_time", 0.0))
-	moon_energy = clampf(float(data.get("moon_energy",0.47)),0.0,10.0)
+	moon_energy = clampf(float(data.get("moon_energy",0.56)),0.0,10.0)
+	# Migrate the old default once. Explicit console values in v0.9.1 remain saved.
+	if int(data.get("moon_revision",0))<1 and is_equal_approx(moon_energy,0.47): moon_energy = 0.56
 	world_seed_wake = _seed_val(data.get("world_seed_wake", null), world_seed_wake if world_folder != "" else 1337)
 	world_seed_dream = _seed_val(data.get("world_seed_dream", null), world_seed_dream if world_folder != "" else 9001)
 	if data.has("world_seed"):

@@ -1172,7 +1172,7 @@ func _capture_v08() -> void:
 	get_tree().quit(0)
 
 func _want_shots09() -> bool:
-	return "--shots09" in OS.get_cmdline_user_args()
+	return "--shots09" in OS.get_cmdline_user_args() or "--shots091" in OS.get_cmdline_user_args()
 
 func _v09_camera(at: Vector3,from: Vector3) -> void:
 	_v7_goto(from)
@@ -1180,6 +1180,9 @@ func _v09_camera(at: Vector3,from: Vector3) -> void:
 	player.camera.look_at(at,Vector3.UP)
 
 func _capture_v09() -> void:
+	if "--shots091" in OS.get_cmdline_user_args():
+		await _capture_v091()
+		return
 	await _wait(1.0)
 	var console := get_tree().get_first_node_in_group("dev_console")
 	console.execute("god")
@@ -1265,4 +1268,38 @@ func _capture_v09() -> void:
 	await _wait(0.4)
 	await _save_shot("v09_moon047.png")
 	print("SHOT09 complete")
+	get_tree().quit(0)
+
+func _capture_v091() -> void:
+	await _wait(1.0)
+	var console := get_tree().get_first_node_in_group("dev_console")
+	console.execute("god")
+	console.execute("time day")
+	GameState.tutorial_enabled = false
+	console.execute("fill air -3 0 4 8 7 13")
+	console.execute("fill stone 2 0 8 2 1 8")
+	_v09_camera(Vector3(2.5,1.4,8.5),Vector3(2.5,0.0,11.3))
+	build.set_process(false)
+	_v7_select("pickaxe")
+	build._update_hand_tools()
+	await _wait(0.5)
+	await _save_shot("v091_pickaxe_held_wood.png")
+	_v7_select("pickaxe2")
+	build._update_hand_tools()
+	await _wait(0.35)
+	await _save_shot("v091_pickaxe_held.png")
+	# Actual mining-clock driven progress, not a screenshot-only textured prop.
+	build._mine_elapsed = 0.0
+	build._tick_mining(1.1)
+	await _wait(0.2)
+	await _save_shot("v091_cracks_ingame.png")
+	_v09_camera(Vector3(2.5,1.5,8.5),Vector3(4.7,3.0,11.6))
+	build._hand_root.hide()
+	await _wait(0.2)
+	await _save_shot("v091_cracks_corner.png")
+	build.cracks.hide()
+	console.execute("time night")
+	await _wait(0.2)
+	await _save_shot("v091_moon056.png")
+	print("SHOT091 complete")
 	get_tree().quit(0)
