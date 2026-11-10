@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 4 завершён; этап 5 (atomic transfer/UI) реализован, расширенные новые тесты в работе. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 10 ноября 2026, МСК. Текущий этап: 4 завершён; этап 5 завершён: полный extended smoke зелёный без leaks. Начат финальный этап13 (stress/metrics/screens/release). Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -38,8 +38,8 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | Готово: session epoch + chunk revisions, ближайшие/вперёд, adaptive 0.5–4ms insertion, bounded indexed snapshots, immutable caches, retired jobs |
 | 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | Готово: только changed levels, coalesced dirty, ≤2 meshes/frame +1.5ms soft budget, indexed sources, save/reload flow, inactive sleep |
 | 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | Готово: cached bounds/no process, local mask8 sphere query ≤64/1.5ms, batch inventory signals, full process+physics cull except bosses, cooperative A*/2ms and stagger, local125 nearest-block |
-| 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | Реализовано, stage5 extended tests в работе |
-| 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | Реализовано, детерминизм/7%/cap/маяк проверяются |
+| 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | Готово: atomic preflight/reserve/refund, preview/highlight, result/conflict/abort UI; smoke10060–10093 |
+| 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | Готово:7% rolls, floor(3%) cap, beacon+5dust; детерминизм/100–1000/10000-roll tests |
 | 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | TODO |
 
 ## Baseline / обнаружено
@@ -112,3 +112,8 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 - Result UI ставит мир на паузу. При конфликте можно остаться/повторить/вернуться в Явь с СОХРАНЕНИЕМ черновика и возвратом резерва (осознанная защита от потери постройки). При0 clarity Esc делает безопасный abort; второй Esc/Y закрывает summary. Нормальный успешный wake всё ещё растворяет незаякоренное (1dust/5 объектов).
 - Console `transfer plan|wake|cancel|abort|risk`, реальный `anchor preview`; wireframe батч и счётчик/цена/conflicts/instability. Нужно финально просмотреть UI.
 - Stage4 suite завершён: build1000 avg2.556/p954.812/max8.725ms (before7.429/14.156/22.162), 3meshes/3bodies/13nodes; mass300 CPU7.696ms / wall67.685ms / worst1.747ms; seven enemies max171.997ms (before786.512), p9573.693 (before53.176, регрессия); walking p9561.716 (before45.035, регрессия). Полные строки сохранены в benchmarks/v0.10.json. После замера восстановлен старый DevSeed default held pickaxe2 вместо нового sword3 (для сопоставимости/familiar hotbar); нужен final повтор.
+
+## Этап 5 завершён
+`/workspace/v010/stage5_extended3.log`: полный SMOKE OK, 0 engine/script errors, 0 ObjectDB/resource leak warnings. 100/500/1000 transfer preflight239/1204/2408µs, apply303/1264/2691µs, мутаций3/15/30. 10000 бросков:674 (6.74%), cap300;1000 блоков в кубе маяка:72 защищённых rolls,0 мутаций. Реальные worker validation незагруженного чанка без Wake insertion, multipart/occupied/spawn/terrain checks, сохранённые точные receipts, refund-overflow101→save/load→spend100, actual v0.9.1 fixture, modal pause/safe abort/Esc/Y проверены. Mouse capture headless не поддерживает; проверить под Xvfb в screenshots.
+
+Текущие следующие шаги: финальный before/after stress (большая база/100 doors/rapid streaming), повтор общего suite, version0.10/README/CHANGELOG, screenshots review включая anchor preview/wake result, финальный smoke+HANDOFF, main ff+push, ZIP/upload/one trash. Старые подпункты первого extended прогона выше — история, не текущие ошибки.

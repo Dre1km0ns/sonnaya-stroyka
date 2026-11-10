@@ -30,7 +30,7 @@ func show_result(result:Dictionary,switcher:Node)->void:
 		var spent:Dictionary=result.get("spent",{})
 		details.text="Перенесено: %d объектов\nЗаблокировано: %d · Мутаций: %d / максимум %d\nБез якоря: %d · Получено осыпи: +%d\nПотрачено: %d якорей · %d реагентов · %.0f ясности\n"%[result.transferred,result.blocked,result.mutations,result.get("cap",0),result.get("unanchored",0),result.dust,spent.get("anchors",0),spent.get("reagents",0),spent.get("clarity",0)]
 		if result.get("aborted",false): details.text+="%d объектов осталось во Сне. Якоря отменены, резерв возвращён.\n"%result.get("draft_saved",0)
-		else: details.text+="Бросок мутации 7% на блок; общий предел — 3% структуры.\nМаяки защитили: %d (+5 осыпи за каждый предотвращённый бросок)."%result.get("protected",0)
+		else: details.text+="Бросок мутации 7%% на блок; общий предел — 3%% структуры.\nМаяки защитили: %d (+5 осыпи за каждый предотвращённый бросок)."%result.get("protected",0)
 		_button("Продолжить · Esc / Y",close)
 	else:
 		title.text="Перенос остановлен — ничего не потеряно" if result.get("ready",true) else "Проверяем рельеф Яви…"

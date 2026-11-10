@@ -12,7 +12,7 @@ var last_preview:Dictionary={}
 const EDGES:=[Vector2i(0,1),Vector2i(0,2),Vector2i(0,4),Vector2i(1,3),Vector2i(1,5),Vector2i(2,3),Vector2i(2,6),Vector2i(3,7),Vector2i(4,5),Vector2i(4,6),Vector2i(5,7),Vector2i(6,7)]
 func setup(p:CharacterBody3D,dream_layer:Node3D)->void:
 	player=p;dream_voxels=dream_layer;preview=MeshInstance3D.new();preview.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;add_child(preview)
-	var layer:=CanvasLayer.new();layer.layer=9;add_child(layer);info=Label.new();info.position=Vector2(12,190);info.custom_minimum_size=Vector2(370,0);info.add_theme_font_size_override("font_size",14)
+	var layer:=CanvasLayer.new();layer.layer=9;add_child(layer);info=Label.new();info.position=Vector2(12,190);info.custom_minimum_size=Vector2(370,0);info.size.x=370;info.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;info.add_theme_font_size_override("font_size",14)
 	var bg:=StyleBoxFlat.new();bg.bg_color=Color(0.02,0.035,0.05,0.78);bg.content_margin_left=10;bg.content_margin_right=10;bg.content_margin_top=7;bg.content_margin_bottom=7;info.add_theme_stylebox_override("normal",bg);layer.add_child(info)
 	GameState.placed_cells_changed.connect(func(_dream,_cells):_dirty=true)
 	GameState.anchor_selected.connect(func(_type):_dirty=true)

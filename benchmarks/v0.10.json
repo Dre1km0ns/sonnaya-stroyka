@@ -680,5 +680,29 @@
       "tag": "stage4",
       "water_cells": 27
     }
-  ]
+  ],
+  "transfer": {
+    "beacon_protected": 72,
+    "rolls_10000": 674,
+    "sizes": [
+      {
+        "apply_us": 303,
+        "blocks": 100,
+        "mutations": 3,
+        "preflight_us": 239
+      },
+      {
+        "apply_us": 1264,
+        "blocks": 500,
+        "mutations": 15,
+        "preflight_us": 1204
+      },
+      {
+        "apply_us": 2691,
+        "blocks": 1000,
+        "mutations": 30,
+        "preflight_us": 2408
+      }
+    ]
+  }
 }
