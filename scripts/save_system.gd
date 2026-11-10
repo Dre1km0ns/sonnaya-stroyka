@@ -101,32 +101,18 @@ func load_game() -> bool:
 		load_completed.emit(false)
 		return false
 	var data: Dictionary = parsed
-	GameState.apply_save_dict(data)
-	# Восстановить визуалы блоков
-	if _wake_voxels and _wake_voxels.has_method("_rebuild_from_state"):
-		_wake_voxels.call("_rebuild_from_state")
-	if _dream_voxels and _dream_voxels.has_method("_rebuild_from_state"):
-		_dream_voxels.call("_rebuild_from_state")
-	# Позиция
 	if _player and data.has("player_pos"):
-		var pp: Array = data["player_pos"]
-		if pp.size() >= 3:
-			_player.global_position = Vector3(float(pp[0]), float(pp[1]), float(pp[2]))
-	# Мир видимость
-	if _main and _main.has_method("apply_world_visibility"):
-		_main.apply_world_visibility(GameState.is_dream())
-	elif _main:
-		var sw = _main.get_node_or_null("Systems/WorldSwitcher")
-		if sw and sw.has_method("_apply_visibility"):
-			sw.call("_apply_visibility", GameState.is_dream())
-			if sw.has_method("_tint_dream"):
-				sw.call("_tint_dream", GameState.is_dream())
+		var pp: Array=data.player_pos
+		if pp.size()>=3: _player.global_position=Vector3(float(pp[0]),float(pp[1]),float(pp[2]))
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if _main and _main.is_ancestor_of(cm): cm.clear_all()
+	GameState.apply_save_dict(data) # emits the single world synchronisation signal
 	if _threat and _threat.has_method("apply_save_dict") and data.has("threat"):
 		_threat.apply_save_dict(data["threat"])
 	# Чанки к игроку
 	if _player:
 		for cm in get_tree().get_nodes_in_group("chunk_manager"):
-			if cm.has_method("setup"):
+			if cm.has_method("setup") and _main and _main.is_ancestor_of(cm):
 				var seed_v := GameState.world_seed_wake if not bool(cm.get("is_dream_layer")) else GameState.world_seed_dream
 				cm.setup(_player, seed_v)
 	GameState.set_hint("Загружено. F5 — сохранить.")

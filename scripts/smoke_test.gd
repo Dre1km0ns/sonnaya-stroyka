@@ -600,6 +600,7 @@ func _run() -> void:
 	if not _v09_done: _fails.append("v0.9 aborted")
 	await _v010_build_checks()
 	await _v010_gameplay_checks()
+	await _v010_stream_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -2157,5 +2158,61 @@ func _v010_gameplay_checks() -> void:
 	for command in ["sword give scale","potion give 2 2","potion cooldown reset","armor stats","armor repair","reagents give 3","dust 431","anchor give nail 2","anchor select wedge","beacon give 2","bed spawn","chunks stats","chunks radius 3"]:
 		_a(not console.execute(command).begins_with("Ошибка"),10023)
 	_a(int(G.pouch.dust)==431 and G.selected_anchor==G.AnchorType.WEDGE,10024)
+	_a(scene.dream_chunks.get_loaded_count()==0,10025)
+	var sync_before: int=scene.switcher.sync_sequences
+	var wake_clock: float=scene.wake_chunks._clock;var wake_loaded: int=scene.wake_chunks.get_loaded_count()
+	console.execute("world dream")
+	for i in range(8): await process_frame
+	_a(scene.switcher.sync_sequences==sync_before+1 and scene.wake_world.process_mode==Node.PROCESS_MODE_DISABLED and scene.dream_world.process_mode==Node.PROCESS_MODE_INHERIT,10026)
+	_a(scene.wake_chunks._clock==wake_clock and scene.wake_chunks.get_loaded_count()==wake_loaded,10027)
+	console.execute("world wake")
+	var dream_clock: float=scene.dream_chunks._clock;var dream_loaded: int=scene.dream_chunks.get_loaded_count()
+	for i in range(8): await process_frame
+	_a(scene.switcher.sync_sequences==sync_before+2 and scene.dream_chunks._clock==dream_clock and scene.dream_chunks.get_loaded_count()==dream_loaded,10028)
+	_a(not console.execute("water stats").begins_with("Ошибка") and not console.execute("chunks revisions").begins_with("Ошибка"),10029)
 	console.close();scene.queue_free();await process_frame;current_scene=null;G.reset_state()
 	print("SMOKE: v0.10 F3, potion slot priority/quick alias, sword3 craft+legacy migration, grid door and expanded Russian console OK")
+
+func _v010_stream_checks() -> void:
+	var G: Node=root.get_node("GameState");G.begin_world("stream test","","1337",1337,false)
+	var player:=Node3D.new();root.add_child(player)
+	var cm: Node3D=load("res://scripts/chunk_manager.gd").new();root.add_child(cm);cm.setup(player,1337);cm.set_process(false);cm.load_radius=1;cm.unload_radius=4;cm._pending.clear()
+	cm._queue_job(Vector2i(1,0));cm._queue_job(Vector2i(3,0))
+	cm._terrain_edited(Vector3i(16,-2,0))
+	while not cm._jobs.is_empty():
+		cm._poll_jobs(10);await process_frame
+	_a(cm._loaded.has(Vector2i(3,0)) and not cm._loaded.has(Vector2i(1,0)) and cm.stale_jobs_discarded==1,10030)
+	_a(cm._chunk_revisions.has(Vector2i.ZERO) and not cm._chunk_revisions.has(Vector2i(3,0)),10031)
+	for i in range(10000): G.mark_reagent_collected("%d,0,1000000"%(1000000+i))
+	cm._job_for(Vector2i.ZERO) # one-off index construction belongs to save/load, not each snapshot
+	G.mark_reagent_collected("16,0,1")
+	var job: RefCounted=cm._job_for(Vector2i.ZERO)
+	_a(job.collected.size()==1 and cm.snapshot_cells_copied==1,10032)
+	print("SMOKE: v0.10 bounded snapshot 10001 collected IDs => %d copied / %d us (index once %d us)"%[cm.snapshot_cells_copied,cm.last_snapshot_usec,G.snapshot_index_usec])
+	G.current_world=G.World.DREAM
+	var pending: int=cm._pending.size();var updates: int=cm.water_updates_total;var clock: float=cm._clock
+	cm._process(1.0);cm._water_process(1.0)
+	_a(cm._pending.size()==pending and cm._clock==clock and cm.water_updates_total==updates,10033)
+	G.current_world=G.World.WAKE
+	for x in range(12,20):
+		for y in range(-2,0):
+			for z in range(8,11): G.remove_terrain_cell_silent(Vector3i(x,y,z),"ground")
+	cm.rebuild_chunk(Vector2i.ZERO);cm.rebuild_chunk(Vector2i(1,0));cm.load_all_pending()
+	var source:=Vector3i(12,-1,9);cm._water_src[source]=true
+	if not cm._water_src_by_chunk.has(Vector2i.ZERO): cm._water_src_by_chunk[Vector2i.ZERO]={}
+	cm._water_src_by_chunk[Vector2i.ZERO][source]=true;cm.water_notify(source);cm.water_settle(100)
+	_a(cm.water_cell_count()>10 and not cm._water_by_chunk.get(Vector2i(1,0),{}).is_empty(),10034)
+	var n: int=cm.water_mesh_builds;cm._water_process(1.0)
+	_a(cm.water_mesh_builds==n,10035)
+	var c:=Vector3i(16,-2,9);var level: int=cm.water_level(c)
+	cm._water_set(c,level);_a(cm._water_dirty.is_empty(),10036)
+	cm._water_dirty[Vector2i.ZERO]=true;cm._water_dirty[Vector2i(1,0)]=true
+	cm._rebuild_water_meshes(1);_a(cm._water_dirty.size()==1,10037);cm._rebuild_water_meshes()
+	cm._unload_chunk(Vector2i(1,0));_a(G.flowing_water.has(c),10038)
+	cm.ensure_chunk_loaded(Vector2i(1,0));_a(cm.water_level(c)==level and level>0,10039)
+	var saved: Dictionary=G.to_save_dict();G.apply_save_dict(saved)
+	_a(int(G.flowing_water.get(c,0))==level and G.dream_mapping=="parallel",10040)
+	print("SMOKE: v0.10 water active=%d border level=%d idle rebuilds=0 cap/unload/reload/save OK"%[cm.water_cell_count(),level])
+	# clear_all retires work without a global join; teardown is allowed to join for safety.
+	cm._queue_job(Vector2i(2,1));cm.clear_all();_a(cm._jobs.is_empty() and not cm._retired_jobs.is_empty(),10041)
+	cm.queue_free();player.queue_free();await process_frame;G.reset_state()

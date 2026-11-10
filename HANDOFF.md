@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 2 (F3/двери/лечение/меч3/консоль/аудио) завершён, smoke зелёный, screenshots просмотрены. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 10 ноября 2026, МСК. Текущий этап: 3 (chunk streaming / world sync / water) завершён, расширенный smoke зелёный. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -34,9 +34,9 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 4 | Terraria quick heal: первый подходящий слот по номеру, оба уровня в hotbar/quick slot | Готово: H первое зелье по индексу; оба уровня в хотбаре/quick-alias, ЛКМ выбранным зельем |
 | 5 | Мечи 7/13/23 dmg; sword3 = sword2+5 scales на Станке, 700 durability, иконка/текстура; HP flag перенос на sword3, миграция старого sword2 | Готово: 7/13/23 урона, 700 прочности, рецепт sword2+5 scales на станке, флаг sword3 + alias sword2; старый флаг очищен |
 | 6 | Инкрементальные блоки + dirty cells/chunks; обычные объединить в mesh/коллизии, интерактивы отдельно | Готово (smoke 10001–10006): dirty signals, batching, hidden-face mesh, X-merged collision, локальная замена интерактивов; smoke/метрики добавлены. Трансфер/ChunkManager отдельно впереди. |
-| 7 | Единственная sync при переходе; симметричный sleep миров; lazy Dream | TODO |
-| 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | TODO |
-| 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | TODO |
+| 7 | Единственная sync при переходе; симметричный sleep миров; lazy Dream | Готово: один signal sync, parent process-mode sleep обоих миров, lazy async Dream, parallel/legacy mapping |
+| 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | Готово: session epoch + chunk revisions, ближайшие/вперёд, adaptive 0.5–4ms insertion, bounded indexed snapshots, immutable caches, retired jobs |
+| 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | Готово: только changed levels, coalesced dirty, ≤2 meshes/frame +1.5ms soft budget, indexed sources, save/reload flow, inactive sleep |
 | 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | TODO |
 | 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | TODO |
 | 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | TODO |
@@ -83,3 +83,14 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 - Превью `/workspace/shots/v010_{f3,door_closed,door_open,scale_sword,inventory,console_help}.png` просмотрены: дверь/слоты/текст без наложений. Меч в руке показался крупным, после review уменьшены scale/поправлен grip; переснять на финальном проходе.
 - Сгенерированная графика воспроизводится `python3 tools/make_v010_art.py`. Кредиты/PCM adaptation в assets/LICENSE.txt.
 - Дальше этап 3: per-chunk revision + bounded snapshots + adaptive insertion + симметричный sleep/lazy Dream + coalesced/persistent water; затем AI/pickup и TransferPlan.
+
+## Этап 3: проверено
+- Новые smoke10025–10041: Dream до входа=0 чанков; один visibility/sync sequence на переход; inactive clock/loaded/water не меняются. World parent process_mode DISABLED, коллизии переключаются один раз. SaveSystem убрал повторы rebuild/visibility.
+- Переход в новых мирах — parallel world coordinates; существующий сейв с незавершёнными dream_blocks без нового поля остаётся `legacy_workshop` у нуля, чтобы не потерять доступ. Console `mapping parallel|legacy_workshop`. Во время входа Dream больше нет 9 синхронных генераций, начальные чанки идут workers.
+- `_generation_epoch` теперь только reset/session. Редактирование меняет revision своего чанка и граничных соседей, не отменяет дальний job. В smoke параллельно запущенные c1/c3: c1 отброшен, c3 вставлен.
+- Пакеты snapshot: collected/eggs/dream removals индексированы по чанкам; 10001 collected IDs => **1 локально скопированная запись, 198–205µs**. Published procedural cache values помечены read-only рекурсивно в worker; каждый job владеет top-level maps и новым результатом, нет SceneTree/Node/RenderingServer/PhysicsServer в workers.
+- `clear_all` перемещает in-flight jobs в retired без глобального join игрового кадра. Глобальный join остался только в teardown/явном тестовом load_all; ensure spawn chunk — единственная приоритетная sync safety операция. Terrain rebuilds асинхронны, старый mesh/collider живёт до готовности; logical removed проверяется сразу. Распад листвы стартует сразу независимо от готовности mesh.
+- Вода: 30 активных клеток в новой fixture, граница x15/16 level6; idle rebuilds=0; повтор того же level не dirty; cap1/кадр, unload/reload и save проверены. `flowing_water` — optional save field, старые v0.9.1 сейвы читаются. Air geometry передаётся из worker, второй main-thread underground_air_cells устранён. Console `water stats|step`, `chunks revisions` и расширенные `chunks stats`.
+- Hitch49 chunks (headless, 60fps cap): startup **93.033→28.045ms**, frame p95 **16.790→16.803ms**, max **16.818→16.960ms**, >33ms **0→0**, work p95 **1.398→1.633ms** (пока +17%, честно, не объявлять всё ускоренным), total **782.232→850.491ms**. Первичная версия с deep-copy кешей дала p95 2.885ms; замена на immutable sharing снизила до1.633ms. Финальный замер после entity cache ещё впереди.
+- Последний лог `/workspace/v010/stage3_immutable_smoke.log`: asserts OK, engine/script errors и ObjectDB/resource leak warnings отсутствуют.
+- Дальше этап4: ReagentNode bounds-cache/no process, локальный pickup с бюджетом, culler обоих process + исключить всех боссов, AI budget/stagger и локальный nearest block. Затем stage5 atomic TransferPlan/preview/results/3% mutation, полный performance suite/screenshots/version/release.

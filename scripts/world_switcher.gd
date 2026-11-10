@@ -10,6 +10,7 @@ var wake_voxels: Node3D
 var dream_voxels: Node3D
 var bed: Node3D
 var _env: Environment
+var sync_sequences:=0
 
 
 func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wake_vox: Node3D, dream_vox: Node3D) -> void:
@@ -24,7 +25,8 @@ func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wa
 	var we := scene.get_node_or_null("WorldEnvironment") as WorldEnvironment if scene else null
 	if we:
 		_env = we.environment
-	_apply_visibility(false)
+	GameState.world_changed.connect(_on_world_changed)
+	_apply_visibility(GameState.is_dream())
 
 
 func _process(delta: float) -> void:
@@ -138,31 +140,29 @@ func _try_interact() -> void:
 
 
 func enter_dream() -> void:
+	var destination:=player.global_position if GameState.dream_mapping=="parallel" else Vector3(0,3,0)
+	destination.y=maxf(destination.y,3.0)
+	player.global_position=destination
 	GameState.enter_dream()
-	_apply_visibility(true)
-	_tint_dream(true)
 	# Стартовая площадка сна у нуля — MVP-стройка; дальше бесконечные чанки.
 	if GameState.dream_blocks.is_empty():
 		for x in range(-2, 3):
 			for z in range(-2, 3):
-				var c := Vector3i(x, 0, z)
+				var c := Vector3i(floori(destination.x)+x,floori(destination.y)-2,floori(destination.z)+z)
 				GameState.place_dream_block(c, "drift")
 				dream_voxels.add_block(c, GameState.dream_blocks[c])
 	dream_voxels.flush_dirty()
-	player.global_position = Vector3(0, 3, 0)
+	player.global_position = destination
 	if "flying" in player:
 		player.set("flying", true)
-	# Подтянуть чанки сна к игроку
+	# Dream manager configured once by main; initial generation starts lazily after this transition.
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
-		if cm.has_method("setup") and bool(cm.get("is_dream_layer")):
-			cm.setup(player, GameState.world_seed_dream)
+		if cm.is_dream_layer and dream_root.is_ancestor_of(cm): cm._update_chunks(true)
 	switched.emit(true)
 
 
 func wake_up() -> void:
 	var result := GameState.resolve_wake()
-	_apply_visibility(false)
-	_tint_dream(false)
 	player.global_position = GameState.spawn_point
 	player.velocity = Vector3.ZERO
 	if "flying" in player:
@@ -193,7 +193,11 @@ func _tint_dream(is_dream: bool) -> void:
 		_env.glow_intensity = 0.25
 
 
+func _on_world_changed(dream: bool) -> void:
+	_apply_visibility(dream);_tint_dream(dream)
+
 func _apply_visibility(is_dream: bool) -> void:
+	sync_sequences+=1
 	if wake_root:
 		wake_root.visible = not is_dream
 		_set_process_recursive(wake_root, not is_dream)
@@ -203,6 +207,7 @@ func _apply_visibility(is_dream: bool) -> void:
 
 
 func _set_process_recursive(root: Node, enabled: bool) -> void:
+	if root==wake_root or root==dream_root: root.process_mode=Node.PROCESS_MODE_INHERIT if enabled else Node.PROCESS_MODE_DISABLED
 	for child in root.get_children():
 		_set_process_recursive(child, enabled)
 	if root is CollisionObject3D:

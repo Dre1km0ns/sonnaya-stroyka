@@ -31,7 +31,9 @@ const COMMAND_HELP := {
 "dust":"Установить осыпь. Пример: dust 500",
 "sleep":"Войти в сон (dev, без требования кровати). Пример: sleep",
 "bed":"Кровать под прицелом назначить спавном или показать текущий спавн. Пример: bed setspawn; bed spawn",
-"chunks":"Статистика очереди/worker, радиус 1..8. Пример: chunks stats; chunks radius 3",
+"chunks":"Статистика очереди/worker/локальных snapshots, радиус 1..8, ревизии. Пример: chunks stats; chunks radius 3; chunks revisions",
+"water":"Статистика текучей воды/mesh и ручной шаг (только Явь). Пример: water stats; water step 10",
+"mapping":"Система координат сна: parallel (новые миры) или legacy_workshop (старый сон у нуля). Пример: mapping parallel",
 "debug":"F3 overlay вкл/выкл. Пример: debug on; debug toggle",
 "craft":"Штатный крафт с доступом ко всем станциям (ресурсы/разблокировки проверяются). Пример: craft sword3",
 "setblock":"Один блок/air под прицелом либо XYZ. Пример: setblock door 10 5 10",
@@ -136,7 +138,7 @@ func history_step(direction: int) -> void:
 	entry.caret_column = entry.text.length()
 func completion_candidates(prefix: String) -> Array[String]:
 	var all: Array[String] = ["door toggle","door rotate","help","seed","moon ","kill all","god","fly","heal","hp ","time day","time night","time ","tp spawn","tp ","world wake","world dream","cooldown reset","sword2 on","sword2 off","sword2 toggle","armor give wood","armor give scale","mob hp ","mob damage ","mob speed ","mob tool hand","mob tool pickaxe","mob tool pickaxe2"]
-	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3"]: all.append(command)
+	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3","chunks revisions","water stats","water step ","mapping parallel","mapping legacy_workshop"]: all.append(command)
 	for cmd in COMMAND_HELP: all.append("help "+cmd)
 	for id in MOB_IDS: all.append("spawn "+id)
 	for id in DB.all_icon_ids():
@@ -390,7 +392,9 @@ func _edit_blocks(a: PackedStringArray) -> String:
 				if cm:
 					var terrain := str(cm.terrain_kind_at(c))
 					if terrain!="":
-						if GameState.is_dream(): GameState.removed_dream_terrain[c] = terrain
+						if GameState.is_dream():
+							GameState.removed_dream_terrain[c] = terrain
+							GameState.snapshot_note("removed_dream_terrain",c)
 						else: GameState.remove_terrain_cell_silent(c,terrain)
 						changed[cm.world_to_chunk(Vector3(c))] = true
 				if kind!="air" and GameState.can_place_shape(source,c,kind):
@@ -399,7 +403,6 @@ func _edit_blocks(a: PackedStringArray) -> String:
 					count += 1
 				elif kind=="air": count += 1
 	if cm:
-		cm._generation_epoch += 1
 		for coord in changed: cm.rebuild_chunk(coord)
 	var vox := _voxels()
 	if vox: vox._rebuild_from_state()
@@ -482,12 +485,24 @@ func _v010_command(a: PackedStringArray) -> String:
 				if GameState.wake_blocks.get(cell,{}).get("kind","")!="bed": return "Ошибка: наведитесь на поставленную кровать в Яви."
 				GameState.active_bed=GameState.cell_key(cell);GameState.spawn_point=Vector3(cell)+Vector3(0.5,1,1);return "Спавн кровати: "+str(GameState.spawn_point)
 			return "Ошибка: bed spawn|setspawn"
+		"mapping":
+			if a.size()!=2 or a[1] not in ["parallel","legacy_workshop"]: return "Ошибка: mapping parallel|legacy_workshop"
+			GameState.dream_mapping=a[1];return "Координаты сна: "+a[1]
+		"water":
+			var cm:=_chunks()
+			if GameState.is_dream() or not cm: return "Ошибка: вода симулируется только в Яви."
+			if a.size()>1 and a[1]=="step":
+				var count:=clampi(int(a[2]) if a.size()>2 else 1,1,200)
+				for i in range(count): cm.water_step()
+				cm._rebuild_water_meshes(2,1500)
+			return "Вода: %d клеток · очередь %d · dirty %d · mesh rebuilds %d · %.3f ms"%[cm.water_cell_count(),cm._wq.size(),cm._water_dirty.size(),cm.water_mesh_builds,cm.water_mesh_last_usec/1000.0]
 		"chunks":
 			var cm:=_chunks()
 			if not cm: return "Ошибка: менеджер чанков не найден."
+			if a.size()==2 and a[1]=="revisions": return "Сессия %d · ревизии %s"%[cm._generation_epoch,cm._chunk_revisions]
 			if a.size()==3 and a[1]=="radius" and a[2].is_valid_int():
 				get_node("/root/GameSettings").set_value("render_distance",clampi(int(a[2]),1,8))
-			return "Чанки: %d · очередь %d · worker готово %d · активных %d · вставка %.3f ms"%[cm.get_loaded_count(),cm.get_pending_count(),cm.worker_chunk_count,cm._jobs.size(),cm.last_insert_usec/1000.0]
+			return "Чанки: %d · очередь %d · worker готово %d · активных %d · вставка %.3f ms"%[cm.get_loaded_count(),cm.get_pending_count(),cm.worker_chunk_count,cm._jobs.size(),cm.last_insert_usec/1000.0]+" · snapshot %.3f ms/%d cells · stale %d · water meshes %d"%[cm.last_snapshot_usec/1000.0,cm.snapshot_cells_copied,cm.stale_jobs_discarded,cm.water_mesh_builds]
 		"craft":
 			if a.size()!=2: return "Ошибка: craft <recipe>"
 			var recipe: Dictionary=GameState.find_recipe(a[1]);var where: String=recipe.get("where","")

@@ -66,6 +66,7 @@ func _ready() -> void:
 	if not is_dream_layer and GameState.has_signal("terrain_cell_changed"):
 		if not GameState.terrain_cell_changed.is_connected(water_notify):
 			GameState.terrain_cell_changed.connect(water_notify)
+	GameState.placed_cells_changed.connect(_placed_changed)
 	var gsets := get_node_or_null("/root/GameSettings")
 	if gsets and gsets.has_signal("settings_changed"):
 		gsets.settings_changed.connect(_on_settings_changed)
@@ -99,15 +100,16 @@ func setup(player: Node3D, world_seed: int = 1337) -> void:
 	# Сразу (синхронно) — только чанки вокруг игрока, остальное догрузится по кадрам.
 	if panorama_mode or _physics_active():
 		var c := world_to_chunk(_player.global_position)
-		for dx in range(-1, 2):
-			for dz in range(-1, 2):
+		for dx in range(-1 if panorama_mode else 0, 2 if panorama_mode else 1):
+			for dz in range(-1 if panorama_mode else 0, 2 if panorama_mode else 1):
 				ensure_chunk_loaded(Vector2i(c.x + dx, c.y + dz))
 		_update_chunks(true)
 
 
 func clear_all() -> void:
 	_generation_epoch += 1
-	_wait_jobs(false)
+	# Retire in-flight immutable jobs, never wait for every worker in a gameplay frame.
+	_retired_jobs.append_array(_jobs.values());_jobs.clear();_chunk_revisions.clear();_rebuild_requests.clear()
 	for key in _loaded.keys():
 		_unload_chunk(key)
 	_pending.clear()
@@ -169,29 +171,27 @@ func is_cell_removed(wx: int, y: int, wz: int) -> bool:
 	return false
 
 
+func _edit_neighbours(wx: int,wz: int) -> Array[Vector2i]:
+	var c:=world_to_chunk(Vector3(wx,0,wz));var out: Array[Vector2i]=[c]
+	var lx:=posmod(wx,chunk_size);var lz:=posmod(wz,chunk_size)
+	if lx==0: out.append(c+Vector2i.LEFT)
+	if lx==chunk_size-1: out.append(c+Vector2i.RIGHT)
+	if lz==0: out.append(c+Vector2i.UP)
+	if lz==chunk_size-1: out.append(c+Vector2i.DOWN)
+	return out
+
 func rebuild_chunk(coord: Vector2i) -> void:
-	if _loaded.has(coord):
-		_unload_chunk(coord)
-	_load_chunk(coord)
+	_chunk_revisions[coord]=int(_chunk_revisions.get(coord,0))+1
+	_rebuild_requests[coord]=true
+	if not coord in _pending: _pending.append(coord)
 
-
-func rebuild_chunk_at_world(wx: int, wz: int) -> void:
-	## v0.7: грани подземных клеток рисует чанк воздушной клетки — на границе чанка пересобираем и соседа.
-	var c := world_to_chunk(Vector3(float(wx), 0.0, float(wz)))
-	rebuild_chunk(c)
-	var lx := wx - c.x * chunk_size
-	var lz := wz - c.y * chunk_size
-	if lx == 0 and _loaded.has(c + Vector2i(-1, 0)):
-		rebuild_chunk(c + Vector2i(-1, 0))
-	if lx == chunk_size - 1 and _loaded.has(c + Vector2i(1, 0)):
-		rebuild_chunk(c + Vector2i(1, 0))
-	if lz == 0 and _loaded.has(c + Vector2i(0, -1)):
-		rebuild_chunk(c + Vector2i(0, -1))
-	if lz == chunk_size - 1 and _loaded.has(c + Vector2i(0, 1)):
-		rebuild_chunk(c + Vector2i(0, 1))
+func rebuild_chunk_at_world(wx: int,wz: int) -> void:
+	for c in _edit_neighbours(wx,wz):
+		if _loaded.has(c) or _jobs.has(c): rebuild_chunk(c)
 
 
 func terrain_kind_at(cell: Vector3i) -> String:
+	if is_cell_removed(cell.x,cell.y,cell.z): return ""
 	## «hill» / «ruin» / «ground» / «stone» / «bedrock» / «nest» / «egg» / "" — что за клетка террейна (для кирки).
 	var coord := world_to_chunk(Vector3(cell.x, 0, cell.z))
 	if _solid_by_chunk.has(coord):
@@ -216,6 +216,7 @@ func terrain_kind_at(cell: Vector3i) -> String:
 
 
 func has_terrain_visual(cell: Vector3i) -> bool:
+	if is_cell_removed(cell.x,cell.y,cell.z): return false
 	var coord := world_to_chunk(Vector3(cell.x, 0, cell.z))
 	if not _solid_by_chunk.has(coord):
 		return false
@@ -226,7 +227,7 @@ func find_first_terrain(kind: String) -> Vector3i:
 	for key in _solid_by_chunk.keys():
 		var d: Dictionary = _solid_by_chunk[key]
 		for c in d.keys():
-			if str(d[c]) == kind:
+			if str(d[c]) == kind and not is_cell_removed(c.x,c.y,c.z):
 				return c
 	return Vector3i(0, -999, 0)
 
@@ -283,8 +284,9 @@ func _process(delta: float) -> void:
 	if _player == null or not is_instance_valid(_player):
 		return
 	# Сон — только пока мы во сне (экономия). Явь — всегда.
-	if not panorama_mode and is_dream_layer and not GameState.is_dream():
+	if not panorama_mode and not _physics_active():
 		return
+	_insert_budget_usec=clampi(int((16667.0-delta*1000000.0)*0.25),500,4000)
 	_tick += delta
 	_clock += delta
 	if not _decay_queue.is_empty() or not _dirty_chunks.is_empty():
@@ -312,15 +314,26 @@ func _drain_legacy() -> void:
 			break
 
 
+func _reap_retired() -> void:
+	for entry in _retired_jobs.duplicate():
+		if WorkerThreadPool.is_task_completed(entry.id):
+			WorkerThreadPool.wait_for_task_completion(entry.id);_retired_jobs.erase(entry)
+
 func _drain_pending() -> void:
-	if legacy_generation:
-		_drain_legacy()
-		return
-	_poll_jobs(1)
-	while _jobs.size() < MAX_CHUNK_JOBS and not _pending.is_empty():
-		var c: Vector2i = _pending.pop_front()
-		if not _loaded.has(c) and not _jobs.has(c):
-			_queue_job(c)
+	if legacy_generation: _drain_legacy();return
+	_reap_retired();_poll_jobs(2 if _insert_budget_usec>2000 else 1)
+	_pending.sort_custom(func(a: Vector2i,b: Vector2i)->bool:return _priority(a)<_priority(b))
+	var started:=Time.get_ticks_usec()
+	while _jobs.size()+_retired_jobs.size()<MAX_CHUNK_JOBS and not _pending.is_empty():
+		var c: Vector2i=_pending.pop_front()
+		if (not _loaded.has(c) or _rebuild_requests.has(c)) and not _jobs.has(c): _queue_job(c)
+		if Time.get_ticks_usec()-started>=_insert_budget_usec: break
+
+func _priority(c: Vector2i) -> float:
+	var offset:=Vector2(c-_center)
+	var forward:=Vector2.ZERO
+	if _player: forward=Vector2(-_player.global_basis.z.x,-_player.global_basis.z.z)
+	return offset.length_squared()-offset.dot(forward)*0.35
 
 
 func _update_chunks(force: bool) -> void:
@@ -349,15 +362,16 @@ func _update_chunks(force: bool) -> void:
 			var c3 := Vector2i(center.x + dx, center.y + dz)
 			if not _loaded.has(c3):
 				_pending.append(c3)
-	_pending.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-		return (a - center).length_squared() < (b - center).length_squared())
+	for c in _rebuild_requests:
+		if _loaded.has(c) and not c in _pending: _pending.append(c)
+	_pending.sort_custom(func(a: Vector2i,b: Vector2i)->bool:return _priority(a)<_priority(b))
 
 
 func load_all_pending() -> void:
 	_wait_jobs(true)
 	while not _pending.is_empty():
 		var c: Vector2i = _pending.pop_front()
-		if not _loaded.has(c):
+		if not _loaded.has(c) or _rebuild_requests.has(c):
 			_load_chunk(c)
 
 
@@ -447,7 +461,7 @@ func _count_named_group(node: Node, group: String) -> int:
 	return n
 
 
-func _unload_chunk(coord: Vector2i) -> void:
+func _unload_chunk(coord: Vector2i,preserve_water: bool=false) -> void:
 	if not _loaded.has(coord):
 		return
 	var node: Node = _loaded[coord]
@@ -464,11 +478,12 @@ func _unload_chunk(coord: Vector2i) -> void:
 		_walls_by_chunk.erase(coord)
 	_ruin_centers.erase(coord)
 	_trees_by_chunk.erase(coord)
-	_water_unload_chunk(coord)
+	if not preserve_water: _water_unload_chunk(coord)
 	if _carve_cache.size() > 600:
 		_carve_cache.clear()
 		_nest_cache.clear()
 	if is_instance_valid(node):
+		_sync_physics_tree(node,false)
 		node.queue_free()
 
 
@@ -1212,7 +1227,10 @@ func _world_is_lake_cell(wx: int, wz: int) -> bool:
 
 
 func _on_world_changed(_is_dream: bool) -> void:
-	_sync_all_physics()
+	var managed:=false
+	for sw in get_tree().get_nodes_in_group("world_switcher"):
+		if (sw.wake_root and sw.wake_root.is_ancestor_of(self)) or (sw.dream_root and sw.dream_root.is_ancestor_of(self)): managed=true;break
+	if not managed: _sync_all_physics()
 	_center = Vector2i(999999, 999999)
 
 
@@ -1852,6 +1870,9 @@ const WATER_BUDGET := 1500
 const WATER_MAX_CELLS := 12000
 const WATER_FULL := 8
 var _water: Dictionary = {}          # Vector3i -> level 1..8 (8 — полная/падающая)
+var _water_src_by_chunk: Dictionary={}
+var water_mesh_builds:=0
+var water_mesh_last_usec:=0
 var _water_src: Dictionary = {}      # Vector3i -> true (озёрные источники)
 var _water_by_chunk: Dictionary = {} # Vector2i -> Dictionary{Vector3i: true}
 var _wq: Dictionary = {}
@@ -1918,6 +1939,11 @@ func water_notify(c: Vector3i) -> void:
 
 
 func _water_set(c: Vector3i, lvl: int) -> void:
+	if int(_water.get(c,0))==maxi(0,lvl): return
+	if not panorama_mode and not is_dream_layer:
+		if lvl>0: GameState.flowing_water[c]=lvl
+		else: GameState.flowing_water.erase(c)
+		GameState.snapshot_note("flowing_water",c)
 	var ck := world_to_chunk(Vector3(c.x, 0, c.z))
 	if lvl <= 0:
 		_water.erase(c)
@@ -1982,21 +2008,25 @@ func water_settle(max_steps: int = 200) -> int:
 
 
 func _water_process(delta: float) -> void:
-	_water_t += delta
-	if _water_t < WATER_TICK:
-		return
-	_water_t = 0.0
-	water_step()
-	_rebuild_water_meshes()
+	if not _physics_active(): return
+	_water_t+=delta
+	if _water_t>=WATER_TICK:
+		_water_t=0.0;water_step()
+	_rebuild_water_meshes(2,1500)
 
 
-func _water_on_chunk_loaded(coord: Vector2i, lake_cells: Dictionary, _fresh: bool) -> void:
+func _water_on_chunk_loaded(coord: Vector2i,lake_cells: Dictionary,_fresh: bool,worker_air: Variant=null) -> void:
+	if not _water_src_by_chunk.has(coord): _water_src_by_chunk[coord]={}
 	for k in lake_cells.keys():
 		var l: Vector2i = k
 		var c := Vector3i(coord.x * chunk_size + l.x, -1, coord.y * chunk_size + l.y)
 		_water_src[c] = true
+		_water_src_by_chunk[coord][c]=true
 	# Источники рядом с вырытым/пещерой и вода у границы с соседями — в очередь.
-	var air := underground_air_cells(coord, {})
+	var air: Dictionary=underground_air_cells(coord,{}) if worker_air==null else worker_air
+	for cell in GameState.snapshot_chunk("flowing_water",coord):
+		if _water_open(cell):
+			_water_set(cell,int(GameState.flowing_water[cell]));water_notify(cell)
 	for k2 in air.keys():
 		var a: Vector3i = k2
 		for d in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
@@ -2015,7 +2045,7 @@ func _water_on_chunk_loaded(coord: Vector2i, lake_cells: Dictionary, _fresh: boo
 		var wc: Dictionary = _water_by_chunk.get(coord + nb, {})
 		for k4 in wc.keys():
 			water_notify(k4)
-	_water_dirty[coord] = true
+	if not _water_by_chunk.get(coord,{}).is_empty(): _water_dirty[coord]=true
 
 
 func _water_unload_chunk(coord: Vector2i) -> void:
@@ -2023,22 +2053,18 @@ func _water_unload_chunk(coord: Vector2i) -> void:
 	for k in wc.keys():
 		_water.erase(k)
 	_water_by_chunk.erase(coord)
-	var x0 := coord.x * chunk_size
-	var z0 := coord.y * chunk_size
-	for k2 in _water_src.keys():
-		var c: Vector3i = k2
-		if c.x >= x0 and c.x < x0 + chunk_size and c.z >= z0 and c.z < z0 + chunk_size:
-			_water_src.erase(c)
+	for cell in _water_src_by_chunk.get(coord,{}): _water_src.erase(cell)
+	_water_src_by_chunk.erase(coord)
 	_water_dirty.erase(coord)
 
 
-func _rebuild_water_meshes() -> void:
-	if _water_dirty.is_empty():
-		return
+func _rebuild_water_meshes(max_count: int=100000,budget_us: int=0) -> void:
+	var started:=Time.get_ticks_usec();var count:=0
 	for ck in _water_dirty.keys():
-		if _loaded.has(ck):
-			_build_flow_water(ck)
-	_water_dirty.clear()
+		_water_dirty.erase(ck)
+		if _loaded.has(ck): _build_flow_water(ck);count+=1
+		if count>=max_count or (budget_us>0 and Time.get_ticks_usec()-started>=budget_us): break
+	water_mesh_last_usec=Time.get_ticks_usec()-started
 
 
 func _build_flow_water(coord: Vector2i) -> void:
@@ -2046,11 +2072,12 @@ func _build_flow_water(coord: Vector2i) -> void:
 	if not is_instance_valid(root):
 		return
 	var old := root.get_node_or_null("FlowWater")
-	if old:
-		old.free()
+
 	var wc: Dictionary = _water_by_chunk.get(coord, {})
 	if wc.is_empty():
+		if old: old.queue_free();water_mesh_builds+=1
 		return
+	water_mesh_builds+=1
 	var origin := chunk_origin(coord)
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
@@ -2088,6 +2115,7 @@ func _build_flow_water(coord: Vector2i) -> void:
 				norms.append(nn)
 				uvs.append(Vector2(pv.x + pv.y, pv.z + pv.y))
 	if verts.is_empty():
+		if old: old.queue_free()
 		return
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -2097,11 +2125,11 @@ func _build_flow_water(coord: Vector2i) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, BlockTex.water_material(false))
-	var mi := MeshInstance3D.new()
+	var mi: MeshInstance3D=old if is_instance_valid(old) else MeshInstance3D.new()
 	mi.name = "FlowWater"
 	mi.mesh = mesh
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(mi)
+	if mi.get_parent()==null: root.add_child(mi)
 
 
 # ---------------- v0.9: jobs own all mutable generation state. Scene tree is main-thread only.
@@ -2111,37 +2139,60 @@ var circular_loading := true
 var legacy_generation := false # Only explicit benchmark comparison; normal gameplay always workers.
 var _jobs: Dictionary = {}
 var _generation_epoch := 0
+var _chunk_revisions: Dictionary={}
+var _rebuild_requests: Dictionary={}
+var _retired_jobs: Array=[]
+var _insert_budget_usec:=2000
+var last_snapshot_usec:=0
+var snapshot_cells_copied:=0
+var stale_jobs_discarded:=0
 var worker_chunk_count := 0
 var last_worker_id := -1
 var generation_usec := 0
 var last_insert_usec := 0
 
-func _terrain_edited(_cell: Vector3i) -> void:
-	_generation_epoch += 1
+func _placed_changed(dream: bool,cells: Array) -> void:
+	if dream or is_dream_layer or panorama_mode: return
+	for c in cells: water_notify(c)
+
+func _terrain_edited(cell: Vector3i) -> void:
+	if panorama_mode or GameState.is_dream()!=is_dream_layer: return
+	for c in _edit_neighbours(cell.x,cell.z):
+		_check_orphan_leaves(c) # logical decay starts immediately; geometry replacement is asynchronous
+		_chunk_revisions[c]=int(_chunk_revisions.get(c,0))+1
+		if _loaded.has(c) or _jobs.has(c):
+			_rebuild_requests[c]=true
+			if not c in _pending: _pending.append(c)
 
 func _job_for(c: Vector2i) -> RefCounted:
-	var removed := {}
+	var started:=Time.get_ticks_usec();var removed: Dictionary={};var eggs: Dictionary={};var collected: Dictionary={}
 	for dx in range(-1,2):
 		for dz in range(-1,2):
-			for k in GameState.removed_in_chunk(c+Vector2i(dx,dz)):
-				removed[k] = true
-	if is_dream_layer: removed = GameState.removed_dream_terrain.duplicate()
-	var caves := {}
-	var carve := {}
-	var nests := {}
+			var ck:=c+Vector2i(dx,dz)
+			if is_dream_layer: removed.merge(GameState.snapshot_chunk("removed_dream_terrain",ck))
+			else:
+				for key in GameState.removed_in_chunk(ck): removed[key]=true
+			eggs.merge(GameState.snapshot_chunk("collected_eggs",ck))
+			collected.merge(GameState.snapshot_chunk("collected_reagent_ids",ck))
+	var caves: Dictionary={};var carve: Dictionary={};var nests: Dictionary={}
 	for dx in range(-4,5):
 		for dz in range(-4,5):
-			var near := c+Vector2i(dx,dz)
-			if _cave_sys_cache.has(near): caves[near] = _cave_sys_cache[near]
+			var near:=c+Vector2i(dx,dz)
+			if _cave_sys_cache.has(near): caves[near]=_cave_sys_cache[near]
 			if abs(dx)<=1 and abs(dz)<=1:
-				if _carve_cache.has(near): carve[near] = _carve_cache[near]
-				if _nest_cache.has(near): nests[near] = _nest_cache[near]
-	var job := ChunkJob.new()
-	job.configure({"seed":_seed,"coord":c,"dream":is_dream_layer,"panorama":panorama_mode,
-		"dev":GameState.dev_mode,"removed":removed,"eggs":GameState.collected_eggs.duplicate(),
-		"collected":GameState.collected_reagent_ids.duplicate(),"epoch":_generation_epoch,
+				if _carve_cache.has(near): carve[near]=_carve_cache[near]
+				if _nest_cache.has(near): nests[near]=_nest_cache[near]
+	for cache in [caves,carve,nests]:
+		for value in cache.values(): ChunkJob.freeze_value(value)
+	var job:=ChunkJob.new()
+	job.configure({"seed":_seed,"coord":c,"dream":is_dream_layer,"panorama":panorama_mode,"dev":GameState.dev_mode,
+		"removed":removed,"eggs":eggs,"collected":collected,"epoch":_generation_epoch,"revision":int(_chunk_revisions.get(c,0)),
 		"caves":caves,"carve":carve,"nests":nests})
+	last_snapshot_usec=Time.get_ticks_usec()-started;snapshot_cells_copied=removed.size()+eggs.size()+collected.size()
 	return job
+
+func _valid_job(data: Dictionary) -> bool:
+	return not data.is_empty() and data.epoch==_generation_epoch and int(data.get("revision",0))==int(_chunk_revisions.get(data.coord,0))
 
 func _queue_job(c: Vector2i) -> void:
 	var job := _job_for(c)
@@ -2149,30 +2200,27 @@ func _queue_job(c: Vector2i) -> void:
 	_jobs[c] = {"job":job,"id":id}
 
 func _poll_jobs(max_insert: int) -> void:
-	var inserted := 0
-	for c in _jobs.keys():
-		var entry: Dictionary = _jobs[c]
+	var inserted:=0;var started:=Time.get_ticks_usec();var ordered: Array=_jobs.keys()
+	ordered.sort_custom(func(a:Vector2i,b:Vector2i)->bool:return _priority(a)<_priority(b))
+	for c in ordered:
+		var entry: Dictionary=_jobs[c]
 		if not WorkerThreadPool.is_task_completed(entry.id): continue
-		WorkerThreadPool.wait_for_task_completion(entry.id)
-		_jobs.erase(c)
-		var data: Dictionary = entry.job.result
-		if data.is_empty():
-			push_error("Chunk job returned no data: %s" % c)
+		WorkerThreadPool.wait_for_task_completion(entry.id);_jobs.erase(c)
+		var data: Dictionary=entry.job.result
+		if not _valid_job(data):
+			stale_jobs_discarded+=1
+			if not c in _pending: _pending.append(c)
 			continue
-		if data.epoch != _generation_epoch:
-			if not _loaded.has(c) and not c in _pending: _pending.append(c)
-			continue
-		if not _loaded.has(c) and maxi(abs(c.x-_center.x),abs(c.y-_center.y)) <= unload_radius:
-			_insert_chunk_data(data)
-			inserted += 1
-		if inserted >= max_insert: break
+		if maxi(abs(c.x-_center.x),abs(c.y-_center.y))<=unload_radius and (not _loaded.has(c) or _rebuild_requests.has(c)):
+			_insert_chunk_data(data);inserted+=1
+		if inserted>=max_insert or Time.get_ticks_usec()-started>=_insert_budget_usec: break
 
 func _wait_jobs(insert: bool) -> void:
 	for c in _jobs.keys():
 		var entry: Dictionary = _jobs[c]
 		WorkerThreadPool.wait_for_task_completion(entry.id)
-		if insert and not _loaded.has(c) and not entry.job.result.is_empty():
-			if entry.job.result.epoch == _generation_epoch:
+		if insert and (not _loaded.has(c) or _rebuild_requests.has(c)) and not entry.job.result.is_empty():
+			if _valid_job(entry.job.result):
 				_insert_chunk_data(entry.job.result)
 			elif not c in _pending:
 				_pending.append(c)
@@ -2180,9 +2228,11 @@ func _wait_jobs(insert: bool) -> void:
 
 func _exit_tree() -> void:
 	_wait_jobs(false)
+	for entry in _retired_jobs: WorkerThreadPool.wait_for_task_completion(entry.id)
+	_retired_jobs.clear()
 
 func _load_chunk(c: Vector2i) -> void:
-	if _loaded.has(c): return
+	if _loaded.has(c) and not _rebuild_requests.has(c): return
 	if legacy_generation:
 		_load_chunk_legacy(c)
 		return
@@ -2192,7 +2242,7 @@ func _load_chunk(c: Vector2i) -> void:
 		WorkerThreadPool.wait_for_task_completion(entry.id)
 		job = entry.job
 		_jobs.erase(c)
-		if job.epoch != _generation_epoch: job = null
+		if not _valid_job(job.result): job = null
 	if job == null:
 		job = _job_for(c)
 		var id := WorkerThreadPool.add_task(job.run,true,"Priority chunk")
@@ -2204,6 +2254,8 @@ func _insert_chunk_data(data: Dictionary) -> void:
 	if data.is_empty(): return
 	var t0 := Time.get_ticks_usec()
 	var c: Vector2i = data.coord
+	if _loaded.has(c): _unload_chunk(c,true)
+	_rebuild_requests.erase(c)
 	var node := Node3D.new()
 	node.name = "Chunk_%d_%d" % [c.x,c.y]
 	node.position = chunk_origin(c)
@@ -2252,7 +2304,7 @@ func _insert_chunk_data(data: Dictionary) -> void:
 	if not panorama_mode:
 		_sync_physics_tree(node,_physics_active())
 		_check_orphan_leaves(c)
-		if not is_dream_layer: _water_on_chunk_loaded(c,data.lake,true)
+		if not is_dream_layer: _water_on_chunk_loaded(c,data.lake,true,data.geometry.get("air",{}))
 	worker_chunk_count += 1
 	last_worker_id = data.worker_id
 	generation_usec += data.generation_us

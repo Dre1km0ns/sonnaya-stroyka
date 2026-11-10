@@ -431,5 +431,18 @@
       "tag": "stage1",
       "water_cells": 0
     }
-  ]
+  ],
+  "stage3_hitch": {
+    "frame_max_ms": 16.96,
+    "frame_p95_ms": 16.803,
+    "frames": 52,
+    "frames_over_33ms": 0,
+    "loaded": 49,
+    "startup_ms": 28.045,
+    "total_ms": 850.491,
+    "work_max_ms": 2.351,
+    "work_p95_ms": 1.633,
+    "tag": "stage3",
+    "case": "49_chunks_hitch_probe"
+  }
 }

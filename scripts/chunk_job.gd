@@ -39,6 +39,8 @@ var _trees_by_chunk: Dictionary = {}
 var _solid_by_chunk: Dictionary = {}
 var coord := Vector2i.ZERO
 var epoch := 0
+var revision:=0
+var _air_for_result: Dictionary={}
 var result: Dictionary = {}
 
 func configure(data: Dictionary) -> void:
@@ -51,6 +53,7 @@ func configure(data: Dictionary) -> void:
 	eggs = data.eggs
 	collected = data.collected
 	epoch = data.epoch
+	revision=int(data.get("revision",0))
 	_cave_sys_cache = data.get("caves",{})
 	_carve_cache = data.get("carve",{})
 	_nest_cache = data.get("nests",{})
@@ -69,7 +72,8 @@ func run() -> void:
 	_plan_nest_blocks(coord,solids)
 	_solid_by_chunk[coord] = solids
 	var geometry := _build_chunk_geometry(coord,lake,solids)
-	result = {"coord":coord,"epoch":epoch,"solids":solids,"lake":lake,"reagents":reagents,"geometry":geometry,
+	freeze_value(_cave_sys_cache);freeze_value(_carve_cache);freeze_value(_nest_cache)
+	result = {"coord":coord,"epoch":epoch,"revision":revision,"solids":solids,"lake":lake,"reagents":reagents,"geometry":geometry,
 		"trees":_trees_by_chunk.get(coord,[]),"walls":_walls_by_chunk.get(coord,[]),"ruin":_ruin_centers.get(coord),
 		"caves":_cave_sys_cache,"carve":_carve_cache,"nests":_nest_cache,
 		"worker_id":OS.get_thread_caller_id(),"generation_us":Time.get_ticks_usec()-start}
@@ -458,7 +462,7 @@ func _build_chunk_geometry(coord: Vector2i, lake_cells: Dictionary, solids: Dict
 			var oid := _add_box_shape(body, lp + sz2 * 0.5, sz2)
 			if y0 < 0:
 				body[oid]["solid_owner"] = true
-	return {"stream":st,"boxes":body,"water":water_arrays(lake_cells)}
+	return {"stream":st,"boxes":body,"water":water_arrays(lake_cells),"air":_air_for_result}
 
 func _add_reagents(root: Array, coord: Vector2i, occupied: Dictionary) -> void:
 	if is_dream_layer:
@@ -847,6 +851,7 @@ func underground_air_cells(coord: Vector2i, lake_cells: Dictionary = {}) -> Dict
 func _build_underground(st: Dictionary, body: Array, coord: Vector2i, lake_cells: Dictionary, base_col: Color, ground_tiles: Array) -> void:
 	var origin := chunk_origin(coord)
 	var air := underground_air_cells(coord, lake_cells)
+	_air_for_result=air
 	# 1) Трава сверху (y=0) — где верхняя клетка грунта цела.
 	for lz in range(chunk_size):
 		var x := 0
@@ -957,3 +962,15 @@ func water_arrays(cells: Dictionary) -> Array:
 	arrays[Mesh.ARRAY_NORMAL]=n
 	arrays[Mesh.ARRAY_TEX_UV]=uv
 	return arrays
+
+static func freeze_value(value: Variant) -> void:
+	# Published procedural cache entries are immutable, safely shared by readers.
+	# Every job still owns its top-level maps and all new generation output.
+	if value is Dictionary:
+		if value.is_read_only(): return
+		for child in value.values(): freeze_value(child)
+		value.make_read_only()
+	elif value is Array:
+		if value.is_read_only(): return
+		for child in value: freeze_value(child)
+		value.make_read_only()

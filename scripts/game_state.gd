@@ -132,6 +132,10 @@ var reagent_counts: Array:
 		inventory_changed.emit()
 
 ## Блоки сна: ключ Vector3i → словарь {kind, anchored, mutant}
+var dream_mapping := "parallel"
+var flowing_water: Dictionary = {}
+var _snapshot_indices: Dictionary = {}
+var snapshot_index_usec := 0
 var dream_blocks: Dictionary = {}
 ## Блоки яви: ключ Vector3i → словарь {kind, mutant}
 var wake_blocks: Dictionary = {}
@@ -271,6 +275,7 @@ func reset_state() -> void:
 	selected_slot = 0
 	dream_exit_count = 0
 	collected_reagent_ids = {}
+	dream_mapping="parallel";flowing_water={};_snapshot_indices.clear()
 	dream_blocks = {}
 	wake_blocks = {}
 	pending_anchors = []
@@ -685,6 +690,7 @@ func mark_reagent_collected(id: String) -> void:
 	if id == "":
 		return
 	collected_reagent_ids[id] = true
+	snapshot_note("collected_reagent_ids",id)
 
 
 func is_reagent_collected(id: String) -> bool:
@@ -1029,6 +1035,7 @@ func remove_terrain_cell(cell: Vector3i, kind: String) -> bool:
 	if k == "egg":
 		var nid := "nest:%d,%d,%d" % [cell.x, cell.y, cell.z]
 		collected_eggs[nid] = true
+		snapshot_note("collected_eggs",nid)
 		egg_taken.emit(nid, cell)
 	terrain_cell_changed.emit(cell)
 	set_hint("Кирка: выпал блок «%s»." % block_display_name(k), false)
@@ -1530,7 +1537,6 @@ func place_wake_block(cell: Vector3i, kind: String, facing: int=0) -> bool:
 		wake_blocks[cell]["facing"]=posmod(facing,4)
 		wake_blocks[cell]["hinge_right"]=door_hinge_right(wake_blocks,cell,facing)
 	add_shape_parts(wake_blocks, cell, kind)
-	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
 	return true
 
@@ -1818,6 +1824,8 @@ func to_save_dict() -> Dictionary:
 		"sword2_crafted":sword3_crafted, # legacy alias
 		"sword3_crafted":sword3_crafted,
 		"progression_revision":10,
+		"spatial_mapping":dream_mapping,
+		"flowing_water":water_to_json(),
 		"mother_defeated": mother_defeated,
 		"dream_bonus_seconds": dream_bonus_seconds,
 		"idea_eaten": idea_eaten,
@@ -2002,6 +2010,12 @@ func apply_save_dict(data: Dictionary) -> void:
 	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
 	if dev_mode:
 		_ensure_dev_items()
+	dream_mapping=str(data.get("spatial_mapping","legacy_workshop" if not dream_blocks.is_empty() else "parallel"))
+	flowing_water={}
+	for key in data.get("flowing_water",{}):
+		var cell:=key_cell(str(key));var level:=int(data.flowing_water[key])
+		if cell.y>=-30 and cell.y<0 and level>0 and level<=8: flowing_water[cell]=level
+	_snapshot_indices.clear()
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
 	_bind_inventory()
@@ -2460,3 +2474,32 @@ static func ray_cell(aim: Dictionary) -> Vector3i:
 static func door_hinge_right(source: Dictionary,c: Vector3i,facing: int) -> bool:
 	var right:=Vector3i((Basis(Vector3.UP,facing*PI/2)*Vector3.RIGHT).round())
 	return source.get(c+right,{}).get("kind","") not in ["","torch","beacon"] and source.get(c-right,{}).get("kind","") in ["","torch","beacon"]
+
+func water_to_json() -> Dictionary:
+	var out: Dictionary={}
+	for c in flowing_water: out[cell_key(c)]=flowing_water[c]
+	return out
+
+func snapshot_chunk(field: String,ck: Vector2i) -> Dictionary:
+	var source: Dictionary=get(field)
+	var entry: Dictionary=_snapshot_indices.get(field,{})
+	if entry.is_empty() or not is_same(entry.source,source) or entry.count!=source.size():
+		var started:=Time.get_ticks_usec();entry={"source":source,"count":source.size(),"buckets":{}}
+		for key in source:
+			var c: Vector3i=key if key is Vector3i else key_cell(str(key).trim_prefix("nest:"))
+			var chunk:=Vector2i(floori(float(c.x)/16),floori(float(c.z)/16))
+			if not entry.buckets.has(chunk): entry.buckets[chunk]={}
+			entry.buckets[chunk][key]=source[key]
+		_snapshot_indices[field]=entry;snapshot_index_usec+=Time.get_ticks_usec()-started
+	return entry.buckets.get(ck,{})
+
+func snapshot_note(field: String,key: Variant) -> void:
+	if not _snapshot_indices.has(field): return
+	var entry: Dictionary=_snapshot_indices[field];var source: Dictionary=get(field)
+	if not is_same(entry.source,source): _snapshot_indices.erase(field);return
+	var c: Vector3i=key if key is Vector3i else key_cell(str(key).trim_prefix("nest:"))
+	var chunk:=Vector2i(floori(float(c.x)/16),floori(float(c.z)/16))
+	if not entry.buckets.has(chunk): entry.buckets[chunk]={}
+	if source.has(key): entry.buckets[chunk][key]=source[key]
+	else: entry.buckets[chunk].erase(key)
+	entry.count=source.size()
