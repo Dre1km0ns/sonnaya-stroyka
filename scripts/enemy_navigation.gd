@@ -18,6 +18,13 @@ const ATTACK_RANGE := 1.65
 const PATH_REBUILD_SEC := 0.7
 
 static var _cm_cache: Node = null
+static var ai_budget_usec:=2000
+static var ai_frame_usec:=0
+static var ai_max_frame_usec:=0
+static var ai_paths_completed:=0
+static var ai_search_nodes:=0
+static var _ai_frame: int=-1
+const NAV_DIRS: Array[Vector2i]=[Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1),Vector2i(1,1),Vector2i(1,-1),Vector2i(-1,1),Vector2i(-1,-1)]
 
 static func setup_body(body: CharacterBody3D) -> void:
 	body.collision_layer = ENEMY_LAYER
@@ -35,7 +42,7 @@ static func is_water_at(body: Node3D, pos: Vector3) -> bool:
 
 static func _chunk_manager(from: Node) -> Node:
 	## v0.5: кэш менеджера чанков яви (раньше — обход группы на каждую клетку A*).
-	if _cm_cache != null and is_instance_valid(_cm_cache) and _cm_cache.is_inside_tree():
+	if _cm_cache != null and is_instance_valid(_cm_cache) and _cm_cache.is_inside_tree() and (_cm_cache.get_parent()==from.get_tree().root or _cm_cache.get_parent().is_ancestor_of(from)):
 		return _cm_cache
 	_cm_cache = null
 	if from == null:
@@ -48,6 +55,9 @@ static func _chunk_manager(from: Node) -> Node:
 	for cm in tree.get_nodes_in_group("chunk_manager"):
 		if bool(cm.get("is_dream_layer")) or bool(cm.get("panorama_mode")):
 			continue
+		if cm.get_parent().is_ancestor_of(from) and cm.get_parent()!=tree.root:
+			_cm_cache=cm;return cm
+		if tree.current_scene and tree.current_scene.is_ancestor_of(from) and not tree.current_scene.is_ancestor_of(cm): continue
 		_cm_cache = cm
 		return cm
 	return null
@@ -329,24 +339,29 @@ static func model_world_forward(body: Node3D) -> Vector3:
 	return f.normalized()
 
 
-static func follow_target(body: CharacterBody3D, target: Vector3, speed: float, delta: float, cache: Dictionary) -> Vector3:
-	if cache.get("can_break",true) and try_mine_obstruction(body,target,delta,cache):
-		apply_movement(body,Vector3.ZERO,0.0,delta)
-		return Vector3.ZERO
+static func follow_target(body: CharacterBody3D,target: Vector3,speed: float,delta: float,cache: Dictionary)->Vector3:
+	var now:float=float(cache.get("t",0.0))+delta;cache.t=now
+	var elapsed:float=float(cache.get("probe_elapsed",0.0))+delta;cache.probe_elapsed=elapsed
+	if cache.get("can_break",true) and elapsed>=0.10:
+		cache.obstructed=try_mine_obstruction(body,target,elapsed,cache);cache.probe_elapsed=0.0
 	if not cache.get("can_break",true):
-		cache.erase("mine_cell")
-		cache["mine_t"] = 0.0
-		body.set_meta("mining_progress",0.0)
-	var now: float = float(cache.get("t", 0.0)) + delta
-	cache["t"] = now
-	var last_rebuild: float = float(cache.get("rebuild_at", -10.0))
-	var last_goal: Vector3 = cache.get("goal", Vector3.INF)
-	if not cache.has("jitter"):
-		cache["jitter"] = randf() * 0.3
-	if now - last_rebuild > PATH_REBUILD_SEC + float(cache["jitter"]) or last_goal.distance_to(target) > 2.5:
-		cache["path"] = find_path(body.global_position, target, body)
-		cache["rebuild_at"] = now
-		cache["goal"] = target
+		cache.obstructed=false;cache.erase("mine_cell");cache.mine_t=0.0;body.set_meta("mining_progress",0.0)
+	if cache.get("obstructed",false):
+		apply_movement(body,Vector3.ZERO,0.0,delta);return Vector3.ZERO
+	var frame:=Engine.get_physics_frames()
+	if frame!=_ai_frame: _ai_frame=frame;ai_frame_usec=0
+	var phase:=int(body.get_instance_id()%3)
+	if posmod(frame+phase,3)==0 and ai_frame_usec<ai_budget_usec:
+		var start:=Time.get_ticks_usec()
+		var last:float=float(cache.get("rebuild_at",-10.0))
+		var last_goal:Vector3=cache.get("goal",Vector3.INF)
+		if not cache.has("search") and (now-last>PATH_REBUILD_SEC+phase*0.1 or last_goal.distance_to(target)>2.5):
+			cache.search=_new_search(body.global_position,target,body);cache.goal=target
+		if cache.has("search"):
+			_advance_search(cache.search,body,mini(500,ai_budget_usec-ai_frame_usec))
+			if cache.search.done:
+				cache.path=cache.search.out;cache.erase("search");cache.rebuild_at=now;ai_paths_completed+=1
+		ai_frame_usec+=Time.get_ticks_usec()-start;ai_max_frame_usec=maxi(ai_max_frame_usec,ai_frame_usec)
 	var path: Array = cache.get("path", [])
 	var desired := Vector3.ZERO
 	if path.size() >= 2:
@@ -371,14 +386,15 @@ static func nearest_adjacent_block(body: Node3D) -> Variant:
 	var best: Variant = null
 	var best_d := ATTACK_RANGE
 	var origin := body.global_position
-	for key in GameState.wake_blocks.keys():
-		var c: Vector3i = key
-		var wp := Vector3(float(c.x) + 0.5, float(c.y) + 0.5, float(c.z) + 0.5)
-		var flat := Vector2(wp.x - origin.x, wp.z - origin.z).length()
-		var dy := absf(wp.y - origin.y)
-		if flat <= ATTACK_RANGE and dy <= 2.2 and flat < best_d:
-			best_d = flat
-			best = c
+	var center:=Vector3i(floori(origin.x),floori(origin.y),floori(origin.z))
+	for dx in range(-2,3):
+		for dy in range(-2,3):
+			for dz in range(-2,3):
+				var c:=center+Vector3i(dx,dy,dz)
+				if not GameState.wake_blocks.has(c): continue
+				var wp:=Vector3(c)+Vector3.ONE*0.5
+				var flat:=Vector2(wp.x-origin.x,wp.z-origin.z).length()
+				if flat<=ATTACK_RANGE and absf(wp.y-origin.y)<=2.2 and flat<best_d: best_d=flat;best=c
 	return best
 
 
@@ -459,4 +475,45 @@ static func advance_mob_mining(body: Node,cell: Vector3i,kind: String,delta: flo
 		cache["mine_t"] = 0.0
 		cache.erase("mine_cell")
 		cache["rebuild_at"] = -10.0
+		cache.erase("search")
 	return true
+
+static func _new_search(from:Vector3,to:Vector3,query:Node)->Dictionary:
+	var start:=Vector2i(floori(from.x),floori(from.z));var goal:=Vector2i(floori(to.x),floori(to.z))
+	var out:Array[Vector3]=[]
+	if start==goal: out.append(Vector3(goal.x+0.5,to.y,goal.y+0.5));return {"done":true,"out":out}
+	if is_solid_cell(query,goal.x,goal.y): goal=_nearest_walkable(query,goal,start)
+	var cx:=int((start.x+goal.x)*0.5);var cz:=int((start.y+goal.y)*0.5)
+	var heap_f:Array[float]=[];var heap_c:Array[Vector2i]=[]
+	_heap_push(heap_f,heap_c,float(absi(goal.x-start.x)+absi(goal.y-start.y)),start)
+	return {"start":start,"goal":goal,"y":to.y,"out":out,"done":false,"hf":heap_f,"hc":heap_c,"mh":{},"ms":{},"came":{},"g":{start:0.0},"closed":{},"guard":0,
+		"x0":clampi(mini(start.x,goal.x)-8,cx-PATH_MAX_EXTENT,cx+PATH_MAX_EXTENT),"x1":clampi(maxi(start.x,goal.x)+8,cx-PATH_MAX_EXTENT,cx+PATH_MAX_EXTENT),
+		"z0":clampi(mini(start.y,goal.y)-8,cz-PATH_MAX_EXTENT,cz+PATH_MAX_EXTENT),"z1":clampi(maxi(start.y,goal.y)+8,cz-PATH_MAX_EXTENT,cz+PATH_MAX_EXTENT)}
+
+static func _advance_search(state:Dictionary,query:Node,budget_us:int=500)->void:
+	if state.done: return
+	var started:=Time.get_ticks_usec();var processed:=0
+	var heap_f:Array[float]=state.hf;var heap_c:Array[Vector2i]=state.hc
+	while not heap_c.is_empty() and state.guard<1400:
+		state.guard+=1;processed+=1;ai_search_nodes+=1
+		var current:=_heap_pop(heap_f,heap_c)
+		if state.closed.has(current): continue
+		if current==state.goal:
+			state.out=_reconstruct(state.came,current,state.y);state.done=true;return
+		state.closed[current]=true
+		var hc:=_memo_height(query,current,state.mh)
+		for d in NAV_DIRS:
+			var next:=current+d
+			if next.x<state.x0 or next.x>state.x1 or next.y<state.z0 or next.y>state.z1 or state.closed.has(next): continue
+			if next!=state.start:
+				if not state.ms.has(next): state.ms[next]=is_solid_cell(query,next.x,next.y)
+				if state.ms[next]: continue
+			var hn:=_memo_height(query,next,state.mh);var dh:=absi(hc-hn)
+			if dh>1 and not ((hc<0 or hn<0) and dh<=2): continue
+			var step:=1.414 if d.x!=0 and d.y!=0 else 1.0
+			var cost:=float(state.g[current])+step*(WATER_COST if hn<0 else 1.0)
+			if cost<float(state.g.get(next,1e12)):
+				state.came[next]=current;state.g[next]=cost
+				_heap_push(heap_f,heap_c,cost+absi(state.goal.x-next.x)+absi(state.goal.y-next.y),next)
+		if processed>=32 or Time.get_ticks_usec()-started>=budget_us: break
+	if heap_c.is_empty() or state.guard>=1400: state.done=true

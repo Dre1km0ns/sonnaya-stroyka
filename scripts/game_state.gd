@@ -129,7 +129,7 @@ var reagent_counts: Array:
 			if typeof(v) == TYPE_ARRAY and i < v.size():
 				want = clampi(int(v[i]), 0, REAGENT_CAP)
 			_set_item_total("reagent%d" % (i + 1), want, false)
-		inventory_changed.emit()
+		notify_inventory()
 
 ## Блоки сна: ключ Vector3i → словарь {kind, anchored, mutant}
 var dream_mapping := "parallel"
@@ -346,7 +346,7 @@ func _fill_dev_inventory() -> void:
 		inv_wake[i] = {"id": DEV_WAKE_ITEMS[i], "name": ItemDB.display_name(DEV_WAKE_ITEMS[i]), "count": 1}
 	for j in range(DEV_DREAM_ITEMS.size()):
 		inv_dream[j] = {"id": DEV_DREAM_ITEMS[j], "name": ItemDB.display_name(DEV_DREAM_ITEMS[j]), "count": 1}
-	inventory_changed.emit()
+	notify_inventory()
 
 
 static func _new_slots(n: int) -> Array:
@@ -438,7 +438,7 @@ func add_item_count(id: String, count: int) -> int:
 			room = mini(count, maxi(0, REAGENT_CAP - int(pouch[id])))
 		pouch[id] = int(pouch[id]) + room
 		if room > 0:
-			inventory_changed.emit()
+			notify_inventory()
 		return room
 	var left := count
 	var cap := ItemDB.max_stack(id)
@@ -460,7 +460,7 @@ func add_item_count(id: String, count: int) -> int:
 				item_slots[i]["durability"] = tool_max(id)
 			left -= put2
 	if left != count:
-		inventory_changed.emit()
+		notify_inventory()
 	return count - left
 
 
@@ -474,7 +474,7 @@ func remove_item(id: String, amount: int = 1) -> bool:
 		return false
 	if pouch.has(id):
 		pouch[id] = int(pouch[id]) - amount
-		inventory_changed.emit()
+		notify_inventory()
 		return true
 	var left := amount
 	# Сначала с конца инвентаря, чтобы хотбар оставался.
@@ -489,7 +489,7 @@ func remove_item(id: String, amount: int = 1) -> bool:
 		left -= take
 		if int(s["count"]) <= 0:
 			item_slots[i] = _empty_slot()
-	inventory_changed.emit()
+	notify_inventory()
 	return true
 
 
@@ -500,7 +500,7 @@ func _set_item_total(id: String, value: int, emit: bool = true) -> void:
 	if pouch.has(id):
 		pouch[id] = maxi(0, value if id == "dust" else mini(value, REAGENT_CAP))
 		if emit:
-			inventory_changed.emit()
+			notify_inventory()
 		return
 	if value > cur:
 		add_item_count(id, value - cur)
@@ -518,7 +518,7 @@ func _set_item_total(id: String, value: int, emit: bool = true) -> void:
 			if int(s["count"]) <= 0:
 				item_slots[i] = _empty_slot()
 	if emit:
-		inventory_changed.emit()
+		notify_inventory()
 
 
 func _set_reagent_total(v: int) -> void:
@@ -537,7 +537,7 @@ func _set_reagent_total(v: int) -> void:
 			var take := mini(have, diff)
 			_set_item_total("reagent%d" % (i + 1), have - take, false)
 			diff -= take
-		inventory_changed.emit()
+		notify_inventory()
 
 
 func swap_slots(a: int, b: int) -> void:
@@ -546,7 +546,7 @@ func swap_slots(a: int, b: int) -> void:
 	var t: Dictionary = item_slots[a]
 	item_slots[a] = item_slots[b]
 	item_slots[b] = t
-	inventory_changed.emit()
+	notify_inventory()
 
 
 func set_slot(i: int, data: Dictionary) -> void:
@@ -558,7 +558,7 @@ func set_slot(i: int, data: Dictionary) -> void:
 		item_slots[i] = data.duplicate(true)
 		if tool_max(str(data["id"])) > 0:
 			item_slots[i]["durability"] = int(data.get("durability", tool_max(str(data["id"]))))
-	inventory_changed.emit()
+	notify_inventory()
 
 
 func get_slot(i: int) -> Dictionary:
@@ -597,7 +597,7 @@ func quick_move(i: int) -> void:
 		item_slots[i] = _empty_slot()
 	else:
 		item_slots[i]["count"] = left
-	inventory_changed.emit()
+	notify_inventory()
 
 
 func special_count(id: String) -> int:
@@ -623,7 +623,7 @@ func _add_special(id: String, count: int) -> void:
 			anchors3 += count
 		"beacon":
 			beacons += count
-	inventory_changed.emit()
+	notify_inventory()
 
 
 func get_reagent_count(type_id: int) -> int:
@@ -676,7 +676,7 @@ func spend_reagents(amount: int, emit_changed: bool = true) -> bool:
 		if left <= 0:
 			break
 	if emit_changed:
-		inventory_changed.emit()
+		notify_inventory()
 	return true
 
 
@@ -706,7 +706,7 @@ func select_item_slot(index: int) -> void:
 		set_hint("Слот %d: пусто." % (selected_slot + 1))
 	else:
 		set_hint("Слот %d: %s" % [selected_slot + 1, ItemDB.display_name(id, str(item.get("name", id)))])
-	inventory_changed.emit()
+	notify_inventory()
 
 
 func cycle_item_slot(delta: int) -> void:
@@ -754,7 +754,7 @@ func add_item(id: String, item_name: String, count: int = 1) -> int:
 			add_item_count(id, count - cap)
 	else:
 		item_slots[target]["count"] = int(item_slots[target].get("count", 0)) + count
-	inventory_changed.emit()
+	notify_inventory()
 	return target
 
 
@@ -943,7 +943,7 @@ func consume_item(id: String, amount: int = 1) -> bool:
 		sel["count"] = int(sel["count"]) - amount
 		if int(sel["count"]) <= 0:
 			item_slots[selected_slot] = _empty_slot()
-		inventory_changed.emit()
+		notify_inventory()
 		return true
 	return remove_item(id, amount)
 
@@ -974,7 +974,7 @@ func mine_wake_block(cell: Vector3i) -> bool:
 		active_bed = ""
 		spawn_point = creation_spawn
 	terrain_cell_changed.emit(cell)
-	inventory_changed.emit()
+	notify_inventory()
 	set_hint(("Добыт блок «%s»." if Mining.drops(kind,str(get_selected_item().get("id",""))) else "Блок «%s» разрушен без кирки: дропа нет.") % block_display_name(kind),false)
 	return true
 
@@ -1084,7 +1084,7 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 			_restore_craft(before_slots,before_pouch,before_pillow)
 			set_hint("Под подушкой нет свободного места.")
 			return false
-		inventory_changed.emit()
+		notify_inventory()
 		set_hint("Скрафчено: %s — лежит под подушкой кровати в яви." % str(rec.get("name", rid)))
 		return true
 	var gives := str(rec.get("gives", ""))
@@ -1104,7 +1104,7 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 			_restore_craft(before_slots,before_pouch,before_pillow)
 			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
 			return false
-	inventory_changed.emit()
+	notify_inventory()
 	if rid == "sword3": set_sword3_flag(true)
 	set_hint("Скрафчено: %s." % str(rec.get("name", rid)))
 	return true
@@ -1287,7 +1287,7 @@ func take_from_pillow(i: int) -> bool:
 	else:
 		sl["count"] = n - got
 	pillow_changed.emit()
-	inventory_changed.emit()
+	notify_inventory()
 	return true
 
 
@@ -1312,7 +1312,7 @@ func use_heal(id: String="") -> bool:
 	if not is_infinite_slot(slot):
 		item_slots[slot].count-=1
 		if item_slots[slot].count<=0: item_slots[slot]=_empty_slot()
-	inventory_changed.emit()
+	notify_inventory()
 	Sfx.play("drink",get_tree().root)
 	var amount:=40 if potion=="heal2" else HEAL1_AMOUNT
 	player_hp=mini(PLAYER_MAX_HP,player_hp+amount);heal_cd=HEAL_COOLDOWN
@@ -1345,7 +1345,7 @@ func collect_death_drop() -> Array:
 		if int(block_stash[k]) > 0:
 			out.append({"id": str(k), "count": int(block_stash[k])})
 	block_stash = {}
-	inventory_changed.emit()
+	notify_inventory()
 	return out
 
 
@@ -1398,7 +1398,7 @@ func pickup_grave(gid: int) -> int:
 		graves.remove_at(idx)
 	else:
 		g["items"] = rest
-	inventory_changed.emit()
+	notify_inventory()
 	return got_total
 
 
@@ -1515,7 +1515,7 @@ func add_mined_block(kind: String, amount: int = 1) -> void:
 	if added >= amount:
 		return
 	block_stash[kind] = int(block_stash.get(kind, 0)) + (amount - added)
-	inventory_changed.emit()
+	notify_inventory()
 
 
 func consume_placeable(kind: String) -> bool:
@@ -1523,7 +1523,7 @@ func consume_placeable(kind: String) -> bool:
 		return true
 	if int(block_stash.get(kind, 0)) > 0:
 		block_stash[kind] = int(block_stash[kind]) - 1
-		inventory_changed.emit()
+		notify_inventory()
 		return true
 	return false
 
@@ -1537,7 +1537,7 @@ func place_wake_block(cell: Vector3i, kind: String, facing: int=0) -> bool:
 		wake_blocks[cell]["facing"]=posmod(facing,4)
 		wake_blocks[cell]["hinge_right"]=door_hinge_right(wake_blocks,cell,facing)
 	add_shape_parts(wake_blocks, cell, kind)
-	inventory_changed.emit()
+	notify_inventory()
 	return true
 
 
@@ -1600,7 +1600,7 @@ func craft_selected_from_dust() -> bool:
 func select_anchor(t: AnchorType) -> void:
 	selected_anchor = t
 	anchor_selected.emit(int(t))
-	inventory_changed.emit()
+	notify_inventory()
 	if t == AnchorType.NAIL:
 		set_hint("Выбран Гвоздь (1 блок). Q — заякорить. C — меню крафта (%d осыпи)." % NAIL_CRAFT_DUST)
 	elif t == AnchorType.WEDGE:
@@ -1675,7 +1675,7 @@ func try_place_anchor(origin: Vector3i) -> bool:
 		dream_blocks[c] = data
 
 	pending_anchors.append({"type": t, "origin": origin, "cells": cells})
-	inventory_changed.emit()
+	notify_inventory()
 	var aname := "Гвоздь"
 	if t == AnchorType.WEDGE:
 		aname = "Клин"
@@ -1749,7 +1749,7 @@ func resolve_wake() -> Dictionary:
 	dream_exit_count += 1
 	clarity = dream_clarity_max()
 	clarity_changed.emit(clarity, dream_clarity_max())
-	inventory_changed.emit()
+	notify_inventory()
 	world_changed.emit(false)
 	wake_resolved.emit(transferred, dust_gained, mutations)
 	var msg := "Пробуждение: +%d блоков в явь (сон рассеялся: %d блок(ов))" % [transferred, wiped]
@@ -2020,7 +2020,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	current_world = World.DREAM if w == "dream" else World.WAKE
 	_bind_inventory()
 	clarity_changed.emit(clarity, dream_clarity_max())
-	inventory_changed.emit()
+	notify_inventory()
 	world_changed.emit(is_dream())
 
 
@@ -2185,7 +2185,7 @@ func wear_tool(amount: int) -> bool:
 	if broken:
 		item_slots[selected_slot] = _empty_slot()
 		set_hint("%s сломалась / сломался." % ItemDB.display_name(id))
-	inventory_changed.emit()
+	notify_inventory()
 	return broken
 
 static func cell_key(c: Vector3i) -> String:
@@ -2395,7 +2395,7 @@ func destroy_wake_structure(c: Vector3i, respect_beacon: bool = false) -> bool:
 	if active_bed == cell_key(c):
 		active_bed = ""
 		spawn_point = creation_spawn
-	inventory_changed.emit()
+	notify_inventory()
 	return true
 
 
@@ -2403,7 +2403,7 @@ func _restore_craft(slots: Array, wallet: Dictionary, under_pillow: Array) -> vo
 	item_slots.assign(slots)
 	pouch = wallet
 	pillow.assign(under_pillow)
-	inventory_changed.emit()
+	notify_inventory()
 	pillow_changed.emit()
 
 func _migrate_beds(source: Dictionary) -> void:
@@ -2432,7 +2432,7 @@ func equip_armor_from_slot(index: int) -> bool:
 	var old: Dictionary = armor[a].duplicate(true)
 	armor[a] = d
 	set_slot(index,old)
-	inventory_changed.emit()
+	notify_inventory()
 	return true
 
 func wear_armor(raw_damage: int) -> void:
@@ -2444,7 +2444,7 @@ func wear_armor(raw_damage: int) -> void:
 		if int(d.durability)<=0:
 			set_hint("Сломалась броня: "+ItemDB.display_name(d.id),false)
 			armor[i] = {}
-	inventory_changed.emit()
+	notify_inventory()
 
 func set_sword2_flag(on: bool) -> void:
 	set_sword3_flag(on) # console compatibility
@@ -2503,3 +2503,15 @@ func snapshot_note(field: String,key: Variant) -> void:
 	if source.has(key): entry.buckets[chunk][key]=source[key]
 	else: entry.buckets[chunk].erase(key)
 	entry.count=source.size()
+
+var _inventory_batch_depth:=0
+var _inventory_batch_dirty:=false
+func begin_inventory_batch() -> void:
+	_inventory_batch_depth+=1
+func end_inventory_batch() -> void:
+	_inventory_batch_depth=maxi(0,_inventory_batch_depth-1)
+	if _inventory_batch_depth==0 and _inventory_batch_dirty:
+		_inventory_batch_dirty=false;inventory_changed.emit()
+func notify_inventory() -> void:
+	if _inventory_batch_depth>0: _inventory_batch_dirty=true
+	else: inventory_changed.emit()

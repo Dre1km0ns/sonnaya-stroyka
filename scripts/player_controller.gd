@@ -16,6 +16,12 @@ const SWIM_UP := 3.2
 var _step_t := 0.0
 var _pickup_t := 0.0
 var auto_picked := 0
+var auto_pickup_enabled:=true
+var pickup_last_usec:=0
+var pickup_last_candidates:=0
+var _pickup_query: PhysicsShapeQueryParameters3D
+const PICKUP_MAX_PER_TICK:=64
+const PICKUP_BUDGET_USEC:=1500
 
 @onready var pivot: Node3D = $CameraPivot
 @onready var camera: Camera3D = $CameraPivot/Camera3D
@@ -121,32 +127,38 @@ func _physics_process(delta: float) -> void:
 		_step_t = 0.32 if Input.is_action_pressed("sprint") else 0.5
 		load("res://scripts/sfx.gd").play("step", self)
 	_pickup_t -= delta
-	if _pickup_t <= 0.0:
+	if _pickup_t <= 0.0 and auto_pickup_enabled:
 		_pickup_t = 0.1
 		auto_pickup()
 
 
 func auto_pickup() -> int:
-	## Ресурсы сами подбираются, когда игрок рядом (только в яви, только видимые).
-	if GameState.is_dream() or GameState.player_hp <= 0:
-		return 0
-	var n := 0
-	var me := global_position + Vector3(0, 0.6, 0)
-	for g in ["reagent", "pickup", "grave_pile"]:
-		for node in get_tree().get_nodes_in_group(g):
-			if not (node is Node3D) or not is_instance_valid(node) or node.is_queued_for_deletion():
-				continue
-			if not (node as Node3D).is_visible_in_tree():
-				continue
-			if "collected" in node and bool(node.collected):
-				continue
-			if (node as Node3D).global_position.distance_to(me) > PICKUP_RADIUS:
-				continue
-			if node.has_method("collect"):
-				node.collect()
-				n += 1
-	auto_picked += n
-	return n
+	if GameState.is_dream() or GameState.player_hp<=0: return 0
+	var started:=Time.get_ticks_usec()
+	if _pickup_query==null:
+		_pickup_query=PhysicsShapeQueryParameters3D.new();var shape:=SphereShape3D.new();shape.radius=PICKUP_RADIUS
+		_pickup_query.shape=shape;_pickup_query.collision_mask=8;_pickup_query.collide_with_areas=false
+	var me:=global_position+Vector3(0,0.6,0)
+	_pickup_query.transform=Transform3D(Basis.IDENTITY,me)
+	var hits:=get_world_3d().direct_space_state.intersect_shape(_pickup_query,128)
+	pickup_last_candidates=hits.size()
+	var nearby: Array[Node3D]=[];var seen: Dictionary={}
+	for hit in hits:
+		var node: Node3D=hit.collider
+		if node.has_meta("pickup_owner"): node=node.get_meta("pickup_owner")
+		if seen.has(node.get_instance_id()) or not node.has_method("collect") or node.is_queued_for_deletion(): continue
+		seen[node.get_instance_id()]=true
+		if not node.is_visible_in_tree() or node.global_position.distance_squared_to(me)>PICKUP_RADIUS*PICKUP_RADIUS: continue
+		if "collected" in node and node.collected: continue
+		nearby.append(node)
+	nearby.sort_custom(func(a:Node3D,b:Node3D)->bool:return a.global_position.distance_squared_to(me)<b.global_position.distance_squared_to(me))
+	var count:=0;var attempts:=0;GameState.begin_inventory_batch()
+	for node in nearby:
+		node.collect();attempts+=1
+		if node.is_queued_for_deletion() or ("collected" in node and node.collected): count+=1
+		if attempts>=PICKUP_MAX_PER_TICK or Time.get_ticks_usec()-started>=PICKUP_BUDGET_USEC: break
+	GameState.end_inventory_batch();auto_picked+=count;pickup_last_usec=Time.get_ticks_usec()-started
+	return count
 
 
 func _in_water() -> bool:

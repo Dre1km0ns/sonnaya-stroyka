@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 3 (chunk streaming / world sync / water) завершён, расширенный smoke зелёный. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 10 ноября 2026, МСК. Текущий этап: 4 (entities/pickup/AI) завершён, extended smoke зелёный; большой suite запущен. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -37,7 +37,7 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | 7 | Единственная sync при переходе; симметричный sleep миров; lazy Dream | Готово: один signal sync, parent process-mode sleep обоих миров, lazy async Dream, parallel/legacy mapping |
 | 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | Готово: session epoch + chunk revisions, ближайшие/вперёд, adaptive 0.5–4ms insertion, bounded indexed snapshots, immutable caches, retired jobs |
 | 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | Готово: только changed levels, coalesced dirty, ≤2 meshes/frame +1.5ms soft budget, indexed sources, save/reload flow, inactive sleep |
-| 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | TODO |
+| 10 | Reagent без пустого process; local pickup, culling process/physics (не боссы), AI budget/stagger, local adjacent search | Готово: cached bounds/no process, local mask8 sphere query ≤64/1.5ms, batch inventory signals, full process+physics cull except bosses, cooperative A*/2ms and stagger, local125 nearest-block |
 | 11 | Preview якоря, подсветка/счётчик/стоимость/конфликты; atomic TransferPlan; wake result UI | TODO |
 | 12 | Шанс мутации 7% на блок, cap около 3% структуры, маяк, instability | TODO |
 | 13 | Полный набор регрессии/измерений, old save, leaks, screenshots, changelog, доставка | TODO |
@@ -94,3 +94,13 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 - Hitch49 chunks (headless, 60fps cap): startup **93.033→28.045ms**, frame p95 **16.790→16.803ms**, max **16.818→16.960ms**, >33ms **0→0**, work p95 **1.398→1.633ms** (пока +17%, честно, не объявлять всё ускоренным), total **782.232→850.491ms**. Первичная версия с deep-copy кешей дала p95 2.885ms; замена на immutable sharing снизила до1.633ms. Финальный замер после entity cache ещё впереди.
 - Последний лог `/workspace/v010/stage3_immutable_smoke.log`: asserts OK, engine/script errors и ObjectDB/resource leak warnings отсутствуют.
 - Дальше этап4: ReagentNode bounds-cache/no process, локальный pickup с бюджетом, culler обоих process + исключить всех боссов, AI budget/stagger и локальный nearest block. Затем stage5 atomic TransferPlan/preview/results/3% mutation, полный performance suite/screenshots/version/release.
+
+## Этап 4: проверено
+- `/workspace/v010/stage4_extended.log`: полный smoke assertions OK, engine errors/ObjectDB leaks/resource-in-use отсутствуют.
+- ReagentNode больше не создаёт Tag и не имеет `_process`; размер GLB кешируется один раз на тип. Pickup: Physics broadphase mask8 вместо перебора всех групп; могила получила лёгкий pickup proxy. Sphere radius1.7, ≤128 кандидатов / ≤64 попыток, soft budget1.5ms.
+- 200 настоящих dropped stacks: **4 ticks / 4 inventory signals / max1.536ms**. Ничего не потеряно, pickup proxy могилы возвращает3 stone. В тестах добавлен physics-frame sync перед запросом новых коллайдеров (не ослабляли assert).
+- Culler сохраняет и восстанавливает visible/process/physics; Мать и Анаконда исключены из distance-cull, но inactive-world sleep всё ещё действует. Проверены fake far entity + boss исключение + возврат близко.
+- Runtime A* кооперативный: ≤32 nodes или500µs на порцию, фаза из3 кадров, общий soft budget2ms; движение/гравитация каждый physics frame, obstruction probe10Hz. Старый synchronous `find_path` только для явных tool/unit запросов, gameplay `follow_target` его не вызывает. nearest_adjacent_block проверяет125 локальных клеток вместо всей базы.
+- Console: `pickup stats|collect`, `ai stats|budget`; Russian help/Tab.
+- Полный обновлённый benchmark запущен в `/workspace/v010/suite_stage4.log` (взять результат/добавить JSON после завершения). Mass pickup теперь содержит и first-tick, и CPU sum / wall latency для всех300; не сравнивать64 с300 как одинаковые операции. Water row теперь содержит настоящую воду через границу, не water_cells=0.
+- Дальше stage5: atomic TransferPlan + terrain-aware preflight + reserve/refund, anchor preview/highlight/cost/conflicts, wake result UI,7% rolls capped floor(3% structure), beacon+5dust. Затем финальные тесты/замеры/скрины/версия/README/CHANGELOG/main push/ZIP/Drive/one old ZIP trash.

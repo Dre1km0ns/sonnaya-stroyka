@@ -33,6 +33,8 @@ const COMMAND_HELP := {
 "bed":"Кровать под прицелом назначить спавном или показать текущий спавн. Пример: bed setspawn; bed spawn",
 "chunks":"Статистика очереди/worker/локальных snapshots, радиус 1..8, ревизии. Пример: chunks stats; chunks radius 3; chunks revisions",
 "water":"Статистика текучей воды/mesh и ручной шаг (только Явь). Пример: water stats; water step 10",
+"pickup":"Локальный подбор: статистика бюджета или ручной проход. Пример: pickup stats; pickup collect",
+"ai":"Кооперативный A*: статистика и общий бюджет 500..8000µs. Пример: ai stats; ai budget 2000",
 "mapping":"Система координат сна: parallel (новые миры) или legacy_workshop (старый сон у нуля). Пример: mapping parallel",
 "debug":"F3 overlay вкл/выкл. Пример: debug on; debug toggle",
 "craft":"Штатный крафт с доступом ко всем станциям (ресурсы/разблокировки проверяются). Пример: craft sword3",
@@ -138,7 +140,7 @@ func history_step(direction: int) -> void:
 	entry.caret_column = entry.text.length()
 func completion_candidates(prefix: String) -> Array[String]:
 	var all: Array[String] = ["door toggle","door rotate","help","seed","moon ","kill all","god","fly","heal","hp ","time day","time night","time ","tp spawn","tp ","world wake","world dream","cooldown reset","sword2 on","sword2 off","sword2 toggle","armor give wood","armor give scale","mob hp ","mob damage ","mob speed ","mob tool hand","mob tool pickaxe","mob tool pickaxe2"]
-	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3","chunks revisions","water stats","water step ","mapping parallel","mapping legacy_workshop"]: all.append(command)
+	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3","chunks revisions","water stats","water step ","mapping parallel","mapping legacy_workshop","pickup stats","pickup collect","ai stats","ai budget "]: all.append(command)
 	for cmd in COMMAND_HELP: all.append("help "+cmd)
 	for id in MOB_IDS: all.append("spawn "+id)
 	for id in DB.all_icon_ids():
@@ -485,6 +487,15 @@ func _v010_command(a: PackedStringArray) -> String:
 				if GameState.wake_blocks.get(cell,{}).get("kind","")!="bed": return "Ошибка: наведитесь на поставленную кровать в Яви."
 				GameState.active_bed=GameState.cell_key(cell);GameState.spawn_point=Vector3(cell)+Vector3(0.5,1,1);return "Спавн кровати: "+str(GameState.spawn_point)
 			return "Ошибка: bed spawn|setspawn"
+		"pickup":
+			var player:=_player()
+			if not player: return "Ошибка: нет игрока."
+			if a.size()>1 and a[1]=="collect": player.auto_pickup()
+			return "Подбор: %d за всё время · кандидатов %d · %.3f ms · максимум64/tick, soft budget1.5ms"%[player.auto_picked,player.pickup_last_candidates,player.pickup_last_usec/1000.0]
+		"ai":
+			var nav=load("res://scripts/enemy_navigation.gd")
+			if a.size()==3 and a[1]=="budget" and a[2].is_valid_int(): nav.ai_budget_usec=clampi(int(a[2]),500,8000)
+			return "AI: бюджет%dµs · кадр%dµs / max%dµs · путей%d · узловA*%d"%[nav.ai_budget_usec,nav.ai_frame_usec,nav.ai_max_frame_usec,nav.ai_paths_completed,nav.ai_search_nodes]
 		"mapping":
 			if a.size()!=2 or a[1] not in ["parallel","legacy_workshop"]: return "Ошибка: mapping parallel|legacy_workshop"
 			GameState.dream_mapping=a[1];return "Координаты сна: "+a[1]

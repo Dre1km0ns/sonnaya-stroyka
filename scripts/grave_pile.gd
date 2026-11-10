@@ -13,6 +13,9 @@ func configure(gid: int) -> void:
 
 func _ready() -> void:
 	add_to_group("grave_pile")
+	var sensor:=StaticBody3D.new();sensor.collision_layer=8;sensor.collision_mask=0;sensor.set_meta("pickup_owner",self)
+	var collision:=CollisionShape3D.new();var shape:=SphereShape3D.new();shape.radius=0.5;collision.shape=shape
+	sensor.add_child(collision);add_child(sensor)
 	var mi := MeshInstance3D.new()
 	mi.name = "Mesh"
 	mi.mesh = BlockTex.cube_mesh("grave", Vector3(0.6, 0.3, 0.6))

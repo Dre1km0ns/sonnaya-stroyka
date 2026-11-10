@@ -11,6 +11,7 @@ const TYPE_COLORS: Array[Color] = [
 @export var reagent_type: int = 1
 var collected: bool = false
 var world_id: String = ""
+static var _bounds_by_model: Dictionary={}
 
 
 func configure(type_id: int, id: String, amt: int = 1) -> void:
@@ -51,23 +52,26 @@ func _model_path() -> String:
 
 
 func _fit_model(inst: Node3D, target_h: float) -> void:
-	var acc := AABB()
-	var first := true
-	var stack: Array[Node] = [inst]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is MeshInstance3D and (n as MeshInstance3D).mesh:
-			var mi := n as MeshInstance3D
-			var local: AABB = mi.mesh.get_aabb()
-			var xf: Transform3D = inst.global_transform.affine_inverse() * mi.global_transform
-			var world_a: AABB = xf * local
-			if first:
-				acc = world_a
-				first = false
-			else:
-				acc = acc.merge(world_a)
-		for ch in n.get_children():
-			stack.append(ch)
+	var key:=_model_path()
+	var acc: AABB=_bounds_by_model.get(key,AABB())
+	if not _bounds_by_model.has(key):
+		var first := true
+		var stack: Array[Node] = [inst]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			if n is MeshInstance3D and (n as MeshInstance3D).mesh:
+				var mi := n as MeshInstance3D
+				var local: AABB = mi.mesh.get_aabb()
+				var xf: Transform3D = inst.global_transform.affine_inverse() * mi.global_transform
+				var world_a: AABB = xf * local
+				if first:
+					acc = world_a
+					first = false
+				else:
+					acc = acc.merge(world_a)
+			for ch in n.get_children():
+				stack.append(ch)
+		_bounds_by_model[key]=acc
 	if acc.size.y < 0.01:
 		return
 	inst.scale = Vector3.ONE * (target_h / acc.size.y)
@@ -109,16 +113,8 @@ func _apply_visual() -> void:
 		shape.radius = 0.35
 		col.shape = shape
 		add_child(col)
-	var tag := get_node_or_null("Tag") as Label3D
-	if tag == null:
-		tag = Label3D.new()
-		tag.name = "Tag"
-		tag.position = Vector3(0, 0.7, 0)
-		tag.font_size = 28
-		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		add_child(tag)
-	tag.text = GameState.reagent_type_name(reagent_type)
-	tag.modulate = colr.lightened(0.25)
+	var tag:=get_node_or_null("Tag")
+	if tag: tag.queue_free() # contextual hint replaces static floating labels
 
 
 func collect() -> void:
@@ -163,8 +159,3 @@ func _on_night(night: bool) -> void:
 	if tag:
 		tag.modulate.a = 0.25 if night else 1.0
 
-
-func _process(_delta: float) -> void:
-	for child in get_children():
-		if child is Label3D:
-			child.visible = false

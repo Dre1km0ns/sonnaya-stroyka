@@ -601,6 +601,7 @@ func _run() -> void:
 	await _v010_build_checks()
 	await _v010_gameplay_checks()
 	await _v010_stream_checks()
+	await _v010_entity_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -1425,6 +1426,8 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	pk.global_position = Vector3(5.5, 0.6, 5)
 	var planks0: int = G.count_item("planks")
 	G.player_hp = 100 # isolate pickup from the preceding boss attacks
+	await physics_frame
+	await physics_frame # broadphase must see the newly spawned pickup body
 	_a(pc.auto_pickup() >= 1 and pk.collected,1394)
 	_a(G.count_item("planks") == planks0 + 1, 1395)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -2216,3 +2219,41 @@ func _v010_stream_checks() -> void:
 	# clear_all retires work without a global join; teardown is allowed to join for safety.
 	cm._queue_job(Vector2i(2,1));cm.clear_all();_a(cm._jobs.is_empty() and not cm._retired_jobs.is_empty(),10041)
 	cm.queue_free();player.queue_free();await process_frame;G.reset_state()
+
+func _v010_entity_checks() -> void:
+	var G: Node=root.get_node("GameState");G.begin_world("entity test","","6767676767",G.DEV_SEED,true)
+	var scene: Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene
+	var player: Node=scene.player;player.auto_pickup_enabled=false;player.set_physics_process(false);player.global_position=Vector3(3.5,0.1,3.5)
+	G.dev_mode=false
+	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
+	for i in range(200):
+		var pickup: Node3D=load("res://scripts/block_pickup.gd").new();pickup.configure("planks");scene.wake_world.add_child(pickup);pickup.global_position=player.global_position+Vector3((i%10)*0.04,0.6,(i/10)*0.015);pickup.set_physics_process(false)
+	await physics_frame;await physics_frame
+	var emitted: Array[int]=[0];var callback: Callable=func()->void:emitted[0]+=1
+	G.inventory_changed.connect(callback)
+	var ticks:=0;var maximum:=0
+	while G.count_item("planks")<200 and ticks<50:
+		var picked: int=player.auto_pickup();_a(picked<=64,10050);maximum=maxi(maximum,player.pickup_last_usec);ticks+=1;await process_frame
+	_a(G.count_item("planks")==200 and emitted[0]<=ticks,10051)
+	G.inventory_changed.disconnect(callback)
+	var gid: int=G.add_grave(player.global_position,[{"id":"stone","count":3}]);var pile: Node3D=load("res://scripts/grave_pile.gd").new();pile.configure(gid);scene.wake_world.add_child(pile);pile.global_position=player.global_position
+	await physics_frame;await physics_frame
+	_a(player.auto_pickup()>0 and pile.collected and G.count_item("stone")==3,10052)
+	var culler: Node=scene.get_node("Systems/EntityCuller")
+	var far:=Node3D.new();scene.wake_world.add_child(far);far.add_to_group("enemy");far.position=Vector3(1000,1,1000);far.set_process(true);far.set_physics_process(true)
+	var boss:=Node3D.new();scene.wake_world.add_child(boss);boss.add_to_group("enemy");boss.add_to_group("anaconda");boss.position=Vector3(1000,1,1000);boss.set_process(true);boss.set_physics_process(true)
+	culler._process(0.31);_a(not far.visible and not far.is_processing() and not far.is_physics_processing(),10053)
+	_a(boss.visible and boss.is_processing() and boss.is_physics_processing(),10054)
+	far.global_position=player.global_position;culler._process(0.31);_a(far.visible and far.is_processing() and far.is_physics_processing(),10055)
+	far.remove_from_group("enemy");boss.remove_from_group("enemy");boss.remove_from_group("anaconda");far.queue_free();boss.queue_free()
+	var Nav=load("res://scripts/enemy_navigation.gd")
+	var search: Dictionary=Nav._new_search(Vector3(2,0,2),Vector3(6,0,2),scene.wake_chunks);var turns:=0
+	while not search.done and turns<100: Nav._advance_search(search,scene.wake_chunks,500);turns+=1
+	_a(search.done and search.out.size()>=2 and search.out.back().distance_to(Vector3(6.5,0,2.5))<0.01,10056)
+	for i in range(1000): G.wake_blocks[Vector3i(10000+i,0,10000)]={"kind":"stone"}
+	var near:=Vector3i(3,1,3);G.wake_blocks[near]={"kind":"planks"}
+	_a(Nav.nearest_adjacent_block(player)==near,10057)
+	for node in get_nodes_in_group("reagent"):
+		if scene.is_ancestor_of(node): _a(not node.is_processing(),10058)
+	print("SMOKE: v0.10 local pickup200 in %d ticks / signals%d / max%dus; grave sensor, full culling/boss exclusion, cooperative A*, local nearest block OK"%[ticks,emitted[0],maximum])
+	scene.queue_free();await process_frame;current_scene=null;G.reset_state()
