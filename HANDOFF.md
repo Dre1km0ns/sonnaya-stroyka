@@ -1,6 +1,6 @@
 # Передача работы — Сонная стройка v0.10
 
-Обновлено: 10 ноября 2026, МСК. Текущий этап: 1 (инкрементальные блоки) — код и измерения готовы; расширенный smoke проверяется. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
+Обновлено: 10 ноября 2026, МСК. Текущий этап: 2 (F3/двери/лечение/меч3/консоль/аудио) завершён, smoke зелёный, screenshots просмотрены. Релиз v0.10 ЕЩЁ НЕ ГОТОВ.
 
 ## Проект и правила владельца
 Godot sandbox/survival: игрок добывает в Яви, строит во Сне, якорями snapshot фиксирует существующие блоки и переносит их по тем же координатам в Явь. Не превращать игру в обычный Minecraft; сохранить механики и совместимость v0.9.1.
@@ -28,12 +28,12 @@ Godot `/home/box/godot/godot` (4.7.2), Linux box. Компьютер владе�
 | № | Задача | Статус |
 |---|---|---|
 | 0 | Аудит/измерения до изменений | Готово базово; нужны отдельные flowing-water / большая база / дверные замеры |
-| 1 | F3 debug (FPS, XYZ, направление, чанк); убрать toggle в настройках | TODO |
-| 2 | Дверь: grid alignment, lightweight mesh/material sharing, single box, направление/петля по игроку; измерить | TODO |
-| 3 | Полная русская консоль всех систем, описания/примеры/help/Tab | TODO |
-| 4 | Terraria quick heal: первый подходящий слот по номеру, оба уровня в hotbar/quick slot | TODO |
-| 5 | Мечи 7/13/23 dmg; sword3 = sword2+5 scales на Станке, 700 durability, иконка/текстура; HP flag перенос на sword3, миграция старого sword2 | TODO |
-| 6 | Инкрементальные блоки + dirty cells/chunks; обычные объединить в mesh/коллизии, интерактивы отдельно | Готова основа: dirty signals, batching, hidden-face mesh, X-merged collision, локальная замена интерактивов; smoke/метрики добавлены. Трансфер/ChunkManager отдельно впереди. |
+| 1 | F3 debug (FPS, XYZ, направление, чанк); убрать toggle в настройках | Готово: F3, XYZ/направление/чанк, пункт настроек удалён |
+| 2 | Дверь: grid alignment, lightweight mesh/material sharing, single box, направление/петля по игроку; измерить | Готово: сетка/поворот/шарнир, 12 треугольников и общие mesh/material/shape, тест 4 направлений |
+| 3 | Полная русская консоль всех систем, описания/примеры/help/Tab | Основные системы готовы, help по-русски с примерами/Tab; новые transfer/water/chunks команды дополнять дальше |
+| 4 | Terraria quick heal: первый подходящий слот по номеру, оба уровня в hotbar/quick slot | Готово: H первое зелье по индексу; оба уровня в хотбаре/quick-alias, ЛКМ выбранным зельем |
+| 5 | Мечи 7/13/23 dmg; sword3 = sword2+5 scales на Станке, 700 durability, иконка/текстура; HP flag перенос на sword3, миграция старого sword2 | Готово: 7/13/23 урона, 700 прочности, рецепт sword2+5 scales на станке, флаг sword3 + alias sword2; старый флаг очищен |
+| 6 | Инкрементальные блоки + dirty cells/chunks; обычные объединить в mesh/коллизии, интерактивы отдельно | Готово (smoke 10001–10006): dirty signals, batching, hidden-face mesh, X-merged collision, локальная замена интерактивов; smoke/метрики добавлены. Трансфер/ChunkManager отдельно впереди. |
 | 7 | Единственная sync при переходе; симметричный sleep миров; lazy Dream | TODO |
 | 8 | Per-chunk revisions, соседи, локальные snapshot, near/forward priority, adaptive insert budget | TODO |
 | 9 | Вода только при изменении, coalesced/capped rebuild, inactive sleep, границы | TODO |
@@ -74,3 +74,12 @@ HANDOFF Drive: https://drive.google.com/file/d/19ID5k4BLkUQOg6GsxKgrMFj3I0NgmYtZ
 - Walking software-renderer avg 39.919→47.760 ms (регрессия/шум; не утверждать оптимизацию FPS). Остальные этапы ещё не внедрены.
 - Новые строки измерений в benchmarks/v0.10.json, лог /workspace/v010/suite_stage1.log. Extended suite всё ещё требует настоящую water fixture (старая water_cells=0 невалидна).
 - Дальше: лёгкие двери + F3 + potion/sword3/миграция + русская консоль; затем ChunkManager/вода/AI/pickup/TransferPlan; в конце полный verification/pipeline.
+
+## Этап 2: проверено
+- Расширенный smoke `/workspace/v010/stage2_final_smoke.log`: все assertions зелёные, **0 ObjectDB leaks / 0 resources in use**, без engine/script errors. Короткие SFX реально воспроизводятся как PCM WAV; исходные Ogg сохранены, журнал/test IDs прежние. Устранили OggPacketSequencePlayback, не заглушали аудио и не скрывали warnings.
+- Дверь: исходные bounds (-0.527778,-1,-0.133333), size (1.027778,2,0.266667) → ровно (-0.5,-1,-0.0625), size (1,2,0.125). Треугольники **240→12**, vertices **292→36**, первый mesh build **21.724→11.449 ms** (headless CPU, это не FPS-замер). 1 shared mesh/material/box, положение на грани сетки, шарнир в её углу; collision/4-facing/open-leaf/picking проверены.
+- Quick-heal UI — alias первого potion-слота, не отдельное дублирующее хранилище; оба зелья можно положить мышью. H всегда наименьший индекс, выбранное ЛКМ использует выбранный тип. 20/40 HP, общий cooldown15s.
+- Меч3: оригинальный jade/scales pixel icon и extruded mesh, recipe/durability/миграция в smoke10018–10020. В старом сейве `sword2_crafted` больше не включает усиление; новое поле `sword3_crafted` сохраняет факт крафта. Legacy console alias работает.
+- Превью `/workspace/shots/v010_{f3,door_closed,door_open,scale_sword,inventory,console_help}.png` просмотрены: дверь/слоты/текст без наложений. Меч в руке показался крупным, после review уменьшены scale/поправлен grip; переснять на финальном проходе.
+- Сгенерированная графика воспроизводится `python3 tools/make_v010_art.py`. Кредиты/PCM adaptation в assets/LICENSE.txt.
+- Дальше этап 3: per-chunk revision + bounded snapshots + adaptive insertion + симметричный sleep/lazy Dream + coalesced/persistent water; затем AI/pickup и TransferPlan.

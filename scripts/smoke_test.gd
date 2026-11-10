@@ -599,6 +599,7 @@ func _run() -> void:
 	await _v09_checks()
 	if not _v09_done: _fails.append("v0.9 aborted")
 	await _v010_build_checks()
+	await _v010_gameplay_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -1091,7 +1092,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.reset_state()
 	var lathe_ids: Array = G.get_visible_recipes({"at_lathe": true}).map(func(r): return str(r["id"]))
 	var bench_ids: Array = G.get_visible_recipes({"at_workbench": true}).map(func(r): return str(r["id"]))
-	_a(lathe_ids == ["sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
+	_a(lathe_ids == ["sword3", "sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
 	_a(not ("lathe" in bench_ids) and not ("sword2" in bench_ids), 1077)
 	for rid in bench_ids:
 		_a(not (rid in lathe_ids), 1079)
@@ -1119,12 +1120,12 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(G.count_item("sword2") == 1 and G.count_item("sword") == 0, 1098)
 	_a(G.count_item("reagent1") == 0 and G.count_item("reagent2") == 0 and G.count_item("reagent3") == 0, 1099)
 	var bc: GDScript = load("res://scripts/build_controller.gd")
-	_a(bc.SWORD2_DAMAGE == 25 and is_equal_approx(bc.SWORD2_REACH, bc.SWORD_REACH * 1.25), 1101)
+	_a(bc.SWORD2_DAMAGE == 13 and bc.SWORD_DAMAGE==7 and bc.SWORD3_DAMAGE==23 and is_equal_approx(bc.SWORD2_REACH, bc.SWORD_REACH * 1.25), 1101)
 	var cmenu: Node = load("res://scripts/craft_menu.gd").new()
 	root.add_child(cmenu)
 	await process_frame
 	cmenu.open_lathe()
-	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
+	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
 	cmenu.close()
 	cmenu.queue_free()
 	_a(G.is_placeable_block("bed") and G.is_placeable_block("lathe"), 1109)
@@ -2116,3 +2117,45 @@ func _v010_build_checks() -> void:
 	_a(vox.sync_count==sync_before,10006)
 	vox.queue_free();await process_frame;G.reset_state()
 	print("SMOKE: v0.10 incremental 1000 blocks / 3 meshes+bodies, boundary neighbours, multicell remove, no full resync OK")
+
+func _v010_gameplay_checks() -> void:
+	var G: Node=root.get_node("GameState")
+	G.begin_world("v010 test","","6767676767",G.DEV_SEED,true)
+	var scene: Node=load("res://scenes/main.tscn").instantiate();scene.set_meta("smoke",true);root.add_child(scene);current_scene=scene
+	await process_frame
+	var console: Node=get_first_node_in_group("dev_console")
+	var hud: Node=scene.get_node("HUD")
+	_a(console.execute("debug on").contains("true") and hud._debug_label.visible,10010)
+	root.get_node("GameSettings").settings_changed.emit()
+	_a(hud._debug_label.visible and hud._debug_label.text.contains("XYZ") and hud._debug_label.text.contains("Чанк"),10011)
+	console.execute("debug off")
+	_a(not hud._debug_label.visible and console.completion_candidates("sword3 ").size()==3,10012)
+	for cmd in console.COMMAND_HELP:
+		_a(console.execute("help "+cmd).contains("Пример:"),10013)
+	G.dev_mode=false
+	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
+	G.set_slot(4,{"id":"heal2","count":2});G.set_slot(9,{"id":"heal1","count":3});G.select_item_slot(9);G.player_hp=10;G.heal_cd=0
+	_a(G.use_heal() and G.player_hp==50 and G.get_slot(4).count==1 and G.get_slot(9).count==3,10014)
+	_a(not G.use_heal() and G.heal_cd>14.0,10015)
+	G.heal_cd=0
+	_a(G.use_heal("heal1") and G.player_hp==70 and G.get_slot(9).count==2,10016)
+	var ui: Node=get_first_node_in_group("inventory_ui")
+	ui._on_slot_clicked(4,MOUSE_BUTTON_LEFT,false);ui._on_quick_heal_clicked(-20,MOUSE_BUTTON_LEFT,false);ui.close()
+	_a(G.count_item("heal2")==1 and G.count_item("heal1")==2,10017)
+	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
+	G.add_item_count("sword2",1);G.add_item_count("anaconda_scale",5);G.set_sword3_flag(false)
+	_a(G.craft_recipe("sword3",{"at_lathe":true}) and G.sword3_crafted and G.count_item("sword2")==0 and G.count_item("anaconda_scale")==0 and G.count_item("sword3")==1,10018)
+	_a(G.tool_max("sword3")==700 and load("res://scripts/item_db.gd").icon("sword3")!=null,10019)
+	var save: Dictionary=G.to_save_dict();save.erase("sword3_crafted");save.erase("progression_revision");save.sword2_crafted=true
+	G.apply_save_dict(save);_a(not G.sword3_crafted,10020)
+	var door:=Vector3i(120,7,120)
+	_a(G.place_wake_block(door,"door",3) and G.wake_blocks[door].facing==3,10021)
+	for vox in get_nodes_in_group("voxel_world"):
+		if not vox.is_dream_layer and scene.is_ancestor_of(vox):
+			_a(vox._bodies[door].get_child(0).shape.size==Vector3(1,2,0.125),10022)
+	G.dev_mode=true
+	for command in ["sword give scale","potion give 2 2","potion cooldown reset","armor stats","armor repair","reagents give 3","dust 431","anchor give nail 2","anchor select wedge","beacon give 2","bed spawn","chunks stats","chunks radius 3"]:
+		_a(not console.execute(command).begins_with("Ошибка"),10023)
+	_a(int(G.pouch.dust)==431 and G.selected_anchor==G.AnchorType.WEDGE,10024)
+	console.close();scene.queue_free();await process_frame;current_scene=null;G.reset_state()
+	print("SMOKE: v0.10 F3, potion slot priority/quick alias, sword3 craft+legacy migration, grid door and expanded Russian console OK")

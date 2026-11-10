@@ -8,15 +8,17 @@ var _place_cooldown := 0.0
 var _hand_root: Node3D = null
 var _pickaxe_view: Node3D = null
 var _sword_view: Node3D = null
-const SWORD_DAMAGE := 10
+const SWORD_DAMAGE := 7
 const SWORD_COOLDOWN := 0.45
 const SWORD_REACH := 2.6
 ## v0.7: Меч2 — 25 урона, дальность ×1.25.
-const SWORD2_DAMAGE := 25
+const SWORD2_DAMAGE := 13
+const SWORD3_DAMAGE := 23
 const SWORD2_REACH := SWORD_REACH * 1.25
 const MIN_PLACE_Y := -30
 var _pickaxe2_view: Node3D = null
 var _sword2_view: Node3D = null
+var _sword3_view: Node3D = null
 var last_sword_damage := 0
 var last_sword_hits := 0
 var _mine_cell := Vector3i(99999,99999,99999)
@@ -74,7 +76,9 @@ func _process(delta: float) -> void:
 		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
 			return
 		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
-			if GameState.selected_is("sword") or GameState.selected_is("sword2"):
+			if GameState.selected_is("heal1") or GameState.selected_is("heal2"):
+				GameState.use_heal(str(GameState.get_selected_item().id))
+			elif GameState.selected_is("sword") or GameState.selected_is("sword2") or GameState.selected_is("sword3"):
 				_try_sword()
 				_place_cooldown = SWORD_COOLDOWN
 			elif GameState.selected_is("torch"):
@@ -390,7 +394,7 @@ func _try_sword() -> void:
 	var hit := 0
 	var s2 := GameState.selected_is("sword2")
 	var reach := SWORD2_REACH if s2 else SWORD_REACH
-	var dmg := SWORD2_DAMAGE if s2 else SWORD_DAMAGE
+	var dmg := SWORD3_DAMAGE if GameState.selected_is("sword3") else (SWORD2_DAMAGE if s2 else SWORD_DAMAGE)
 	last_sword_damage = dmg
 	for n in get_tree().get_nodes_in_group("enemy"):
 		if not (n is Node3D) or not is_instance_valid(n):
@@ -437,7 +441,7 @@ func _ensure_hand_tools() -> void:
 	_hand_root.rotation_degrees = Vector3(8, 0, -6)
 	cam.add_child(_hand_root)
 	var bt: GDScript = load("res://scripts/block_tex.gd")
-	for id in ["pickaxe", "pickaxe2", "sword", "sword2"]:
+	for id in ["pickaxe", "pickaxe2", "sword", "sword2", "sword3"]:
 		var tool := MeshInstance3D.new()
 		tool.name = id.capitalize() + "View"
 		tool.mesh = bt.tool_mesh(id)
@@ -450,12 +454,15 @@ func _ensure_hand_tools() -> void:
 			tool.position = Vector3(0.08,-0.16,-0.08)
 			tool.rotation_degrees = Vector3(-12,-24,25)
 			tool.scale = Vector3.ONE*0.58
+		if id=="sword3":
+			tool.scale=Vector3.ONE*0.38;tool.rotation_degrees=Vector3(-12,-10,20);tool.position=Vector3(0.02,-0.04,-0.19)
 		_hand_root.add_child(tool)
 		match id:
 			"pickaxe": _pickaxe_view = tool
 			"pickaxe2": _pickaxe2_view = tool
 			"sword": _sword_view = tool
 			"sword2": _sword2_view = tool
+			"sword3": _sword3_view = tool
 	_update_hand_tools()
 
 
@@ -490,7 +497,8 @@ func _update_hand_tools() -> void:
 		_sword_view.visible = show_sword
 	if _sword2_view:
 		_sword2_view.visible = show_s2
-	_hand_root.visible = (show_pick or show_sword or show_s2) and not GameState.ui_blocked()
+	if _sword3_view: _sword3_view.visible = GameState.selected_is("sword3")
+	_hand_root.visible = (show_pick or show_sword or show_s2 or GameState.selected_is("sword3")) and not GameState.ui_blocked()
 
 
 func _play_tool_swing() -> void:

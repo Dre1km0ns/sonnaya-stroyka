@@ -94,9 +94,8 @@ func _ready() -> void:
 		hint_label.text = ""
 	var gsets := get_node_or_null("/root/GameSettings")
 	if gsets:
-		_debug_label.visible = bool(gsets.show_fps)
+		_debug_label.visible = false
 		gsets.settings_changed.connect(func() -> void:
-			_debug_label.visible = bool(gsets.show_fps)
 			_debug_t = 1.0
 			_refresh_key_hints())
 	_refresh_key_hints()
@@ -334,8 +333,10 @@ func _update_heal_indicator() -> void:
 		return
 	var dream := GameState.is_dream()
 	_heal_slot.visible = not dream
-	var n: int = GameState.count_item("heal1")
-	_heal_slot.set_item("heal1", n, false, n >= GameState.INF_COUNT, true)
+	var slot: int = GameState.first_heal_slot()
+	var id: String = GameState.get_slot(slot).get("id","heal1") if slot>=0 else "heal1"
+	var n: int = GameState.count_item(id)
+	_heal_slot.set_item(id, n, false, n >= GameState.INF_COUNT, true)
 	_heal_slot.set_key_hint(_key("use_heal", "H"))
 	var cd: float = float(GameState.heal_cd)
 	_heal_cd_shade.visible = cd > 0.0
@@ -535,6 +536,16 @@ func _update_debug() -> void:
 		get_tree().get_nodes_in_group("enemy").size(),
 	]
 
+	var player:=get_tree().get_first_node_in_group("player") as Node3D
+	if player:
+		var pos:=player.global_position
+		var facing:=fposmod(rad_to_deg(player.rotation.y),360.0)
+		var names: Array[String]=["Север −Z","Запад −X","Юг +Z","Восток +X"]
+		_debug_label.text+="\nXYZ %.2f / %.2f / %.2f\nНаправление %s (%.0f°)\nЧанк %d / %d" % [pos.x,pos.y,pos.z,names[posmod(roundi(facing/90),4)],facing,floori(pos.x/16),floori(pos.z/16)]
+
+func set_debug(mode: String="toggle") -> bool:
+	_debug_label.visible=not _debug_label.visible if mode=="toggle" else mode=="on"
+	_update_debug();return _debug_label.visible
 
 func _on_world(is_dream: bool) -> void:
 	world_label.text = "СОН" if is_dream else "ЯВЬ"

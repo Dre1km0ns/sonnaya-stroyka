@@ -305,6 +305,7 @@ static func _mesh_part(st: SurfaceTool, kind: String, mn: Vector3, size: Vector3
 	st.append_from(mesh,0,xf)
 
 static func tool_mesh(kind: String) -> ArrayMesh:
+	if kind=="sword3": return scale_sword_mesh()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var head := "stone" if kind.ends_with("2") else "planks"
@@ -353,28 +354,30 @@ static func _kenney_pickaxe_mesh(stone: bool) -> ArrayMesh:
 static var _door_mesh: ArrayMesh
 static func wooden_door_mesh() -> ArrayMesh:
 	if _door_mesh: return _door_mesh
-	var packed: PackedScene = load("res://assets/models/kenney/wooden_door.glb")
-	var model := packed.instantiate()
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# Source is in YZ, height 2.1; adapted leaf occupies 1×2 blocks in XY.
-	var door_material: StandardMaterial3D
-	var fit := Transform3D(Basis(Vector3(0,0,-0.16/0.15),Vector3(0,2.0/2.1,0),Vector3(1.0/0.9,0,0)),Vector3(-0.5,-1,0))
-	for part in model.find_children("*","MeshInstance3D",true,false):
-		var xf: Transform3D = part.transform
-		var ancestor: Node3D = part.get_parent()
-		while ancestor and ancestor!=model:
-			xf = ancestor.transform*xf
-			ancestor = ancestor.get_parent()
-		for surface in range(part.mesh.get_surface_count()):
-			st.append_from(part.mesh,surface,fit*xf)
-			if door_material==null:
-				var mat: StandardMaterial3D = part.mesh.surface_get_material(surface).duplicate()
-				mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-				mat.albedo_color = Color(0.85,0.85,0.85)
-				mat.metallic = 0.0
-				door_material = mat
-				st.set_material(mat)
-	_door_mesh = st.commit()
-	model.free()
-	return _door_mesh
+	# 12 triangles, shared mesh/material. Exact 1×2×1/8-block grid bounds.
+	var stream:=new_stream()
+	emit_box(stream,Vector3(-0.5,-1,-0.0625),Vector3(1,2,0.125),Color.WHITE,0,_all(0),true)
+	for i in range(stream.v.size()):
+		var p: Vector3=stream.v[i];var n: Vector3=stream.n[i]
+		stream.uv[i]=Vector2(p.x+0.5,(1-p.y)/2.0) if absf(n.z)>0.5 else (Vector2(p.z+0.0625,(1-p.y)/2.0) if absf(n.x)>0.5 else Vector2(p.x+0.5,(p.z+0.0625)/2.0))
+	var mat:=StandardMaterial3D.new();mat.albedo_texture=load("res://assets/textures/door_v010.png")
+	mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_NEAREST;mat.roughness=1.0
+	_door_mesh=stream_to_mesh(stream,mat);return _door_mesh
+
+static func scale_sword_mesh() -> ArrayMesh:
+	if _cubes.has("sword3"): return _cubes["sword3"]
+	var image: Image=(load("res://assets/textures/sword3.png") as Texture2D).get_image()
+	var st:=SurfaceTool.new();st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var w:=image.get_width();var h:=image.get_height();var step:=1.25/float(h)
+	for y in range(h):
+		for x in range(w):
+			if image.get_pixel(x,y).a<0.5: continue
+			for fi in range(6):
+				var n: Vector3=FACES[fi][0];var nx:=x+int(n.x);var ny:=y-int(n.y)
+				if fi<4 and nx>=0 and nx<w and ny>=0 and ny<h and image.get_pixel(nx,ny).a>0.5: continue
+				for k in [0,2,1,0,3,2]:
+					var c: Vector3=FACES[fi][1][k]
+					st.set_normal(n);st.set_uv(Vector2((x+0.5)/float(w),(y+0.5)/float(h)))
+					st.add_vertex(Vector3((x+c.x-4)*step,(h-y-1+c.y-4)*step,(c.z-0.5)*0.065))
+	var mat:=StandardMaterial3D.new();mat.albedo_texture=load("res://assets/textures/sword3.png");mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_NEAREST;mat.roughness=1.0
+	st.set_material(mat);var result:=st.commit();_cubes["sword3"]=result;return result

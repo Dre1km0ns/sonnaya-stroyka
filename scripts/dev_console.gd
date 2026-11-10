@@ -4,18 +4,40 @@ const DB := preload("res://scripts/item_db.gd")
 const Armor := preload("res://scripts/armor_rules.gd")
 const Mining := preload("res://scripts/mining_rules.gd")
 const MOB_IDS := ["seam","elite","ghost","enemy1","enemy2","enemy3","enemy4","mother","anaconda","minion"]
-const HELP := """help · seed · give <item> [count] · armor give wood|scale
-spawn <seam|elite|ghost|enemy1..4|mother|anaconda|minion> [count] (явь)
-mob hp|damage|speed <value> [nearest|all|type] · kill all
-mob tool <hand|pickaxe|pickaxe2> [nearest|all|type]
-time day|night|<hour> · moon <0..10> · tp spawn · tp <x y z> · god · fly · heal · hp <value>
-world wake|dream · cooldown reset · sword2 [on|off|toggle]
-hardness <block> [hand|pickaxe|pickaxe2] · armor give wood|scale
-setblock <block|air> [x y z] (без координат — блок под прицелом)
-fill <block|air> x1 y1 z1 x2 y2 z2 · fill <block|air> <radius>
-door toggle|rotate [x y z] (без координат — дверь под прицелом)
-fill: не более 4096 клеток, радиус ≤7; заменяет блоки и хранилища.
-↑/↓ история · Tab дополнение (повтор — следующий вариант) · ~ / Esc закрыть"""
+const COMMAND_HELP := {
+"help":"Справка обо всех командах или одной. Пример: help armor",
+"seed":"Сиды яви/сна и DevSeed. Пример: seed",
+"give":"Выдать любой предмет/блок/реагент/якорь в текущий инвентарь. Пример: give heal2 10; give beacon 4",
+"spawn":"Создать врагов в Яви (seam/elite/ghost/enemy1..4/mother/anaconda/minion). Пример: spawn enemy1 7",
+"mob":"Изменить HP/урон/скорость/инструмент nearest|all|тип. Пример: mob hp 250 nearest; mob tool pickaxe all",
+"kill":"Удалить врагов без награды. Пример: kill all",
+"time":"Часы суток (0..24), day/night. Пример: time 18.5",
+"moon":"Энергия луны 0..10, сохраняется. Пример: moon 0.56",
+"tp":"К кровати/спавну или XYZ. Пример: tp spawn; tp 10 8 -5",
+"god":"Переключить бессмертие. Пример: god",
+"fly":"Переключить полёт. Пример: fly",
+"heal":"Полное лечение и сброс кулдауна зелий. Пример: heal",
+"hp":"Текущее HP игрока 1..100. Пример: hp 35",
+"world":"Сменить мир штатным переходом. Пример: world dream; world wake",
+"cooldown":"Сбросить кулдаун Матери блоков. Пример: cooldown reset",
+"sword3":"Тест усиления HP: обычные ×3.75 / Мать ×3 (Анаконда без изменений). Пример: sword3 on; sword3 off; sword3 toggle (sword2 — старый alias)",
+"hardness":"Твёрдость/время добычи/дроп. Пример: hardness stone pickaxe; mining dirt hand",
+"armor":"Комплект надеть/снять/починить/статистика. Пример: armor give scale; armor clear; armor repair; armor stats",
+"sword":"Выдать меч wood|stone|scale. Пример: sword give scale",
+"potion":"Выдать/выпить Хилку1/2; auto использует первый слот, cooldown reset. Пример: potion give 2 10; potion use 2; potion use auto; potion cooldown reset",
+"anchor":"Выдать/выбрать/применить якорь под прицелом, preview. Пример: anchor give wedge 5; anchor select nail; anchor place; anchor preview",
+"beacon":"Выдать маяки. Пример: beacon give 3",
+"reagents":"Добавить каждый тип реагента. Пример: reagents give 100",
+"dust":"Установить осыпь. Пример: dust 500",
+"sleep":"Войти в сон (dev, без требования кровати). Пример: sleep",
+"bed":"Кровать под прицелом назначить спавном или показать текущий спавн. Пример: bed setspawn; bed spawn",
+"chunks":"Статистика очереди/worker, радиус 1..8. Пример: chunks stats; chunks radius 3",
+"debug":"F3 overlay вкл/выкл. Пример: debug on; debug toggle",
+"craft":"Штатный крафт с доступом ко всем станциям (ресурсы/разблокировки проверяются). Пример: craft sword3",
+"setblock":"Один блок/air под прицелом либо XYZ. Пример: setblock door 10 5 10",
+"fill":"Область или радиус вокруг игрока (≤4096 клеток, радиус ≤7). Пример: fill planks 10 5 10 19 5 19; fill air 2",
+"door":"Открыть/повернуть под прицелом или XYZ. Пример: door toggle; door rotate 10 5 10",
+}
 var history: Array[String] = []
 var history_index := 0
 var _draft := ""
@@ -114,6 +136,8 @@ func history_step(direction: int) -> void:
 	entry.caret_column = entry.text.length()
 func completion_candidates(prefix: String) -> Array[String]:
 	var all: Array[String] = ["door toggle","door rotate","help","seed","moon ","kill all","god","fly","heal","hp ","time day","time night","time ","tp spawn","tp ","world wake","world dream","cooldown reset","sword2 on","sword2 off","sword2 toggle","armor give wood","armor give scale","mob hp ","mob damage ","mob speed ","mob tool hand","mob tool pickaxe","mob tool pickaxe2"]
+	for command in ["sword3 on","sword3 off","sword3 toggle","sword give wood","sword give stone","sword give scale","armor stats","armor repair","armor clear","potion give 1","potion give 2","potion use auto","potion use 1","potion use 2","potion cooldown reset","anchor give nail","anchor give wedge","anchor give anchor3","anchor select nail","anchor select wedge","anchor select anchor3","anchor place","anchor preview","beacon give ","reagents give ","dust ","sleep","bed spawn","bed setspawn","chunks stats","chunks radius ","debug on","debug off","debug toggle","craft sword3"]: all.append(command)
+	for cmd in COMMAND_HELP: all.append("help "+cmd)
 	for id in MOB_IDS: all.append("spawn "+id)
 	for id in DB.all_icon_ids():
 		if id=="unknown": continue
@@ -177,7 +201,11 @@ func _mobs(which: String) -> Array[Node]:
 func _execute(a: PackedStringArray) -> String:
 	var p := _player()
 	match a[0]:
-		"help": return HELP
+		"help":
+			if a.size()>1: return COMMAND_HELP.get(a[1],"Ошибка: такой команды нет; help")
+			var lines: Array[String]=[]
+			for cmd in COMMAND_HELP: lines.append(cmd+" — "+COMMAND_HELP[cmd])
+			return "\n".join(lines)+"\n↑/↓ история · Tab дополнение · ~ / Esc закрыть"
 		"seed": return "Сид: %d · явь %d · сон %d" % [GameState.world_seed,GameState.world_seed_wake,GameState.world_seed_dream]
 		"give":
 			if a.size()<2 or (not DB.ITEMS.has(a[1]) and not DB.is_special(a[1])): return "Ошибка: give <item> [count]; Tab — предметы."
@@ -187,6 +215,7 @@ func _execute(a: PackedStringArray) -> String:
 			GameState.inventory_changed.emit()
 			return "Выдано %s: %d/%d (в DevSeed имеющиеся предметы бесконечны)." % [DB.display_name(a[1]),added,count]
 		"armor":
+			if a.size()==2 and a[1] in ["stats","clear","repair"]: return _v010_command(a)
 			if a.size()!=3 or a[1]!="give" or a[2] not in ["wood","scale"]: return "Ошибка: armor give wood|scale"
 			for i in range(4):
 				var id: String = a[2]+"_"+Armor.PARTS[i]
@@ -234,7 +263,7 @@ func _execute(a: PackedStringArray) -> String:
 			for day in get_tree().get_nodes_in_group("day_cycle"):
 				day.moon_energy = GameState.moon_energy
 				day.apply_lighting()
-			return "Яркость луны: %.3f (пиковая энергия; базовая v0.9 — 0.47, была 0.78)." % GameState.moon_energy
+			return "Яркость луны: %.3f (пиковая энергия; по умолчанию 0.56)." % GameState.moon_energy
 		"tp":
 			if not p: return "Ошибка: игрок не найден."
 			var dest := GameState.spawn_point
@@ -277,18 +306,18 @@ func _execute(a: PackedStringArray) -> String:
 			if a.size()!=2 or a[1]!="reset": return "Ошибка: cooldown reset"
 			GameState.mother_cooldown = 0; GameState.boss_next_mine = false
 			return "Кулдаун Матери блоков сброшен."
-		"sword2":
+		"sword3","sword2":
 			var mode := a[1] if a.size()>1 else "toggle"
-			if mode not in ["on","off","toggle"]: return "Ошибка: sword2 on|off|toggle"
-			GameState.set_sword2_flag(not GameState.sword2_crafted if mode=="toggle" else mode=="on")
-			return "Флаг Меч2: %s · обычные ×3.75, Мать ×3 при включении." % GameState.sword2_crafted
+			if mode not in ["on","off","toggle"]: return "Ошибка: sword3 on|off|toggle"
+			GameState.set_sword3_flag(not GameState.sword2_crafted if mode=="toggle" else mode=="on")
+			return "Флаг чешуйчатого меча: %s · обычные ×3.75, Мать ×3 при включении." % GameState.sword2_crafted
 		"hardness","mining":
 			if a.size()<2: return "Ошибка: hardness <block> [hand|pickaxe|pickaxe2]"
 			var tool := a[2] if a.size()>2 and a[2]!="hand" else ""
 			return "%s: твёрдость %.2f · %s: %.3f с · дроп %s" % [a[1],Mining.hardness(a[1]),"рука" if tool=="" else tool,Mining.seconds(a[1],tool),Mining.drops(a[1],tool)]
 		"door": return _edit_door(a)
 		"setblock","fill": return _edit_blocks(a)
-	return "Ошибка: неизвестная команда. help — список."
+	return _v010_command(a)
 func _spawn(a: PackedStringArray) -> String:
 	if a.size()<2 or a[1] not in MOB_IDS: return "Ошибка: spawn <mob> [count]; Tab — типы."
 	if GameState.is_dream(): return "Ошибка: враги Яви; сначала world wake."
@@ -391,3 +420,79 @@ func _edit_door(a: PackedStringArray) -> String:
 		cell = collider.get_meta("voxel_cell")
 	var ok: bool = GameState.toggle_door(cell) if a[1]=="toggle" else GameState.rotate_door(cell)
 	return "Дверь: "+a[1] if ok else "Ошибка: здесь нет двери."
+
+func _v010_command(a: PackedStringArray) -> String:
+	match a[0]:
+		"debug","f3":
+			var mode:=a[1] if a.size()>1 else "toggle"
+			if mode not in ["on","off","toggle"]: return "Ошибка: debug on|off|toggle"
+			var hud=get_tree().current_scene.get_node_or_null("HUD")
+			return "F3: "+str(hud.set_debug(mode)) if hud else "Ошибка: HUD не найден."
+		"sword":
+			if a.size()!=3 or a[1]!="give" or a[2] not in ["wood","stone","scale"]: return "Ошибка: sword give wood|stone|scale"
+			return _execute(PackedStringArray(["give",{"wood":"sword","stone":"sword2","scale":"sword3"}[a[2]],"1"]))
+		"armor":
+			if a[1]=="stats": return "Защита %d / 20 · %s" % [GameState.armor_points(),str(GameState.armor)]
+			if a[1]=="repair":
+				for slot in GameState.armor:
+					if not slot.is_empty(): slot.durability=Armor.durability(slot.id)
+			else:
+				for i in range(4):
+					var slot: Dictionary=GameState.armor[i]
+					if slot.is_empty(): continue
+					var index: int=-1
+					for j in range(GameState.ITEM_SLOT_COUNT):
+						if GameState.get_slot(j).get("id","")=="": index=j;break
+					if index<0: return "Ошибка: инвентарь полон, оставшаяся броня не снята."
+					GameState.set_slot(index,slot.duplicate(true));GameState.armor[i]={}
+			GameState.inventory_changed.emit();return "Броня: "+a[1]
+		"potion":
+			if a.size()==3 and a[1]=="cooldown" and a[2]=="reset": GameState.heal_cd=0;return "Кулдаун зелий: 0"
+			if a.size()>=3 and a[1]=="give" and a[2] in ["1","2"]: return _execute(PackedStringArray(["give","heal"+a[2],a[3] if a.size()>3 else "1"]))
+			if a.size()==3 and a[1]=="use" and a[2] in ["1","2","auto"]: return "Зелье выпито: "+str(GameState.use_heal("" if a[2]=="auto" else "heal"+a[2]))
+			return "Ошибка: potion give 1|2 [count] | potion use 1|2|auto | potion cooldown reset"
+		"reagents":
+			if a.size()!=3 or a[1]!="give" or not a[2].is_valid_int(): return "Ошибка: reagents give <count>"
+			for i in range(1,4): GameState.add_typed_reagent(i,clampi(int(a[2]),0,100000))
+			return "Добавлено каждого реагента: "+a[2]
+		"dust":
+			if a.size()!=2 or not a[1].is_valid_int(): return "Ошибка: dust <count>"
+			GameState.pouch.dust=clampi(int(a[1]),0,10000000);GameState.inventory_changed.emit();return "Осыпь: %d (в DevSeed отображается ∞)"%int(GameState.pouch.dust)
+		"anchor","beacon":
+			if a.size()>=3 and a[1]=="give":
+				var id:=a[2] if a[0]=="anchor" else "beacon"
+				if not DB.is_special(id): return "Ошибка: nail|wedge|anchor3|beacon"
+				var count:=a[3] if a.size()>3 else (a[2] if a[0]=="beacon" else "1")
+				return _execute(PackedStringArray(["give",id,count]))
+			if a.size()==3 and a[1]=="select" and a[2] in ["nail","wedge","anchor3"]:
+				GameState.select_anchor(["nail","wedge","anchor3"].find(a[2]));return "Выбран якорь: "+a[2]
+			var p:=_player()
+			if not p: return "Ошибка: нет игрока."
+			var aim: Dictionary=p.get_look_ray()
+			if not aim.get("hit",false): return "Ошибка: наведитесь на блок."
+			var cell:=GameState.ray_cell(aim)
+			if a.size()==2 and a[1]=="place": return "Якорь: "+str(GameState.try_place_anchor(cell))
+			if a.size()==2 and a[1]=="preview": return "Якорь %s · клетка %s · %s" % [GameState.selected_anchor,cell,GameState.last_hint]
+			return "Ошибка: anchor give|select|place|preview; beacon give <count>"
+		"sleep": return _execute(PackedStringArray(["world","dream"]))
+		"bed":
+			if a.size()==2 and a[1]=="spawn": return "Спавн: %s · кровать %s"%[GameState.spawn_point,GameState.active_bed]
+			if a.size()==2 and a[1]=="setspawn" and _player():
+				var aim: Dictionary=_player().get_look_ray();var cell:=GameState.root_cell(GameState.wake_blocks,GameState.ray_cell(aim))
+				if GameState.wake_blocks.get(cell,{}).get("kind","")!="bed": return "Ошибка: наведитесь на поставленную кровать в Яви."
+				GameState.active_bed=GameState.cell_key(cell);GameState.spawn_point=Vector3(cell)+Vector3(0.5,1,1);return "Спавн кровати: "+str(GameState.spawn_point)
+			return "Ошибка: bed spawn|setspawn"
+		"chunks":
+			var cm:=_chunks()
+			if not cm: return "Ошибка: менеджер чанков не найден."
+			if a.size()==3 and a[1]=="radius" and a[2].is_valid_int():
+				get_node("/root/GameSettings").set_value("render_distance",clampi(int(a[2]),1,8))
+			return "Чанки: %d · очередь %d · worker готово %d · активных %d · вставка %.3f ms"%[cm.get_loaded_count(),cm.get_pending_count(),cm.worker_chunk_count,cm._jobs.size(),cm.last_insert_usec/1000.0]
+		"craft":
+			if a.size()!=2: return "Ошибка: craft <recipe>"
+			var recipe: Dictionary=GameState.find_recipe(a[1]);var where: String=recipe.get("where","")
+			var ctx: Dictionary={"at_workbench":where=="workbench","at_lathe":where=="lathe"}
+			if where in ["sawmill","sawmill_plus"]: ctx={"station":"sawmill","upgraded":true}
+			if where=="alchemy": ctx={"station":"alchemy"}
+			return "Крафт: "+str(GameState.craft_recipe(a[1],ctx))
+	return "Ошибка: неизвестная команда. help — список."

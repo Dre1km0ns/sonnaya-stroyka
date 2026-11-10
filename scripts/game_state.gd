@@ -212,7 +212,10 @@ var idea_eaten: Dictionary = {}
 var world_storage: Dictionary = {} # String cell key -> 27 slots; shared catcher storage across worlds.
 const ArmorRules := preload("res://scripts/armor_rules.gd")
 var armor: Array = [{},{},{},{}]
-var sword2_crafted := false
+var sword3_crafted := false
+var sword2_crafted: bool:
+	get: return sword3_crafted
+	set(value): sword3_crafted=value
 var console_open := false
 var god_mode := false
 var dev_fly := false
@@ -326,7 +329,7 @@ func is_dev() -> bool:
 	return dev_mode
 
 
-const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
+const DEV_WAKE_ITEMS := ["sword3","pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
 	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
@@ -801,6 +804,7 @@ func recipe_defs() -> Array:
 		{"id": "bed", "name": "Кровать", "where": "dream", "dust": BED_CRAFT_DUST, "reagent1": BED_CRAFT_R1, "item": "bed", "item_name": "Кровать"},
 		{"id": "heal1", "name": "хилка1 (под подушку)", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1"},
 		{"id": "lathe", "name": "Станок", "where": "dream", "items": {"workbench": 1}, "reagent3": 7, "item": "lathe", "item_name": "Станок"},
+		{"id":"sword3","name":"Чешуйчатый меч (23 урона)","where":"lathe","items":{"sword2":1,"anaconda_scale":5},"item":"sword3"},
 		{"id": "sword2", "name": "Меч2 (улучшить Меч)", "where": "lathe", "items": {"sword": 1}, "reagent1": 2, "reagent2": 2, "reagent3": 2, "item": "sword2", "item_name": "Меч2"},
 		{"id": "pickaxe2", "name": "Кирка2 (каменная)", "where": "lathe", "items": {"pickaxe": 1}, "reagent1": 2, "reagent2": 2, "reagent3": 2, "item": "pickaxe2"},
 		{"id": "sawmill", "name": "Лесопилка", "where": "dream", "items": {"workbench": 1}, "reagent3": 10, "reagent2": 3, "item": "sawmill"},
@@ -1094,7 +1098,7 @@ func craft_recipe(rid: String, ctx: Dictionary = {}) -> bool:
 			set_hint("Нет свободного слота для «%s»." % str(rec.get("item_name", item_id)))
 			return false
 	inventory_changed.emit()
-	if rid == "sword2": set_sword2_flag(true)
+	if rid == "sword3": set_sword3_flag(true)
 	set_hint("Скрафчено: %s." % str(rec.get("name", rid)))
 	return true
 
@@ -1284,24 +1288,29 @@ func can_use_heal() -> bool:
 	return heal_cd <= 0.0 and player_hp > 0 and player_hp < PLAYER_MAX_HP and (count_item("heal1") > 0 or count_item("heal2") > 0)
 
 
-func use_heal() -> bool:
-	if heal_cd > 0.0:
-		set_hint("хилка1: перезарядка %.0f с" % ceilf(heal_cd), false)
-		return false
-	if player_hp <= 0 or player_hp >= PLAYER_MAX_HP:
-		set_hint("HP и так полное.", false)
-		return false
-	if count_item("heal1") <= 0 and count_item("heal2") <= 0:
-		set_hint("Нет хилок. Крафт во сне (50 осыпи) → под подушкой кровати.", false)
-		return false
-	var potion := "heal2" if selected_is("heal2") or count_item("heal1") <= 0 else "heal1"
-	consume_item(potion, 1)
-	Sfx.play("drink", get_tree().root)
-	player_hp = mini(PLAYER_MAX_HP, player_hp + (40 if potion == "heal2" else HEAL1_AMOUNT))
-	heal_cd = HEAL_COOLDOWN
-	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
-	heal_used.emit(HEAL_COOLDOWN)
-	set_hint("хилка1: +%d HP" % HEAL1_AMOUNT, false)
+func first_heal_slot(id: String="") -> int:
+	for i in range(item_slots.size()):
+		var slot: Dictionary=item_slots[i]
+		if slot.get("id","") in ["heal1","heal2"] and int(slot.get("count",0))>0 and (id=="" or slot.id==id): return i
+	return -1
+
+func use_heal(id: String="") -> bool:
+	if heal_cd>0.0:
+		set_hint("Зелье: перезарядка %.0f с" % ceilf(heal_cd),false);return false
+	if player_hp<=0 or player_hp>=PLAYER_MAX_HP: return false
+	var slot:=first_heal_slot(id)
+	if slot<0:
+		set_hint("Нет лечебных зелий в инвентаре.",false);return false
+	var potion: String=item_slots[slot].id
+	if not is_infinite_slot(slot):
+		item_slots[slot].count-=1
+		if item_slots[slot].count<=0: item_slots[slot]=_empty_slot()
+	inventory_changed.emit()
+	Sfx.play("drink",get_tree().root)
+	var amount:=40 if potion=="heal2" else HEAL1_AMOUNT
+	player_hp=mini(PLAYER_MAX_HP,player_hp+amount);heal_cd=HEAL_COOLDOWN
+	player_hp_changed.emit(player_hp,PLAYER_MAX_HP);heal_used.emit(HEAL_COOLDOWN)
+	set_hint("%s: +%d HP" % [ItemDB.display_name(potion),amount],false)
 	return true
 
 
@@ -1511,12 +1520,15 @@ func consume_placeable(kind: String) -> bool:
 		return true
 	return false
 
-func place_wake_block(cell: Vector3i, kind: String) -> bool:
+func place_wake_block(cell: Vector3i, kind: String, facing: int=0) -> bool:
 	if is_dream():
 		return false
 	if not can_place_shape(wake_blocks, cell, kind):
 		return false
 	wake_blocks[cell] = {"kind": kind, "mutant": false}
+	if kind=="door":
+		wake_blocks[cell]["facing"]=posmod(facing,4)
+		wake_blocks[cell]["hinge_right"]=door_hinge_right(wake_blocks,cell,facing)
 	add_shape_parts(wake_blocks, cell, kind)
 	terrain_cell_changed.emit(cell)
 	inventory_changed.emit()
@@ -1713,6 +1725,7 @@ func resolve_wake() -> Dictionary:
 		if kind=="door":
 			wake_blocks[cell]["facing"] = int(data.get("facing",0))
 			wake_blocks[cell]["open"] = bool(data.get("open",false))
+			wake_blocks[cell]["hinge_right"] = bool(data.get("hinge_right",false))
 		add_shape_parts(wake_blocks, cell, kind)
 		transferred += 1
 
@@ -1744,7 +1757,9 @@ func place_dream_block(cell: Vector3i, kind: String = "drift", facing: int = 0) 
 	if not can_place_shape(dream_blocks, cell, kind):
 		return false
 	dream_blocks[cell] = {"kind": kind, "anchored": false, "mutant": false}
-	if kind=="door": dream_blocks[cell]["facing"] = posmod(facing,4)
+	if kind=="door":
+		dream_blocks[cell]["facing"] = posmod(facing,4)
+		dream_blocks[cell]["hinge_right"] = door_hinge_right(dream_blocks,cell,facing)
 	add_shape_parts(dream_blocks, cell, kind)
 	return true
 
@@ -1800,7 +1815,9 @@ func to_save_dict() -> Dictionary:
 	return {
 		"version": SAVE_FORMAT,
 		"armor":armor.duplicate(true),
-		"sword2_crafted":sword2_crafted,
+		"sword2_crafted":sword3_crafted, # legacy alias
+		"sword3_crafted":sword3_crafted,
+		"progression_revision":10,
 		"mother_defeated": mother_defeated,
 		"dream_bonus_seconds": dream_bonus_seconds,
 		"idea_eaten": idea_eaten,
@@ -1865,7 +1882,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	var saved_armor: Array = data.get("armor",[])
 	for i in range(mini(4,saved_armor.size())):
 		if ArmorRules.slot(saved_armor[i].get("id",""))==i: armor[i]=saved_armor[i].duplicate(true)
-	sword2_crafted = bool(data.get("sword2_crafted",false))
+	sword3_crafted = bool(data.get("sword3_crafted",false)) # v0.9.1 sword2 inflation is intentionally cleared.
 	mother_defeated = bool(data.get("mother_defeated", false))
 	dream_bonus_seconds = maxf(0.0, float(data.get("dream_bonus_seconds", 0.0)))
 	idea_eaten = data.get("idea_eaten", {}).duplicate(true)
@@ -2141,10 +2158,10 @@ func dream_clarity_max() -> float:
 
 static func tool_max(id: String) -> int:
 	if ArmorRules.slot(id)>=0: return ArmorRules.durability(id)
-	return 100 if id in ["pickaxe", "sword"] else (500 if id in ["pickaxe2", "sword2"] else 0)
+	return 700 if id=="sword3" else (100 if id in ["pickaxe", "sword"] else (500 if id in ["pickaxe2", "sword2"] else 0))
 
 func wear_tool(amount: int) -> bool:
-	if str(get_selected_item().get("id","")) not in ["pickaxe","pickaxe2","sword","sword2"]: return false
+	if str(get_selected_item().get("id","")) not in ["pickaxe","pickaxe2","sword","sword2","sword3"]: return false
 	var d := get_selected_item()
 	var id := str(d.get("id", ""))
 	if dev_mode or tool_max(id) == 0:
@@ -2416,7 +2433,10 @@ func wear_armor(raw_damage: int) -> void:
 	inventory_changed.emit()
 
 func set_sword2_flag(on: bool) -> void:
-	sword2_crafted = on
+	set_sword3_flag(on) # console compatibility
+
+func set_sword3_flag(on: bool) -> void:
+	sword3_crafted = on
 	for enemy in get_tree().get_nodes_in_group("enemy"):
 		if not is_instance_valid(enemy) or enemy.is_in_group("anaconda"): continue
 		var base := int(enemy.get_meta("base_max_hp",enemy.get("max_hp")))
@@ -2425,7 +2445,7 @@ func set_sword2_flag(on: bool) -> void:
 func apply_enemy_scaling(enemy: Node,base: int,mother: bool = false) -> void:
 	var fraction := float(enemy.get("hp"))/maxf(1.0,float(enemy.get("max_hp")))
 	enemy.set_meta("base_max_hp",base)
-	var mult := (3.0 if mother else 3.75) if sword2_crafted else 1.0
+	var mult := (3.0 if mother else 3.75) if sword3_crafted else 1.0
 	var hp_max := ceili(base*mult)
 	enemy.set("max_hp",hp_max)
 	enemy.set("hp",maxi(0,ceili(hp_max*fraction)))
@@ -2436,3 +2456,7 @@ static func ray_cell(aim: Dictionary) -> Vector3i:
 	if collider and collider.has_meta("voxel_cell"): return collider.get_meta("voxel_cell")
 	var inside: Vector3 = aim.get("position",Vector3.ZERO)-aim.get("normal",Vector3.UP)*0.02
 	return Vector3i(floori(inside.x),floori(inside.y),floori(inside.z))
+
+static func door_hinge_right(source: Dictionary,c: Vector3i,facing: int) -> bool:
+	var right:=Vector3i((Basis(Vector3.UP,facing*PI/2)*Vector3.RIGHT).round())
+	return source.get(c+right,{}).get("kind","") not in ["","torch","beacon"] and source.get(c-right,{}).get("kind","") in ["","torch","beacon"]

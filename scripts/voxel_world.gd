@@ -35,7 +35,9 @@ func _state_at(c: Vector3i) -> Dictionary:
 func _changed(dream: bool,cells: Array) -> void:
 	for c in cells:
 		if dream==is_dream_layer or (is_dream_layer and (_data.get(c,{}).get("kind","") in ["idea_catcher","catcher_top"] or GameState.wake_blocks.get(c,{}).get("kind","") in ["idea_catcher","catcher_top"])):
-			_dirty_cells[c] = true
+			if _state_at(c).get("kind","") in SPECIAL or _data.get(c,{}).get("kind","") in SPECIAL:
+				_apply_cell(c) # interactions update immediately, no delayed physics catch-up
+			else: _dirty_cells[c] = true
 func _process(_dt: float) -> void:
 	if _active(): flush_dirty(3000)
 func _rebuild_from_state() -> void:
@@ -96,6 +98,10 @@ func _remove_visual(c: Vector3i) -> void:
 func _apply_cell(c: Vector3i) -> void:
 	var d := _state_at(c)
 	if d==_data.get(c,{}): return
+	if d.get("kind","")=="door" and _data.get(c,{}).get("kind","")=="door" and _bodies.has(c):
+		_data[c]=d.duplicate(true)
+		_meshes[c].transform=door_transform(c,d);_bodies[c].transform=_meshes[c].transform
+		cells_changed+=1;return
 	_remove_visual(c)
 	_data.erase(c)
 	if d.is_empty(): return
@@ -189,15 +195,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	mi.position = cell_to_world(cell)
 	if kind == "bed" and not data.get("legacy_compact",false):
 		mi.position.z += 0.5
-	if kind == "door":
-		var facing := int(data.get("facing",0))*PI/2.0
-		mi.position.y += 0.5
-		mi.rotation.y = facing
-		if bool(data.get("open",false)):
-			# Rotate about the real left hinge, never about the middle of the leaf.
-			var hinge := mi.position+Basis(Vector3.UP,facing)*Vector3(-0.5,0,0)
-			mi.rotation.y += PI/2.0
-			mi.position = hinge+Basis(Vector3.UP,mi.rotation.y)*Vector3(0.5,0,0)
+	if kind == "door": mi.transform=door_transform(cell,data)
 	add_child(mi)
 	_meshes[cell] = mi
 	if kind == "torch":
@@ -281,7 +279,9 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		shape.size = Vector3(block_size,0.56,block_size*(1.0 if data.get("legacy_compact",false) else 2.0))
 		body.position = mi.position + Vector3(0, -0.22, 0)
 	elif kind == "door":
-		shape.size = Vector3(1.0, 2.0, 0.16)
+		shape.size = Vector3(1,2,0.125)
+		if not _shapes.has(shape.size): _shapes[shape.size]=shape
+		shape=_shapes[shape.size]
 		body.rotation = mi.rotation
 		# The opened leaf remains physical and ray-selectable at its hinged position.
 	elif kind == "idea_catcher":
@@ -307,3 +307,14 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		body.add_to_group("beacon")
 	add_child(body)
 	_bodies[cell] = body
+
+static func door_transform(cell: Vector3i,data: Dictionary) -> Transform3D:
+	var facing:=int(data.get("facing",0))*PI/2.0
+	var basis:=Basis(Vector3.UP,facing)
+	var center:=Vector3(cell)+Vector3(0.5,1,0.5)+basis*Vector3(0,0,0.5)
+	if data.get("open",false):
+		var side: float=1.0 if data.get("hinge_right",false) else -1.0
+		var hinge:=center+basis*Vector3(side*0.5,0,0)
+		basis=Basis(Vector3.UP,facing-side*PI/2.0)
+		center=hinge-basis*Vector3(side*0.5,0,0)
+	return Transform3D(basis,center)

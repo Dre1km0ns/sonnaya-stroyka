@@ -30,7 +30,7 @@ const ITEMS := {
 	"dust": {"name": "Осыпь", "stack": 100000},
 	"workbench": {"name": "Верстак", "stack": 100},
 	"pickaxe": {"name": "Кирка", "stack": 1},
-	"sword": {"name": "Меч", "stack": 1},
+	"sword": {"name": "Деревянный меч", "stack": 1},
 	"torch": {"name": "Факел", "stack": 100},
 	"hill": {"name": "Холм", "stack": 100},
 	"ruin": {"name": "Руинный блок", "stack": 100},
@@ -45,7 +45,8 @@ const ITEMS := {
 	"nest": {"name": "Гнездо", "stack": 100},
 	"bed": {"name": "Кровать", "stack": 100},
 	"lathe": {"name": "Станок", "stack": 100},
-	"sword2": {"name": "Меч2", "stack": 1},
+	"sword3": {"name":"Чешуйчатый меч","stack":1},
+	"sword2": {"name": "Каменный меч", "stack": 1},
 	"heal1": {"name": "хилка1", "stack": 100},
 	"anaconda_egg": {"name": "Яйцо Анаконды", "stack": 100},
 }

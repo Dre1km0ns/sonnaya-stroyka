@@ -16,7 +16,7 @@ static func play3d(host: Node3D, path: String, volume_db: float = 0.0, max_dista
 		played.remove_at(0)
 	if host == null or not host.is_inside_tree():
 		return null
-	var stream: AudioStream = load(path) if ResourceLoader.exists(path) else null
+	var stream: AudioStream = _stream(path)
 	if stream == null:
 		return null
 	var p := AudioStreamPlayer3D.new()
@@ -47,9 +47,15 @@ static func play(kind: String, host: Node) -> void:
 	if host == null or not host.is_inside_tree() or not ResourceLoader.exists(path):
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = load(path)
+	p.stream = _stream(path)
 	p.volume_db = -12.0
 	p.bus = &"SFX" if AudioServer.get_bus_index("SFX") >= 0 else &"Master"
 	host.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
+
+static func _stream(path: String) -> AudioStream:
+	# Short effects use predecoded PCM: no OggPacketSequencePlayback survives scene teardown.
+	# Keep original CC0 source files and journal IDs for save/tests/attribution.
+	var pcm:=path.get_basename()+".wav"
+	return load(pcm if ResourceLoader.exists(pcm) else path) as AudioStream if ResourceLoader.exists(path) else null

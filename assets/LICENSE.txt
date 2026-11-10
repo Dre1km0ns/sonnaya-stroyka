@@ -90,3 +90,6 @@ License: CC0 1.0 Universal / public domain — https://creativecommons.org/publi
 Original download: https://static.poly.pizza/16c02d69-21ae-49c2-bed1-6325570e356a.glb
 Original local file: assets/models/kenney/wooden_door.glb (unchanged; 240 triangles).
 Adaptation: coordinate/scale fit to one block wide and two blocks tall, 0.16-thick leaf; original beveled panels, both faces, hinges, handle and palette UV retained. Nearest filtering and brightness adaptation. Inventory icon rendered from this same model. No stretched plank atlas on the door.
+
+V0.10: lightweight door texture (16x32, 16 pixels/block), door inventory icon and scale sword icon/texture: original project art, CC0 1.0. Door geometry simplified to 12 triangles (one shared surface/material), no external model at runtime. Original Kenney source remains archived with its CC0 credits above.
+V0.10 audio: PCM WAV transcodes of the same credited CC0 Ogg effects above (ffmpeg pcm_s16le, original sample rate/channels); original source recordings preserved. This avoids Ogg playback references surviving rapid scene teardown in Godot 4.7.
