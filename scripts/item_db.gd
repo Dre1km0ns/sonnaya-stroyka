@@ -46,6 +46,7 @@ const ITEMS := {
 	"bed": {"name": "Кровать", "stack": 100},
 	"lathe": {"name": "Станок", "stack": 100},
 	"sword3": {"name":"Чешуйчатый меч","stack":1},
+	"lantern": {"name":"Фонарь глубин","stack":1},
 	"sword2": {"name": "Каменный меч", "stack": 1},
 	"heal1": {"name": "хилка1", "stack": 100},
 	"anaconda_egg": {"name": "Яйцо Анаконды", "stack": 100},

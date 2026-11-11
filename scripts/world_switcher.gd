@@ -47,6 +47,11 @@ func _process(delta: float) -> void:
 		open_pillow()
 	if Input.is_action_just_pressed("use_heal") and not GameState.is_dream():
 		GameState.use_heal()
+	if GameState.is_dream() and InputMap.has_action("blueprint_save") and Input.is_action_just_pressed("blueprint_save"):
+		GameState.save_blueprint()
+	if GameState.is_dream() and InputMap.has_action("blueprint_show") and Input.is_action_just_pressed("blueprint_show"):
+		if GameState.archive_unlocked(): GameState.cycle_blueprint()
+		else: GameState.set_hint("Архив Снов откроется после победы над Матерью блоков.", false)
 
 
 const BED_REACH := 4.0
@@ -153,6 +158,7 @@ func enter_dream() -> void:
 				var c := Vector3i(floori(destination.x)+x,floori(destination.y)-2,floori(destination.z)+z)
 				GameState.place_dream_block(c, "drift")
 				dream_voxels.add_block(c, GameState.dream_blocks[c])
+		GameState._dream_session_blocks = 0 # площадка — подарок Сна, цель «построй 5 блоков» считает только свои
 	dream_voxels.flush_dirty()
 	player.global_position = destination
 	if "flying" in player:

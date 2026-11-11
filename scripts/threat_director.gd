@@ -25,7 +25,7 @@ var _unstable_cd: float = 18.0
 var _enemy_script: GDScript
 var _ghost_respawn_at: Dictionary = {}
 var _ghost_present: Dictionary = {}
-const GHOST_RESPAWN_DELAY := 25.0
+const GHOST_RESPAWN_DELAY := 60.0 # v0.11: было 25 с — бесконечный фарм осыпи
 const MAX_GHOSTS_PER_SPOT := 3
 var _ghost_script: GDScript
 const MODE_CHASE := 0
@@ -167,8 +167,27 @@ func _tick_anaconda() -> Node:
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
 		if not bool(cm.get("is_dream_layer")) and not bool(cm.get("panorama_mode")):
 			chunks = cm
+	_warn_nests(chunks)
 	var script: GDScript = load("res://scripts/boss_anaconda.gd")
 	return script.try_spawn(wake_root, player, chunks)
+
+
+var _nest_warned: Dictionary = {}
+
+
+func _warn_nests(chunks: Node) -> void:
+	## v0.11: гнездо видно заранее — предупреждение за 20 м, до того как Анаконда сможет прийти.
+	if chunks == null or player == null or GameState.is_dream() or not chunks.has_method("nests_near"):
+		return
+	for n in chunks.nests_near(player.global_position, 20.0):
+		if bool(n["taken"]) or _nest_warned.has(str(n["id"])):
+			continue
+		_nest_warned[str(n["id"])] = true
+		GameState.nest_found = true
+		if GameState.mother_defeated:
+			GameState.chat("Гнездо Анаконды рядом. Ночью она выйдет к тому, кто подойдёт к яйцу ближе 12 м. Меч бесполезен — нужен свет: факелы вокруг и в руке.", Color(1.0, 0.7, 0.35))
+		else:
+			GameState.chat("Странное гнездо… Оно спит. Пока жива Мать блоков, его хозяйка не проснётся.", Color(0.8, 0.8, 1.0))
 
 
 func _cull_to_cap() -> int:

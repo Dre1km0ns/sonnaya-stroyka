@@ -13,7 +13,7 @@ enum S { SPAWN, UNDER, TELEGRAPH, BURST, REST, STUNNED, DIVE, CAVEIN, COIL, CONS
 const STATE_NAMES := ["SPAWN", "UNDER", "TELEGRAPH", "BURST", "REST", "STUNNED", "DIVE", "CAVEIN", "COIL", "CONSTRICT", "TRANSITION", "LEAVING", "DEAD"]
 
 # ---- баланс (см. дизайн-док, раздел 3)
-const MAX_HP := 2850                   # TTK ≈ 210 с при 3 факелах (tools/anaconda_sim.gd)
+const MAX_HP := 2100                   # v0.11: TTK ≈ 150 с при 3 факелах (было 2850 ≈ 210 с)
 const P2_AT := MAX_HP * 66 / 100       # 66%
 const P3_AT := MAX_HP * 33 / 100       # 33%
 const SEGMENTS := 10
@@ -246,8 +246,10 @@ func light_zones() -> Array:
 	for t in _torches:
 		out.append({"pos": t, "r": TORCH_RADIUS, "held": false})
 	var p := _player()
-	if p and GameState.selected_is("torch") and not GameState.is_dream():
-		out.append({"pos": p.global_position + Vector3(0, 1.2, 0), "r": HELD_TORCH_RADIUS, "held": true})
+	if p and (GameState.selected_is("torch") or GameState.selected_is("lantern")) and not GameState.is_dream():
+		# v0.11: Фонарь глубин светит в 1.6 раза дальше факела.
+		var held_r := HELD_TORCH_RADIUS * (1.6 if GameState.selected_is("lantern") else 1.0)
+		out.append({"pos": p.global_position + Vector3(0, 1.2, 0), "r": held_r, "held": true})
 	return out
 
 
@@ -653,11 +655,12 @@ func _die() -> void:
 	_cleanup_fx()
 	roar(false)
 	GameState.reward_kill(true, "Анаконда")
+	if GameState.has_method("on_anaconda_killed"): GameState.on_anaconda_killed()
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)
-		GameState.add_item_count("dust", REWARD_DUST - GameState.DUST_PER_BOSS_KILL)
-	var scales := randi_range(6,22)
+		GameState.add_item_count("dust", maxi(0, REWARD_DUST - GameState.DUST_PER_ANACONDA_KILL))
+	var scales := randi_range(14,22) # v0.11: гарантированно хватает на Меч3 + часть брони
 	set_meta("last_scale_drop",scales)
 	GameState.add_mined_block("anaconda_scale",scales)
 	GameState.add_mined_block("anaconda_egg", 1)
@@ -820,6 +823,9 @@ static func try_spawn(host: Node3D, player: Node3D, chunks: Node) -> Node:
 		return null
 	if host.get_tree().get_nodes_in_group("anaconda").size() > 0:
 		return null
+	# v0.11: гнёзда спят, пока жива Мать блоков; два босса одновременно не приходят.
+	if not GameState.mother_defeated or GameState.boss_alive:
+		return null
 	if not chunks.has_method("nests_near"):
 		return null
 	for n in chunks.nests_near(player.global_position, 12.0):
@@ -850,6 +856,9 @@ static func summon_with_egg(host: Node3D, player: Node3D, chunks: Node) -> Node:
 		return null
 	if host.get_tree().get_nodes_in_group("anaconda").size() > 0:
 		GameState.set_hint("Анаконда уже здесь!", false)
+		return null
+	if GameState.boss_alive:
+		GameState.set_hint("Сначала разберись с Матерью блоков.", false)
 		return null
 	if GameState.count_item("anaconda_egg") <= 0:
 		return null

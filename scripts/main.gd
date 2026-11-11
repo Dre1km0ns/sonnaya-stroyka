@@ -36,6 +36,7 @@ func _ready() -> void:
 	anchors.setup(player, dream_voxels)
 	switcher.setup(player, wake_world, dream_world, bed, wake_voxels, dream_voxels)
 	threat.setup(player, wake_world, bed)
+	dream_world.add_child(load("res://scripts/blueprint_ghost.gd").new())
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
 	var loaded := false
 	if not _want_shots() and saver.has_save():
@@ -45,6 +46,8 @@ func _ready() -> void:
 			wake_chunks.setup(player, GameState.world_seed_wake)
 		if dream_chunks and dream_chunks.has_method("setup"):
 			dream_chunks.setup(player, GameState.world_seed_dream)
+		if not _want_shots() and not _want_shots05() and not _want_shots06() and not _want_shots07() and not _want_shots08() and not _want_shots09() and not _want_inventory_mockup():
+			_build_starter_camp()
 	var day_script: GDScript = load("res://scripts/day_cycle.gd")
 	var day: Node = day_script.new()
 	$Systems.add_child(day)
@@ -94,7 +97,8 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
-	print("Сонная стройка v0.10 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	_camp_label()
+	print("Сонная стройка v0.11 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func _on_player_died() -> void:
@@ -1337,3 +1341,69 @@ func _capture_v091_door() -> void:
 	await _save_shot("v091_door_rotated.png")
 	print("DOOR SHOTS complete")
 	get_tree().quit(0)
+
+
+# --- v0.11: стартовый «разрушенный лагерь» вокруг первой кровати ---
+
+const CAMP_BED := Vector2i(0, -3)
+
+
+static func camp_layout() -> Array:
+	## [x, z, height, kind] — П-образные руины 11×8 с проломами; открыты в сторону спавна (+Z).
+	var out: Array = []
+	for x in range(-5, 6):
+		if x in [-1, 2]: continue
+		out.append([x, -8, 2 if (x * 7) % 3 != 0 else 1, "mossy_ruin" if (x + 8) % 3 == 0 else "ruin"])
+	for z in range(-7, 0):
+		if z != -4: out.append([-5, z, 2 if z < -5 else 1, "ruin" if z % 2 == 0 else "mossy_ruin"])
+		if z != -2: out.append([5, z, 1 if z > -6 else 2, "mossy_ruin" if z % 2 == 0 else "ruin"])
+	return out
+
+
+func _build_starter_camp() -> void:
+	if GameState.starter_camp_built or wake_chunks == null or not wake_chunks.has_method("height_at"):
+		return
+	GameState.starter_camp_built = true
+	var placed := 0
+	for e in camp_layout():
+		var x: int = e[0]
+		var z: int = e[1]
+		if wake_chunks.has_method("_world_is_lake_cell") and wake_chunks._world_is_lake_cell(x, z):
+			continue
+		var top: int = int(wake_chunks.height_at(x, z))
+		for h in range(int(e[2])):
+			var c := Vector3i(x, top + 1 + h, z)
+			if GameState.place_wake_block(c, str(e[3])):
+				GameState.wake_blocks[c]["camp"] = true
+				wake_voxels.add_block(c, GameState.wake_blocks[c])
+				placed += 1
+	for t in [Vector2i(-4, -7), Vector2i(4, -7), Vector2i(2, -1)]:
+		var tc := Vector3i(t.x, int(wake_chunks.height_at(t.x, t.y)) + 1, t.y)
+		if GameState.place_wake_block(tc, "torch"):
+			GameState.wake_blocks[tc]["camp"] = true
+			wake_voxels.add_block(tc, GameState.wake_blocks[tc])
+	if wake_voxels.has_method("flush_dirty"):
+		wake_voxels.flush_dirty()
+	set_meta("camp_blocks", placed)
+
+
+func _camp_label() -> void:
+	if not GameState.starter_camp_built or wake_chunks == null or not wake_chunks.has_method("height_at"):
+		return
+	var has_camp := false
+	for c in GameState.wake_blocks:
+		if GameState.wake_blocks[c].get("camp", false):
+			has_camp = true
+			break
+	if not has_camp:
+		return
+	var l := Label3D.new()
+	l.name = "CampSign"
+	l.text = "Разрушенный лагерь сновидца\nЛяг на кровать — во Сне можно построить невозможное"
+	l.font_size = 40
+	l.pixel_size = 0.006
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.modulate = Color(0.85, 0.9, 1.0, 0.9)
+	l.outline_size = 8
+	l.position = Vector3(0.5, float(wake_chunks.height_at(0, -8)) + 3.6, -7.5)
+	wake_world.add_child(l)

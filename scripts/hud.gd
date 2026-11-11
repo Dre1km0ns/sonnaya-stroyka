@@ -41,9 +41,8 @@ var _last_chat_time := -100.0
 var _time := 0.0
 ## v0.7
 var _hp_text: Label
-var _heal_slot: Panel
-var _heal_cd_label: Label
-var _heal_cd_shade: ColorRect
+var _heal_text: Label
+var objective_panel: Control
 var _bed_prompt: PanelContainer
 var _bed_prompt_label: Label
 var pillow_ui: Control
@@ -78,12 +77,16 @@ func _ready() -> void:
 	$Root.add_child(storage)
 	var context: Control = load("res://scripts/context_hints.gd").new()
 	$Root.add_child(context)
+	objective_panel = load("res://scripts/objective_panel.gd").new()
+	$Root.add_child(objective_panel)
+	GameState.unlock_announced.connect(func(t: String) -> void: show_toast(t, 5.0))
 	var death_script: GDScript = load("res://scripts/death_menu.gd")
 	death_menu = death_script.new()
 	$Root.add_child(death_menu)
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
 	GameState.clarity_changed.connect(_on_clarity)
+	GameState.anchor_selected.connect(func(_t: int) -> void: _on_clarity(GameState.clarity, GameState.dream_clarity_max()))
 	GameState.hint_changed.connect(_on_hint)
 	GameState.toast.connect(show_toast)
 	_on_world(GameState.is_dream())
@@ -300,49 +303,31 @@ func _build_heal_indicator() -> void:
 	_hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	_hp_text.add_theme_constant_override("outline_size", 5)
 	root.add_child(_hp_text)
-	_heal_slot = SlotView.new()
-	_heal_slot.name = "HealSlot"
-	_heal_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_heal_slot.anchor_left = 0.5
-	_heal_slot.anchor_right = 0.5
-	_heal_slot.anchor_top = 1.0
-	_heal_slot.anchor_bottom = 1.0
-	_heal_slot.offset_left = w / 2.0 + 14
-	_heal_slot.offset_right = w / 2.0 + 66
-	_heal_slot.offset_top = -62.0
-	_heal_slot.offset_bottom = -10.0
-	root.add_child(_heal_slot)
-	_heal_cd_shade = ColorRect.new()
-	_heal_cd_shade.color = Color(0, 0, 0, 0.6)
-	_heal_cd_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_heal_cd_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_heal_slot.add_child(_heal_cd_shade)
-	_heal_cd_label = Label.new()
-	_heal_cd_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_heal_cd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_heal_cd_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_heal_cd_label.add_theme_font_size_override("font_size", 18)
-	_heal_cd_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_heal_cd_label.add_theme_constant_override("outline_size", 6)
-	_heal_cd_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_heal_slot.add_child(_heal_cd_label)
+	# v0.11: отдельной ячейки зелья больше нет — H сам выбирает зелье из инвентаря.
+	_heal_text = Label.new()
+	_heal_text.name = "HealText"
+	_heal_text.anchor_left = 0.5
+	_heal_text.anchor_right = 0.5
+	_heal_text.anchor_top = 1.0
+	_heal_text.anchor_bottom = 1.0
+	_heal_text.offset_left = -w / 2.0 + 262
+	_heal_text.offset_right = w / 2.0 + 120
+	_heal_text.offset_top = -116.0
+	_heal_text.offset_bottom = -94.0
+	_heal_text.add_theme_font_size_override("font_size", 13)
+	_heal_text.add_theme_color_override("font_color", Color(1.0, 0.82, 0.86))
+	_heal_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_heal_text.add_theme_constant_override("outline_size", 5)
+	_heal_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_heal_text)
 
 
 func _update_heal_indicator() -> void:
-	if _heal_slot == null:
+	if _heal_text == null:
 		return
 	var dream := GameState.is_dream()
-	_heal_slot.visible = not dream
-	var slot: int = GameState.first_heal_slot()
-	var id: String = GameState.get_slot(slot).get("id","heal1") if slot>=0 else "heal1"
-	var n: int = GameState.count_item(id)
-	_heal_slot.set_item(id, n, false, n >= GameState.INF_COUNT, true)
-	_heal_slot.set_key_hint(_key("use_heal", "H"))
-	var cd: float = float(GameState.heal_cd)
-	_heal_cd_shade.visible = cd > 0.0
-	_heal_cd_shade.anchor_top = 1.0 - clampf(cd / float(GameState.HEAL_COOLDOWN), 0.0, 1.0)
-	_heal_cd_shade.offset_top = 0
-	_heal_cd_label.text = ("%d" % int(ceil(cd))) if cd > 0.0 else ""
+	_heal_text.visible = not dream
+	_heal_text.text = GameState.heal_status_text().replace("H ▸", _key("use_heal", "H") + " ▸")
 	var regen: float = GameState.regen_delay_left()
 	var hp: int = GameState.player_hp
 	var tail := ""
@@ -353,8 +338,9 @@ func _update_heal_indicator() -> void:
 
 
 func heal_indicator_state() -> Dictionary:
-	return {"visible": _heal_slot != null and _heal_slot.visible, "cd_text": _heal_cd_label.text if _heal_cd_label else "",
-		"hp_text": _hp_text.text if _hp_text else ""}
+	return {"visible": _heal_text != null and _heal_text.visible, "slot": find_child("HealSlot", true, false) != null,
+		"cd_text": _heal_text.text if _heal_text and GameState.heal_cd > 0.0 else "", "hp_text": _hp_text.text if _hp_text else "",
+		"heal_text": _heal_text.text if _heal_text else ""}
 
 
 func _build_bed_prompt() -> void:
@@ -501,9 +487,9 @@ func _mk_center_label(top: float, size: int) -> Label:
 	return l
 
 
-func show_toast(text: String) -> void:
+func show_toast(text: String, seconds: float = 2.4) -> void:
 	_toast_label.text = text
-	_toast_t = 2.4
+	_toast_t = seconds
 
 
 func _tick_fades(delta: float) -> void:
@@ -561,6 +547,14 @@ func _on_world(is_dream: bool) -> void:
 func _on_clarity(value: float, max_value: float) -> void:
 	clarity_bar.max_value = max_value
 	clarity_bar.value = value
+	# v0.11: ясность — это время. Показываем остаток и цену выбранного якоря в секундах.
+	var cap := get_node_or_null("Root/ClarityCaption") as Label
+	if cap:
+		var secs := int(value / GameState.CLARITY_DRAIN_PER_SEC)
+		var cost: Dictionary = GameState.anchor_cost(int(GameState.selected_anchor))
+		var cs := float(cost.clarity) / GameState.CLARITY_DRAIN_PER_SEC
+		cap.text = "Ясность ≈ %d:%02d  ·  %s −%d (≈%d с)" % [secs / 60, secs % 60, ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), int(cs)]
+		cap.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if secs <= 20 else Color(0.85, 0.85, 1.0))
 
 
 func _refresh_inv() -> void:

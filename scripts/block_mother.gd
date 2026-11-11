@@ -18,9 +18,9 @@ enum S { SPAWN, IDLE, WINDUP, AIR, STAGGER, TRANSITION, SCATTER, MARKER, RAIN_WI
 const STATE_NAMES := ["SPAWN", "IDLE", "WINDUP", "AIR", "STAGGER", "TRANSITION", "SCATTER", "MARKER", "RAIN_WINDUP", "RAIN", "DEAD", "LEAVING"]
 
 # --- числовая база (см. дизайн-док, раздел 3) ---
-const MAX_HP := 500
-const P2_AT := 330           # 66%
-const P3_AT := 165           # 33%
+const MAX_HP := 560 # v0.11: без глобального ×3; ≈ 40 ударов Меча2 / 24 удара Меча3
+const P2_AT := 370           # 66%
+const P3_AT := 185           # 33%
 const MODEL_PATH := "res://assets/models/greenblob.glb"
 const MODEL_HEIGHT := 3.0
 const HIT_RADIUS := 1.3
@@ -805,7 +805,7 @@ func _die() -> void:
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)
-	GameState.chat("Мать блоков рассыпалась. Награда: 250 осыпи, %d реагент3, %d реагент2. Сутки она не вернётся." % [REWARD_R3, REWARD_R2], Color(0.6, 1.0, 0.6))
+	GameState.chat("Мать блоков рассыпалась. Награда: %d осыпи," % GameState.DUST_PER_BOSS_KILL + " %d реагент3, %d реагент2. Сутки она не вернётся." % [REWARD_R3, REWARD_R2], Color(0.6, 1.0, 0.6))
 	for m in get_tree().get_nodes_in_group("blockling"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()

@@ -15,7 +15,6 @@ var _title: Label
 var _specials: Array = []
 var _pouch: Array = []
 var _armor_views: Array = []
-var _quick_heal: Panel
 var _armor_caption: Label
 
 
@@ -112,10 +111,8 @@ func _build() -> void:
 		sv.slot_clicked.connect(_on_special_clicked)
 		special_row.add_child(sv)
 		_specials.append([sv, str(sp["id"])])
-	var heal_row:=HBoxContainer.new();left.add_child(heal_row)
-	_quick_heal=SlotView.new();_quick_heal.index=-20;_quick_heal.set_key_hint("H")
-	_quick_heal.slot_clicked.connect(_on_quick_heal_clicked);heal_row.add_child(_quick_heal)
-	var heal_help:=Label.new();heal_help.text="Быстрое лечение H · Хилка1 / Хилка2\nПервое зелье по порядку слотов (1→36)";heal_help.add_theme_font_size_override("font_size",12);heal_row.add_child(heal_help)
+	# v0.11: отдельной ячейки быстрого лечения нет — H выбирает зелье сам.
+	var heal_help:=Label.new();heal_help.name="HealHelp";heal_help.text="Лечение: H — само выберет хилку1 (+20) или хилку2 (+40) из всего инвентаря Яви.\nЗелья из Сна лежат под подушкой кровати (Y у кровати).";heal_help.add_theme_font_size_override("font_size",12);heal_help.add_theme_color_override("font_color",Color(1,0.85,0.88));left.add_child(heal_help)
 	# Броня и кошель.
 	var right := VBoxContainer.new()
 	right.name = "ArmorAndPouch"
@@ -304,17 +301,7 @@ func _on_special_clicked(anchor_index: int, _button: int, _shift: bool) -> void:
 		GameState.select_anchor(anchor_index as GameState.AnchorType)
 
 
-func _on_quick_heal_clicked(_i: int,button: int,shift: bool) -> void:
-	if not _held.is_empty() and _held.get("id","") not in ["heal1","heal2"]:
-		GameState.set_hint("Сюда можно положить Хилку1 или Хилку2.",false);return
-	var slot: int=GameState.first_heal_slot()
-	_on_slot_clicked(slot if slot>=0 else 0,button,shift)
-
 func _refresh() -> void:
-	if _quick_heal:
-		var i: int=GameState.first_heal_slot()
-		var sl: Dictionary=GameState.get_slot(i) if i>=0 else {}
-		_quick_heal.set_item(sl.get("id",""),int(sl.get("count",0)),false,false)
 
 	if _armor_caption: _armor_caption.text = "Броня • %d защиты" % GameState.armor_points()
 	if not visible:

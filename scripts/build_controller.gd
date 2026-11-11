@@ -8,12 +8,12 @@ var _place_cooldown := 0.0
 var _hand_root: Node3D = null
 var _pickaxe_view: Node3D = null
 var _sword_view: Node3D = null
-const SWORD_DAMAGE := 7
+const SWORD_DAMAGE := 8
 const SWORD_COOLDOWN := 0.45
 const SWORD_REACH := 2.6
 ## v0.7: Меч2 — 25 урона, дальность ×1.25.
-const SWORD2_DAMAGE := 13
-const SWORD3_DAMAGE := 23
+const SWORD2_DAMAGE := 14
+const SWORD3_DAMAGE := 24
 const SWORD2_REACH := SWORD_REACH * 1.25
 const MIN_PLACE_Y := -30
 var _pickaxe2_view: Node3D = null
@@ -76,8 +76,9 @@ func _process(delta: float) -> void:
 		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
 			return
 		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
+			# v0.11: зелья пьются только клавишей H (автовыбор), ЛКМ по зелью ничего не делает.
 			if GameState.selected_is("heal1") or GameState.selected_is("heal2"):
-				GameState.use_heal(str(GameState.get_selected_item().id))
+				GameState.set_hint("Зелья пьются клавишей %s — она сама выберет подходящее." % _heal_key(), false)
 			elif GameState.selected_is("sword") or GameState.selected_is("sword2") or GameState.selected_is("sword3"):
 				_try_sword()
 				_place_cooldown = SWORD_COOLDOWN
@@ -279,7 +280,7 @@ func _finish_mine(cell: Vector3i, kind: String) -> void:
 		_spawn_block_pickup(cell,kind)
 	var host := _wake_world()
 	# v0.6: решение о боссе брошено на прошлом блоке (и объявлено в чате) — спавним сейчас.
-	if GameState.on_block_mined() and host:
+	if GameState.on_block_mined_at(cell, kind) and host:
 		var boss_script: GDScript = load("res://scripts/block_mother.gd")
 		boss_script.spawn_near(host, cell)
 
@@ -570,3 +571,10 @@ func _tick_mining(delta: float) -> void:
 		_try_mine_wake()
 		_mine_elapsed = 0.0
 		_place_cooldown = 0.1
+
+
+func _heal_key() -> String:
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets and gsets.has_method("key_label"):
+		return str(gsets.key_label("use_heal"))
+	return "H"
