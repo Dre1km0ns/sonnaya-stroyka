@@ -453,7 +453,11 @@ func _try_sword() -> void:
 		var dir := flat.normalized() if flat.length() > 0.05 else forward
 		if dir.dot(forward) < 0.15:
 			continue
-		if n.has_method("take_damage"):
+		if n.has_method("receive_weapon_hit"):
+			# v0.11.1: боссы различают оружие (броня Матери, чешуя Анаконды).
+			n.receive_weapon_hit(dmg, str(GameState.get_selected_item().get("id", "sword")))
+			hit += 1
+		elif n.has_method("take_damage"):
 			n.take_damage(dmg)
 			hit += 1
 	last_sword_hits = hit
@@ -539,7 +543,12 @@ func _tick_mining(delta: float) -> void:
 	var tool := str(GameState.get_selected_item().get("id", ""))
 	if collider.is_in_group("enemy") or collider.get_parent().is_in_group("enemy"):
 		var target = collider if collider.is_in_group("enemy") else collider.get_parent()
-		if target.has_method("take_damage"):
+		if target.has_method("receive_weapon_hit"):
+			target.receive_weapon_hit(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1), tool if tool != "" else "hand")
+			GameState.wear_tool(2)
+			_play_tool_swing()
+			_place_cooldown = 0.5
+		elif target.has_method("take_damage"):
 			target.take_damage(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1))
 			GameState.wear_tool(2)
 			_play_tool_swing()
