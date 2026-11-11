@@ -1,4 +1,4 @@
-# Сонная стройка (Dream Building) — v0.11
+# Сонная стройка (Dream Building) — v0.11.1
 
 Dual-world песочница на **Godot 4.7.2**: строишь во сне, в явь забираешь только заякоренное. Хардкор: бесконечные чанки, Шовники и «призраки», три типа реагентов, инвентарь, сейв на диск.
 
@@ -33,6 +33,7 @@ Dual-world песочница на **Godot 4.7.2**: строишь во сне, 
 ```
 
 v0.11: геймдизайн и прогрессия — `GAMEPLAY_DESIGN_V0.11.md`, отчёт — `REPORT_V0.11.md`.
+v0.11.1: правки + редизайн боссов — `REPORT_V0.11.1.md`, `docs/boss_redesign_v0.11.md`, `docs/boss_anaconda.md`, `docs/boss_mother_of_blocks.md`.
 Отладка рук/инструментов: открыть `scenes/debug_viewmodel.tscn` (←/→, Space, W/S).
 
 Smoke:
