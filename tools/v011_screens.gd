@@ -94,4 +94,9 @@ func _go() -> void:
 	await _wait(10)
 	await _shot("v011_hud_heal.png")
 	print("HEAL ", gs.heal_status_text())
+	# 5) Первый Сон: стартовый верстак Сна, ясность ≈ m:ss, цель этапа.
+	main.switcher.enter_dream()
+	await create_timer(1.5).timeout
+	await _shot("v011_first_dream.png")
+	print("DREAM obj=", gs.current_objective().get("id",""), " left=", gs.dream_seconds_left())
 	quit(0)

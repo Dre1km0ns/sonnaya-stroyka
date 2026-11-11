@@ -2522,6 +2522,10 @@ func _v011_checks() -> void:
 	gs._objectives_eval(true)
 	_a(str(gs.current_objective().id) == "first_anchor" and bool(gs.next_big_objective().get("big", false)), 11073)
 	gs.resolve_wake(true)
+	gs.milestones["chest"] = true  # перескочил вперёд: ★«Первый перенос» всё равно остаётся текущей целью
+	_a(str(gs.current_objective().id) == "first_transfer", 11074)
+	gs.milestones["first_transfer"] = true
+	_a(str(gs.current_objective().id) == "shelter", 11075)
 	# --- 16.10 Миграция реальных сейвов v0.10 ---
 	for f in ["res://tests/fixtures/v010_wake_save.json", "res://tests/fixtures/v010_dream_save.json"]:
 		gs.reset_state()

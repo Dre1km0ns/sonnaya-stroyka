@@ -40,6 +40,16 @@ static func index_of(id: String) -> int:
 
 
 static func current(gs: Node) -> Dictionary:
+	## Первая невыполненная цель ПОСЛЕ самой поздней выполненной: если игрок перескочил шаг
+	## (например, лёг спать без реагентов), панель не застревает на пройденном этапе. Большие ★-этапы
+	## (первый перенос, убежище, Мать, Анаконда) не пропускаются никогда.
+	var last := -1
+	for i in range(LIST.size()):
+		if gs.milestones.has(LIST[i].id): last = i
+	for i in range(0, last):
+		if LIST[i].get("big", false) and not gs.milestones.has(LIST[i].id): return LIST[i]  # ★-этапы не пропускаем
+	for i in range(last + 1, LIST.size()):
+		if not gs.milestones.has(LIST[i].id): return LIST[i]
 	for o in LIST:
 		if not gs.milestones.has(o.id): return o
 	return FINAL
