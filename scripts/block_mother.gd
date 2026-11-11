@@ -344,6 +344,8 @@ func heal_from_blocks(_blocks: int) -> int:
 # ---------------------------------------------------------------- броня: пластины и ядро
 
 const PLATE_ANGLES := [0.0, 2.094, 4.189]
+const PLATE_RADIUS := 1.72
+const PLATE_Y := 1.25
 
 func _build_plates() -> void:
 	plates.clear()
@@ -352,17 +354,17 @@ func _build_plates() -> void:
 		var dir := Vector3(sin(ang), 0, cos(ang))
 		var holder := Node3D.new()
 		holder.name = "Plate%d" % i
-		holder.position = dir * (HIT_RADIUS * 0.92) + Vector3(0, 1.35, 0)
+		holder.position = dir * PLATE_RADIUS + Vector3(0, PLATE_Y, 0)   # снаружи визуального тела (капля ≈1.6 м)
 		holder.rotation.y = ang
 		add_child(holder)
 		var mi := MeshInstance3D.new()
 		mi.name = "Armor"
-		mi.mesh = BlockTex.cube_mesh("deep_stone", Vector3(1.05, 1.15, 0.26))
+		mi.mesh = BlockTex.cube_mesh("deep_stone", Vector3(1.25, 1.35, 0.3))
 		holder.add_child(mi)
 		var rim := MeshInstance3D.new()
 		rim.name = "Glow"
 		var rm := BoxMesh.new()
-		rm.size = Vector3(1.17, 1.27, 0.2)
+		rm.size = Vector3(1.4, 1.5, 0.22)
 		rim.mesh = rm
 		var gm := StandardMaterial3D.new()
 		gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -376,7 +378,7 @@ func _build_plates() -> void:
 		var core := MeshInstance3D.new()
 		core.name = "Core"
 		var cm := BoxMesh.new()
-		cm.size = Vector3(0.7, 0.8, 0.12)
+		cm.size = Vector3(0.85, 0.95, 0.14)
 		core.mesh = cm
 		var cmat := StandardMaterial3D.new()
 		cmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
