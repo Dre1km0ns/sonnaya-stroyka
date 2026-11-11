@@ -99,8 +99,10 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("planks"))
 		"workbench":
 			return _f(tile("bench_side"), tile("bench_top"), tile("planks"))
-		"beacon":
+		"beacon", "lumen_cold":
 			return _all(tile("beacon"))
+		"lumen":
+			return _all(tile("torch"))
 		"mouth":
 			return _all(tile("mouth"))
 		"torch":

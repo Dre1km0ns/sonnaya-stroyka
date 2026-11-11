@@ -184,10 +184,7 @@ func _warn_nests(chunks: Node) -> void:
 			continue
 		_nest_warned[str(n["id"])] = true
 		GameState.nest_found = true
-		if GameState.mother_defeated:
-			GameState.chat("Гнездо Анаконды рядом. Ночью она выйдет к тому, кто подойдёт к яйцу ближе 12 м. Меч бесполезен — нужен свет: факелы вокруг и в руке.", Color(1.0, 0.7, 0.35))
-		else:
-			GameState.chat("Странное гнездо… Оно спит. Пока жива Мать блоков, его хозяйка не проснётся.", Color(0.8, 0.8, 1.0))
+		GameState.chat("Гнездо Анаконды рядом. Ночью она выйдет к тому, кто подойдёт к яйцу ближе 12 м. Меч бесполезен — её жгут только ПОСТАВЛЕННЫЕ факелы, лучше 2–3 с разных сторон. Её тело ломает факелы — бери запас.", Color(1.0, 0.7, 0.35))
 
 
 func _cull_to_cap() -> int:
@@ -246,6 +243,8 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 		return
 	if GameState.beacon_protects(Vector3i(floori(pos.x), floori(pos.y), floori(pos.z))):
 		return
+	if try_spawn_blockolith(pos) != null:
+		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos
 	if elite and e.has_method("configure_elite"):
@@ -254,6 +253,24 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 		e.set("elite", true)
 	wake_root.add_child(e)
 	load("res://scripts/seam_effect.gd").spawn(wake_root, pos)
+
+
+var blockoliths_spawned := 0
+
+
+func try_spawn_blockolith(pos: Vector3, roll: float = -1.0) -> Node:
+	## v0.11.1: после первой победы над Матерью обычный спавн с шансом 1/120 заменяется нейтральным Блоколитом
+	## (не больше одного одновременно). Его убийство вызывает Мать блоков.
+	if wake_root == null or get_tree().get_nodes_in_group("blockolith").size() > 0:
+		return null
+	if not GameState.blockolith_roll(roll):
+		return null
+	var b: CharacterBody3D = load("res://scripts/blockling.gd").new()
+	b.configure("blockolith")
+	b.position = pos
+	wake_root.add_child(b)
+	blockoliths_spawned += 1
+	return b
 
 
 func _pulse_unstable_seam() -> void:

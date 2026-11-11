@@ -4,7 +4,9 @@ extends Node3D
 @export var is_dream_layer := false
 @export var block_size := 1.0
 const BlockTex := preload("res://scripts/block_tex.gd")
-const SPECIAL := ["torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
+const MAX_LUMEN_LIGHTS := 24
+var _lumen_lights := 0
+const SPECIAL := ["lumen","lumen_cold","torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
 const PARTS := ["bed_foot","door_top","catcher_top"]
 var _meshes: Dictionary = {}
 var _bodies: Dictionary = {}
@@ -226,6 +228,17 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		light.shadow_enabled = false
 		light.position = Vector3(0, 0.45, 0)
 		mi.add_child(light)
+	if kind in ["lumen", "lumen_cold"] and _lumen_lights < MAX_LUMEN_LIGHTS:
+		# v0.11.1: светоархитектура (Сердце света) — блок светит сам; число источников ограничено.
+		var ll := OmniLight3D.new()
+		ll.name = "LumenLight"
+		ll.light_color = Color(1.0, 0.78, 0.45) if kind == "lumen" else Color(0.55, 0.85, 1.0)
+		ll.light_energy = 1.2
+		ll.omni_range = 6.0
+		ll.shadow_enabled = false
+		mi.add_child(ll)
+		_lumen_lights += 1
+		ll.tree_exiting.connect(func() -> void: _lumen_lights = maxi(0, _lumen_lights - 1))
 	if kind == "beacon":
 		mi.position = cell_to_world(cell) + Vector3(0, -0.25, 0)
 		var core := MeshInstance3D.new()

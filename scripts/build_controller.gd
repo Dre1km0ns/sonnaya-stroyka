@@ -154,7 +154,10 @@ func _place_at(cell: Vector3i) -> void:
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
 	if GameState.place_dream_block(cell, kind, facing):
-		dream_voxels.sync_cells([cell])
+		var placed_cells: Array = [cell]
+		if kind == "drift" and GameState.heart_structure and Input.is_action_pressed("sprint"):
+			placed_cells.append_array(mass_place_row(cell, facing))
+		dream_voxels.sync_cells(placed_cells)
 		if kind != "drift":
 			GameState.set_hint("%s [%d,%d,%d]. Заякорь гвоздём, чтобы унести в явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])
 		else:
@@ -163,8 +166,19 @@ func _place_at(cell: Vector3i) -> void:
 		GameState.add_item_count(kind, 1)
 
 
+func mass_place_row(cell: Vector3i, facing: int) -> Array:
+	## v0.11.1 (Сердце структуры): Shift+ЛКМ дрейф-блоком — ряд из 3 поперёк взгляда. Каждый следующий опирается на предыдущий.
+	var right := Vector3i(1, 0, 0) if facing % 2 == 0 else Vector3i(0, 0, 1)
+	var out: Array = []
+	for side in [right, -right]:
+		var c: Vector3i = cell + side
+		if not GameState.dream_blocks.has(c) and placement_supported(c, true) and GameState.place_dream_block(c, "drift", facing):
+			out.append(c)
+	return out
+
+
 ## Предметы, которые во сне ставятся как блоки (иначе ставится бесплатный дрейф-блок).
-const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand"]
+const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand", "lumen", "lumen_cold"]
 
 
 func _try_remove() -> void:

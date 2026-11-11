@@ -265,6 +265,10 @@ var milestones: Dictionary = {}       # id -> true
 var deep_threat: float = 0.0
 var _deep_warned: int = 0
 var anaconda_defeated := false
+## v0.11.1: награды боссов (переживают сейв/миграцию).
+var heart_light := false      # Сердце света (Анаконда): светоархитектура Сна
+var heart_structure := false  # Сердце структуры (Мать): массовая постановка, расширенные якоря, стабилизация
+var blockoliths_killed := 0
 var blueprints: Array = []            # [{name, blocks:{"x,y,z":kind}}]
 var blueprint_shown := -1
 var starter_kit_given := false
@@ -318,6 +322,9 @@ func reset_state() -> void:
 	deep_threat = 0.0
 	_deep_warned = 0
 	anaconda_defeated = false
+	heart_light = false
+	heart_structure = false
+	blockoliths_killed = 0
 	blueprints = []
 	blueprint_shown = -1
 	starter_kit_given = false
@@ -883,6 +890,8 @@ func recipe_defs() -> Array:
 		{"id": "chest", "name": "Сундук (27 ячеек)", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
 		{"id": "alchemy", "name": "Алхимический стол", "where": "dream", "unlock": "mother", "reagent2": 4, "reagent3": 4, "dust": 60, "item": "alchemy", "tier": 3},
 		{"id": "heal2", "name": "Хилка2 (+40 HP)", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
+		{"id": "lumen", "name": "Светоблок тёплый ×4", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 10, "item": "lumen", "count": 4, "tier": 4},
+		{"id": "lumen_cold", "name": "Светоблок холодный ×4", "where": "dream", "unlock": "heart_light", "reagent2": 1, "dust": 10, "item": "lumen_cold", "count": 4, "tier": 4},
 		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 150, "item": "idea_catcher", "tier": 3},
 	]
 	for tier in ["wood","scale"]:
@@ -904,6 +913,8 @@ func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
 	if rec.is_empty():
 		return false
 	if rec.get("unlock", "") == "mother" and not mother_defeated and not dev_mode:
+		return false
+	if rec.get("unlock", "") == "heart_light" and not heart_light and not dev_mode:
 		return false
 	var where := str(rec.get("where", "anywhere"))
 	var dreaming := bool(ctx.get("is_dream", is_dream()))
@@ -1049,6 +1060,7 @@ func mine_wake_block(cell: Vector3i) -> bool:
 	if not break_storage(cell):
 		return false
 	remove_shape(wake_blocks, cell)
+	if kind == "torch": mark_torches_dirty()
 	last_mined_kind = kind
 	last_mined_cell = cell
 	if active_bed == cell_key(cell):
@@ -1581,36 +1593,106 @@ static func deep_threat_gain(cell: Vector3i, kind: String) -> float:
 	return g
 
 
-func on_block_mined_at(cell: Vector3i, kind: String) -> bool:
-	## v0.11 «Угроза глубин»: копать под землёй громко. 40/70 — предупреждения, 100 — Мать приходит.
+func on_block_mined_at(cell: Vector3i, kind: String, rng_value: float = -1.0) -> bool:
+	## v0.11.1: снова 1% на КАЖДЫЙ разрушенный блок (как в v0.6–0.10): бросок на этом блоке → предвестие в чате →
+	## Мать выходит на СЛЕДУЮЩЕМ блоке. «Угроза глубин» осталась только атмосферными сообщениями, Мать не вызывает.
 	## true → спавнить Мать СЕЙЧАС рядом с этим блоком.
 	if not mother_can_come():
+		boss_next_mine = false
 		return false
-	var g := deep_threat_gain(cell, kind) * (10.0 if dev_mode else 1.0)
+	_deep_flavour(cell, kind)
+	if boss_next_mine:
+		boss_next_mine = false
+		return true
+	var r := rng_value if rng_value >= 0.0 else randf()
+	if r < boss_spawn_chance():
+		boss_next_mine = true
+		chat(BOSS_OMEN_TEXT, Color(1.0, 0.35, 0.35))
+	return false
+
+
+func _deep_flavour(cell: Vector3i, kind: String) -> void:
+	## Только атмосфера: копать глубоко «громко», 40/70 — сообщения, на 100 шкала сбрасывается. Спавна нет.
+	var g := deep_threat_gain(cell, kind)
 	if g <= 0.0:
-		return false
+		return
 	deep_threat = minf(DEEP_THREAT_MAX, deep_threat + g)
 	deep_threat_changed.emit(deep_threat)
 	if deep_threat >= DEEP_THREAT_WARN1 and _deep_warned < 1:
 		_deep_warned = 1
-		chat("Где-то в глубине кто-то плачет по разбитым блокам… (угроза глубин 40%)", Color(1.0, 0.6, 0.4))
-		toast.emit("Следы Матери блоков: угроза глубин 40%")
+		chat("Где-то в глубине кто-то плачет по разбитым блокам…", Color(1.0, 0.6, 0.4))
 		milestones_mark("mother_signs")
 	if deep_threat >= DEEP_THREAT_WARN2 and _deep_warned < 2:
 		_deep_warned = 2
-		chat(BOSS_OMEN_TEXT + " — она близко. Приготовь зелья и меч.", Color(1.0, 0.35, 0.35))
-		toast.emit("Мать блоков близко (70%)")
+		chat("Камень под ногами вздрагивает, будто от рыданий.", Color(1.0, 0.45, 0.4))
 	if deep_threat >= DEEP_THREAT_MAX:
 		deep_threat = 0.0
 		_deep_warned = 0
 		deep_threat_changed.emit(deep_threat)
-		return true
-	return false
 
 
-func on_block_mined(_rng_value: float = -1.0) -> bool:
-	## Совместимость v0.10: теперь решение принимает «угроза глубин» по последнему добытому блоку.
-	return on_block_mined_at(last_mined_cell, last_mined_kind)
+func on_block_mined(rng_value: float = -1.0) -> bool:
+	return on_block_mined_at(last_mined_cell, last_mined_kind, rng_value)
+
+
+# --- v0.11.1: блоколиты — после первой победы над Матерью изредка заменяют обычного моба ---
+const BLOCKOLITH_CHANCE := 1.0 / 120.0
+
+func blockolith_roll(r: float = -1.0) -> bool:
+	if not mother_defeated or peaceful or boss_alive:
+		return false
+	return (randf() if r < 0.0 else r) < BLOCKOLITH_CHANCE
+
+
+func on_blockolith_killed() -> bool:
+	## true → Мать блоков выходит сейчас (если нет другого босса). Кулдаун суток здесь не мешает: игрок сам её позвал.
+	blockoliths_killed += 1
+	if peaceful or boss_alive or is_dream():
+		return false
+	chat(BOSS_OMEN_TEXT, Color(1.0, 0.35, 0.35))
+	return true
+
+
+# --- v0.11.1: кеш факелов (без глобального скана wake_blocks каждые 0.5 с) ---
+var _torch_cache: Array[Vector3i] = []
+var _torch_cache_dirty := true
+var _torch_cache_src: Dictionary = {}
+var _torch_cache_size := -1
+var torch_cache_rebuilds := 0
+
+func mark_torches_dirty() -> void:
+	_torch_cache_dirty = true
+
+
+func torch_cells() -> Array[Vector3i]:
+	if _torch_cache_dirty or not is_same(_torch_cache_src, wake_blocks) or _torch_cache_size != wake_blocks.size():
+		_torch_cache.clear()
+		for c in wake_blocks:
+			if str((wake_blocks[c] as Dictionary).get("kind", "")) == "torch":
+				_torch_cache.append(c)
+		_torch_cache_dirty = false
+		_torch_cache_src = wake_blocks
+		_torch_cache_size = wake_blocks.size()
+		torch_cache_rebuilds += 1
+	return _torch_cache
+
+
+func remove_torch(c: Vector3i) -> bool:
+	if str(wake_blocks.get(c, {}).get("kind", "")) != "torch":
+		return false
+	wake_blocks.erase(c)
+	mark_torches_dirty()
+	terrain_cell_changed.emit(c)
+	return true
+
+
+# --- v0.11.1: улучшения Сердца структуры ---
+func wedge_size() -> int:
+	return WEDGE_SIZE + (2 if heart_structure else 0)
+
+
+func anchor3_size() -> int:
+	return ANCHOR3_SIZE + (2 if heart_structure else 0)
 
 
 func set_boss_alive(on: bool) -> void:
@@ -1628,8 +1710,9 @@ func on_mother_killed() -> void:
 	boss_next_mine = false
 	deep_threat = 0.0
 	_deep_warned = 0
+	heart_structure = true
 	if first:
-		var t := "Открыто: Алхимический стол и Хилка2, Ловец идей (дольше Сон), Архив Снов (B/N во Сне). Гнёзда Анаконды пробудились."
+		var t := "Сердце структуры: во Сне — массовая постановка (Shift+ЛКМ — ряд из 3), якоря шире на 2, перенос без мутаций. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов (B/N во Сне). Блоколиты теперь иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1637,8 +1720,9 @@ func on_mother_killed() -> void:
 func on_anaconda_killed() -> void:
 	var first := not anaconda_defeated
 	anaconda_defeated = true
+	heart_light = true
 	if first:
-		var t := "Открыто: Чешуйчатый меч и чешуйчатая броня на станке."
+		var t := "Сердце света: во Сне открыты светоблоки (C → Светоблок). Открыто: Чешуйчатый меч и чешуйчатая броня на станке."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1695,7 +1779,7 @@ func block_display_name(kind: String) -> String:
 
 func is_placeable_block(id: String) -> bool:
 	return id in ["bedrock", "drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
-		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin"]
+		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "lumen", "lumen_cold"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
@@ -1728,6 +1812,7 @@ func place_wake_block(cell: Vector3i, kind: String, facing: int=0) -> bool:
 	if not can_place_shape(wake_blocks, cell, kind):
 		return false
 	wake_blocks[cell] = {"kind": kind, "mutant": false}
+	if kind == "torch": mark_torches_dirty()
 	if kind=="door":
 		wake_blocks[cell]["facing"]=posmod(facing,4)
 		wake_blocks[cell]["hinge_right"]=door_hinge_right(wake_blocks,cell,facing)
@@ -1852,7 +1937,7 @@ func anchor_preview(origin:Vector3i) -> Dictionary:
 	var selected:Array=[];var t:=int(selected_anchor)
 	if t==AnchorType.NAIL: selected.append(origin)
 	else:
-		var size:=WEDGE_SIZE if t==AnchorType.WEDGE else ANCHOR3_SIZE;var half:=int(size/2)
+		var size:=wedge_size() if t==AnchorType.WEDGE else anchor3_size();var half:=int(size/2)
 		for x in range(origin.x-half,origin.x-half+size):
 			for y in range(origin.y-half,origin.y-half+size):
 				for z in range(origin.z-half,origin.z-half+size):
@@ -1954,6 +2039,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 		for c in plan.roots:
 			if dream_blocks[c].get("kind","")=="beacon": beacons.append(c)
 		mutation=TransferPlan.mutations(dream_blocks,plan.roots,beacons,world_seed_dream^hash(plan.roots)^(dream_exit_count*1103515245),NO_MUTATION_KINDS)
+		if heart_structure: mutation.cells=[] # v0.11.1: стабилизация Сердца структуры — перенос без мутаций
 		var next_wake:=wake_blocks.duplicate();var changed:Array=[]
 		for c in plan.roots:
 			var data:Dictionary=dream_blocks[c].duplicate(true);data.erase("anchored")
@@ -2068,6 +2154,9 @@ func to_save_dict() -> Dictionary:
 		"deep_threat": deep_threat,
 		"deep_warned": _deep_warned,
 		"anaconda_defeated": anaconda_defeated,
+		"heart_light": heart_light,
+		"heart_structure": heart_structure,
+		"blockoliths_killed": blockoliths_killed,
 		"blueprints": blueprints.duplicate(true),
 		"starter_kit_given": starter_kit_given,
 		"starter_camp_built": starter_camp_built,
@@ -2151,6 +2240,10 @@ func apply_save_dict(data: Dictionary) -> void:
 	deep_threat = clampf(float(data.get("deep_threat", 0.0)), 0.0, DEEP_THREAT_MAX)
 	_deep_warned = int(data.get("deep_warned", 0))
 	anaconda_defeated = bool(data.get("anaconda_defeated", false))
+	# v0.11.1: сердца боссов; старые сейвы получают их по флагам побед (миграция без потерь).
+	heart_light = bool(data.get("heart_light", anaconda_defeated))
+	heart_structure = bool(data.get("heart_structure", mother_defeated))
+	blockoliths_killed = int(data.get("blockoliths_killed", 0))
 	blueprints = []
 	for bp in data.get("blueprints", []):
 		if typeof(bp) == TYPE_DICTIONARY and typeof(bp.get("blocks")) == TYPE_DICTIONARY: blueprints.append(bp.duplicate(true))
