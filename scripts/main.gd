@@ -1400,10 +1400,11 @@ func _camp_label() -> void:
 	var l := Label3D.new()
 	l.name = "CampSign"
 	l.text = "Разрушенный лагерь сновидца\nЛяг на кровать — во Сне можно построить невозможное"
-	l.font_size = 40
-	l.pixel_size = 0.006
+	l.font_size = 48
+	l.pixel_size = 0.011
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.modulate = Color(0.85, 0.9, 1.0, 0.9)
-	l.outline_size = 8
+	l.modulate = Color(1.0, 0.95, 0.8, 1.0)
+	l.outline_modulate = Color(0.05, 0.04, 0.1, 1.0)
+	l.outline_size = 14
 	l.position = Vector3(0.5, float(wake_chunks.height_at(0, -8)) + 3.6, -7.5)
 	wake_world.add_child(l)

@@ -1459,7 +1459,7 @@ func use_heal(id: String="") -> bool:
 
 
 func heal_status_text() -> String:
-	## HUD: «H ▸ хилка2 (+40)» / «H ▸ 12 с» / «H ▸ нет зелий».
+	## HUD: «H ▸ хилка2 +40 (2×I 1×II)» / «H ▸ 12 с» / «H ▸ нет зелий».
 	if heal_cd > 0.0:
 		return "H ▸ %d с" % ceili(heal_cd)
 	var n1 := _inv_count(inv_wake, "heal1")
@@ -3006,9 +3006,11 @@ func objectives_tick(delta: float) -> void:
 
 
 func wake_kind_count(kind: String) -> int:
+	## Блоки лагеря (camp:true) не считаются — факелы стартового лагеря не закрывают цель «Сделай факелы».
 	var n := 0
 	for c in wake_blocks:
-		if str(wake_blocks[c].get("kind","")) == kind: n += 1
+		var d: Dictionary = wake_blocks[c]
+		if str(d.get("kind","")) == kind and not d.get("camp", false): n += 1
 	return n
 
 

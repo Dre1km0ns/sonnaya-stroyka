@@ -310,10 +310,11 @@ func _build_heal_indicator() -> void:
 	_heal_text.anchor_right = 0.5
 	_heal_text.anchor_top = 1.0
 	_heal_text.anchor_bottom = 1.0
-	_heal_text.offset_left = -w / 2.0 + 262
-	_heal_text.offset_right = w / 2.0 + 120
-	_heal_text.offset_top = -116.0
-	_heal_text.offset_bottom = -94.0
+	# В одной строке с «HP n/100», правее — не пересекается с названием предмета над хотбаром.
+	_heal_text.offset_left = -w / 2.0 + 404
+	_heal_text.offset_right = w / 2.0 + 260
+	_heal_text.offset_top = -93.0
+	_heal_text.offset_bottom = -71.0
 	_heal_text.add_theme_font_size_override("font_size", 13)
 	_heal_text.add_theme_color_override("font_color", Color(1.0, 0.82, 0.86))
 	_heal_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))

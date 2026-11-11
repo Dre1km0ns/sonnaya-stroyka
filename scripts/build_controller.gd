@@ -19,6 +19,7 @@ const MIN_PLACE_Y := -30
 var _pickaxe2_view: Node3D = null
 var _sword2_view: Node3D = null
 var _sword3_view: Node3D = null
+var viewmodel: Node3D = null
 var last_sword_damage := 0
 var last_sword_hits := 0
 var _mine_cell := Vector3i(99999,99999,99999)
@@ -282,7 +283,8 @@ func _finish_mine(cell: Vector3i, kind: String) -> void:
 	# v0.6: решение о боссе брошено на прошлом блоке (и объявлено в чате) — спавним сейчас.
 	if GameState.on_block_mined_at(cell, kind) and host:
 		var boss_script: GDScript = load("res://scripts/block_mother.gd")
-		boss_script.spawn_near(host, cell)
+		if boss_script.spawn_near(host, cell) != null:
+			GameState.chat("Мать блоков вырвалась на поверхность над твоей шахтой! Поднимайся — бой на открытой арене.", Color(1.0, 0.35, 0.35))
 
 
 func _wake_voxels() -> Node3D:
@@ -431,39 +433,21 @@ func _play_sword_swing() -> void:
 
 
 func _ensure_hand_tools() -> void:
+	## v0.11: инструменты в руке — единый ViewModelRig (scripts/viewmodel_rig.gd), без хардкода трансформов здесь.
 	if player == null or not player.has_node("CameraPivot/Camera3D"):
 		return
-	if _hand_root != null and is_instance_valid(_hand_root):
+	if viewmodel != null and is_instance_valid(viewmodel):
 		return
 	var cam: Node3D = player.get_node("CameraPivot/Camera3D")
-	_hand_root = Node3D.new()
-	_hand_root.name = "HandRoot"
-	_hand_root.position = Vector3(0.32, -0.26, -0.48)
-	_hand_root.rotation_degrees = Vector3(8, 0, -6)
-	cam.add_child(_hand_root)
-	var bt: GDScript = load("res://scripts/block_tex.gd")
-	for id in ["pickaxe", "pickaxe2", "sword", "sword2", "sword3"]:
-		var tool := MeshInstance3D.new()
-		tool.name = id.capitalize() + "View"
-		tool.mesh = bt.tool_mesh(id)
-		tool.position = Vector3(0.02, -0.1, 0.02)
-		if id.begins_with("sword"):
-			tool.position = Vector3(0.02,0.04,-0.12)
-		tool.rotation_degrees = Vector3(-20, 20, -28)
-		tool.scale = Vector3.ONE * 0.6
-		if id.begins_with("pickaxe"):
-			tool.position = Vector3(0.08,-0.16,-0.08)
-			tool.rotation_degrees = Vector3(-12,-24,25)
-			tool.scale = Vector3.ONE*0.58
-		if id=="sword3":
-			tool.scale=Vector3.ONE*0.38;tool.rotation_degrees=Vector3(-12,-10,20);tool.position=Vector3(0.02,-0.04,-0.19)
-		_hand_root.add_child(tool)
-		match id:
-			"pickaxe": _pickaxe_view = tool
-			"pickaxe2": _pickaxe2_view = tool
-			"sword": _sword_view = tool
-			"sword2": _sword2_view = tool
-			"sword3": _sword3_view = tool
+	viewmodel = load("res://scripts/viewmodel_rig.gd").new()
+	viewmodel.player = player
+	cam.add_child(viewmodel)
+	_hand_root = viewmodel.hand_root
+	_pickaxe_view = viewmodel.models.get("pickaxe")
+	_pickaxe2_view = viewmodel.models.get("pickaxe2")
+	_sword_view = viewmodel.models.get("sword")
+	_sword2_view = viewmodel.models.get("sword2")
+	_sword3_view = viewmodel.models.get("sword3")
 	_update_hand_tools()
 
 
@@ -485,32 +469,20 @@ func _instance_tool(path: String, node_name: String) -> Node3D:
 
 func _update_hand_tools() -> void:
 	_ensure_hand_tools()
-	if _hand_root == null:
+	if viewmodel == null:
 		return
-	var show_pick := GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2")
-	var show_sword := GameState.selected_is("sword")
-	var show_s2 := GameState.selected_is("sword2")
-	if _pickaxe_view:
-		_pickaxe_view.visible = GameState.selected_is("pickaxe")
-	if _pickaxe2_view:
-		_pickaxe2_view.visible = GameState.selected_is("pickaxe2")
-	if _sword_view:
-		_sword_view.visible = show_sword
-	if _sword2_view:
-		_sword2_view.visible = show_s2
-	if _sword3_view: _sword3_view.visible = GameState.selected_is("sword3")
-	_hand_root.visible = (show_pick or show_sword or show_s2 or GameState.selected_is("sword3")) and not GameState.ui_blocked()
+	var id := str(GameState.get_selected_item().get("id", ""))
+	if GameState.ui_blocked() or GameState.transfer_ui_open:
+		id = ""
+	viewmodel.set_tool(id)
 
 
 func _play_tool_swing() -> void:
 	_ensure_hand_tools()
-	if _hand_root == null or player == null:
+	if viewmodel == null or player == null:
 		return
 	_update_hand_tools()
-	_hand_root.rotation_degrees = Vector3(62, 6, -22)
-	var tw := player.create_tween()
-	tw.tween_property(_hand_root, "rotation_degrees", Vector3(-48, 18, 14), 0.14)
-	tw.tween_property(_hand_root, "rotation_degrees", Vector3(12, 0, -8), 0.12)
+	viewmodel.play_swing()
 
 
 const Mining := preload("res://scripts/mining_rules.gd")

@@ -276,7 +276,9 @@ static func station_mesh(kind: String) -> ArrayMesh:
 		# v0.11: только корпус; крышка — отдельный меш на шарнире (chest_lid_mesh), открывается анимацией.
 		_mesh_part(st, "planks", Vector3(-0.45,-0.5,-0.45), Vector3(0.9,0.75,0.9))
 		_mesh_part(st, "log", Vector3(-0.47,0.17,-0.47), Vector3(0.94,0.08,0.94))
-		_mesh_part(st, "log", Vector3(-0.40,0.249,-0.40), Vector3(0.8,0.002,0.8))
+		# Тёмное «нутро»: при открытой крышке видно пустое дно, а не закрытую верхнюю грань.
+		st.append_from(cube_mesh("planks", Vector3(0.8, 0.01, 0.8), false, Color(0.28, 0.2, 0.14)), 0,
+			Transform3D(Basis.IDENTITY, Vector3(0.0, 0.252, 0.0)))
 		_mesh_part(st, "beacon", Vector3(-0.08,0.10,0.46), Vector3(0.16,0.12,0.04))
 	else:
 		for x in [-0.35,0.25]:
