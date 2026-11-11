@@ -273,9 +273,11 @@ static func station_mesh(kind: String) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
 	if kind == "chest":
+		# v0.11: только корпус; крышка — отдельный меш на шарнире (chest_lid_mesh), открывается анимацией.
 		_mesh_part(st, "planks", Vector3(-0.45,-0.5,-0.45), Vector3(0.9,0.75,0.9))
-		_mesh_part(st, "log", Vector3(-0.47,0.24,-0.47), Vector3(0.94,0.15,0.94))
-		_mesh_part(st, "beacon", Vector3(-0.08,0.05,0.46), Vector3(0.16,0.18,0.04))
+		_mesh_part(st, "log", Vector3(-0.47,0.17,-0.47), Vector3(0.94,0.08,0.94))
+		_mesh_part(st, "log", Vector3(-0.40,0.249,-0.40), Vector3(0.8,0.002,0.8))
+		_mesh_part(st, "beacon", Vector3(-0.08,0.10,0.46), Vector3(0.16,0.12,0.04))
 	else:
 		for x in [-0.35,0.25]:
 			for z in [-0.35,0.25]:
@@ -297,6 +299,24 @@ static func station_mesh(kind: String) -> ArrayMesh:
 			_mesh_part(st,"beacon",Vector3(-0.02,0.58,-0.02),Vector3(0.04,0.75,0.04))
 	st.set_material(material())
 	return st.commit()
+
+const CHEST_HINGE := Vector3(0.0, 0.25, -0.47)
+
+
+static func chest_lid_mesh() -> ArrayMesh:
+	## Крышка в координатах шарнира (задняя верхняя грань корпуса): закрыта при rotation.x = 0.
+	if _cubes.has("chest_lid"):
+		return _cubes["chest_lid"]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_mesh_part(st, "planks", Vector3(-0.47, 0.0, 0.0), Vector3(0.94, 0.15, 0.94))
+	_mesh_part(st, "log", Vector3(-0.48, 0.13, -0.01), Vector3(0.96, 0.04, 0.96))
+	_mesh_part(st, "beacon", Vector3(-0.08, -0.06, 0.93), Vector3(0.16, 0.14, 0.04))
+	st.set_material(material())
+	var m := st.commit()
+	_cubes["chest_lid"] = m
+	return m
+
 
 static func _mesh_part(st: SurfaceTool, kind: String, mn: Vector3, size: Vector3) -> void:
 	# Кубы используют тот же атлас/UV, без новых материалов.

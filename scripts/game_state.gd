@@ -966,6 +966,22 @@ func recipe_cost_text(rec: Dictionary) -> String:
 	return ", ".join(parts) if not parts.is_empty() else "бесплатно"
 
 
+func recipe_missing_text(rec: Dictionary) -> String:
+	var parts: Array[String] = []
+	var d := int(rec.get("dust", 0)) - dust
+	if d > 0: parts.append("%d осыпи" % d)
+	for t in range(1, 4):
+		var r := int(rec.get("reagent%d" % t, 0)) - get_reagent_count(t)
+		if r > 0: parts.append("%d %s" % [r, reagent_type_name(t)])
+	var lg := int(rec.get("log", 0)) - count_item("log")
+	if lg > 0: parts.append("%d бревно" % lg)
+	var need: Dictionary = rec.get("items", {})
+	for iid in need.keys():
+		var have := count_item(str(iid)) + (pillow_count("heal1") if str(iid) == "heal1" and is_dream() else 0)
+		if have < int(need[iid]): parts.append("%d %s" % [int(need[iid]) - have, ItemDB.display_name(str(iid))])
+	return ", ".join(parts) if not parts.is_empty() else "—"
+
+
 func recipe_label(rec: Dictionary) -> String:
 
 	var parts: Array[String] = []
@@ -1957,6 +1973,8 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	wake_resolved.emit(transferred,dust_gained,mutation.cells.size());last_transfer_apply_usec=Time.get_ticks_usec()-started
 	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0 if abort_transfer else maxi(0,root_count-transferred),"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
 	set_hint("Пробуждение: перенесено %d, мутаций %d, осыпи +%d%s"%[transferred,mutation.cells.size(),dust_gained," · черновик сохранён, ресурсы возвращены" if abort_transfer else ""],false)
+	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
+		chat("Под подушкой лежат зелья (%d). Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
 	return result
 
 

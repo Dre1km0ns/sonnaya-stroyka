@@ -198,6 +198,16 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "door": mi.transform=door_transform(cell,data)
 	add_child(mi)
 	_meshes[cell] = mi
+	if kind == "chest":
+		# v0.11: крышка на шарнире — анимируется при открытии сундука (set_chest_open).
+		var pivot := Node3D.new()
+		pivot.name = "LidPivot"
+		pivot.position = BlockTex.CHEST_HINGE
+		mi.add_child(pivot)
+		var lid := MeshInstance3D.new()
+		lid.name = "Lid"
+		lid.mesh = BlockTex.chest_lid_mesh()
+		pivot.add_child(lid)
 	if kind == "torch":
 		var flame := MeshInstance3D.new()
 		var fs := SphereMesh.new()
@@ -318,3 +328,31 @@ static func door_transform(cell: Vector3i,data: Dictionary) -> Transform3D:
 		basis=Basis(Vector3.UP,facing-side*PI/2.0)
 		center=hinge-basis*Vector3(side*0.5,0,0)
 	return Transform3D(basis,center)
+
+
+const CHEST_OPEN_DEG := -72.0
+const CHEST_ANIM_SEC := 0.22
+
+
+func chest_lid(cell: Vector3i) -> Node3D:
+	var mi: Node = _meshes.get(cell)
+	if mi == null or not is_instance_valid(mi):
+		return null
+	return mi.get_node_or_null("LidPivot") as Node3D
+
+
+func set_chest_open(cell: Vector3i, open: bool, animate: bool = true) -> bool:
+	var pivot := chest_lid(cell)
+	if pivot == null:
+		return false
+	var target := deg_to_rad(CHEST_OPEN_DEG) if open else 0.0
+	if pivot.has_meta("tween"):
+		var old: Tween = pivot.get_meta("tween")
+		if old and old.is_valid(): old.kill()
+	if not animate or not is_inside_tree():
+		pivot.rotation.x = target
+		return true
+	var tw := pivot.create_tween()
+	tw.tween_property(pivot, "rotation:x", target, CHEST_ANIM_SEC).set_trans(Tween.TRANS_BACK if open else Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	pivot.set_meta("tween", tw)
+	return true
