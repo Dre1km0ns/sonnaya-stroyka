@@ -934,7 +934,7 @@ func rain_plan(center: Vector3, count: int) -> Array:
 	for i in range(count):
 		var p := center
 		if i > 0:
-			for attempt in range(12):
+			for attempt in range(40):
 				var a := _rng.randf() * TAU
 				var r := 2.0 + _rng.randf() * 4.0
 				p = center + Vector3(cos(a) * r, 0, sin(a) * r)

@@ -2603,5 +2603,173 @@ func _v011_scene_checks() -> void:
 	_a(vm.swinging and vm.swing_count >= 1, 11109)
 	await create_timer(0.7).timeout
 	_a(not vm.swinging and vm.swing_pivot.rotation.length() < 0.001 and vm.hand_root.position.distance_to(hand_pos) < 0.05, 11110)
+	await _v0111_scene_checks(scene)
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.11 starter camp, no heal slot, weapon switch → ViewModelRig, sword dmg 8/14/24, swing returns to rest OK")
+
+
+
+func _labels_text(n: Node) -> Array:
+	var out: Array = []
+	for l in n.find_children("*", "Label", true, false):
+		out.append(str((l as Label).text))
+	return out
+
+
+func _v0111_scene_checks(scene: Node) -> void:
+	## v0.11.1 §9: правки пользователя A1–A8 + новые механики боссов.
+	var G: Node = root.get_node("GameState")
+	var build: Node = scene.build
+	var hud: Node = scene.get_node("HUD")
+	# A2: опора как в Minecraft — в воздухе ставить нельзя, рядом с блоком можно.
+	var air := Vector3i(3, 60, 3)
+	_a(not build.placement_supported(air, false) and not build.placement_supported(air, true), 12001)
+	G.wake_blocks[Vector3i(3, 59, 3)] = {"kind": "stone"}
+	_a(build.placement_supported(air, false), 12002)
+	G.wake_blocks.erase(Vector3i(3, 59, 3))
+	G.wake_blocks[Vector3i(4, 60, 3)] = {"kind": "torch"}
+	_a(not build.placement_supported(air, false), 12003)   # факел — не опора
+	G.wake_blocks.erase(Vector3i(4, 60, 3))
+	G.dream_blocks[Vector3i(3, 60, 4)] = {"kind": "drift"}
+	_a(build.placement_supported(air, true) and not build.placement_supported(air, false), 12004)   # опора своего слоя
+	G.dream_blocks.erase(Vector3i(3, 60, 4))
+	# A3: фонаря нет, миграция сейва → 4 факела.
+	_a(not G.find_recipe("lantern").size() > 0 and not ResourceLoader.exists("res://assets/icons/lantern.png"), 12010)
+	var save: Dictionary = G.to_save_dict()
+	var inv: Array = save.get("item_slots", [])
+	if inv.size() > 7:
+		inv[7] = {"id": "lantern", "name": "Фонарь", "count": 2}
+		save["item_slots"] = inv
+		var g2: Node = load("res://scripts/game_state.gd").new()
+		root.add_child(g2)
+		g2.apply_save_dict(JSON.parse_string(JSON.stringify(save)))
+		var torches := 0
+		var lanterns := 0
+		for sl in g2.inv_wake:
+			if typeof(sl) == TYPE_DICTIONARY and str(sl.get("id", "")) == "torch": torches += int(sl.get("count", 0))
+			if typeof(sl) == TYPE_DICTIONARY and str(sl.get("id", "")) == "lantern": lanterns += 1
+		_a(lanterns == 0 and torches >= 8, 12011)
+		g2.queue_free()
+	else:
+		_a(G.LANTERN_TORCH_REFUND == 4, 12011)
+	# A6: земной прыжок — высота апекса ≈1.26 м (v²/2g), меньше 1.5 блока.
+	var PC: GDScript = load("res://scripts/player_controller.gd")
+	var apex: float = PC.JUMP_VELOCITY * PC.JUMP_VELOCITY / (2.0 * PC.PLAYER_GRAVITY)
+	_a(apex > 1.1 and apex < 1.4, 12020)
+	print("SMOKE: v0.11.1 jump apex=%.2f m" % apex)
+	# A7: батарейка с числом внутри, без «100 HP» и «H — хилка1».
+	var hs: Dictionary = hud.heal_indicator_state()
+	var bat: Node = hud.find_child("HealthBattery", true, false)
+	_a(bool(hs.battery) and bat != null and str(bat.label.text) == str(G.player_hp) and not bool(hs.hearts), 12030)
+	for t in _labels_text(hud):
+		_a(not ("хилк" in t.to_lower()) and not (" HP" in t) and not ("HP " in t), 12031)
+	G.damage_player(30, "smoke", true)
+	await process_frame
+	_a(str(bat.label.text) == str(G.player_hp) and bat.fraction() < 1.0, 12032)
+	G.heal_player_full()
+	# A8: инвентарь без текстовых подсказок.
+	hud.inventory.open()
+	await process_frame
+	_a(hud.inventory.find_child("HealHelp", true, false) == null, 12040)
+	for t in _labels_text(hud.inventory):
+		_a(not ("ЛКМ" in t) and not ("Shift" in t) and not ("DEV" in t) and not ("Лечение" in t), 12041)
+	hud.inventory.toggle()
+	await process_frame
+	# A1: меч3 — объёмная 3D-модель (не плоская текстура).
+	var BT: GDScript = load("res://scripts/block_tex.gd")
+	var sm: Mesh = BT.sword3_mesh()
+	var aabb: AABB = sm.get_aabb()
+	_a(sm != null and aabb.size.x > 0.05 and aabb.size.z > 0.05 and aabb.size.y > 0.9 and aabb.size.y < 1.2, 12050)
+	var tm: Mesh = BT.torch_mesh()
+	_a(tm != null and tm.get_aabb().size.y > 0.6 and BT.torch_flame_mesh() != null, 12051)
+	# A4: 1% на блок; блоколиты 1/120 после первой победы, нейтральны, убийство зовёт Мать.
+	G.reset_state(); G.peaceful = false; G.dev_mode = false
+	_a(not G.blockolith_roll(0.0), 12060)                       # до победы над Матерью — нет
+	G.mother_defeated = true
+	_a(G.blockolith_roll(0.008) and not G.blockolith_roll(0.0084), 12061)   # 1/120 = 0.00833
+	G.set_boss_alive(true)
+	_a(not G.blockolith_roll(0.0), 12062)
+	G.set_boss_alive(false)
+	var host := Node3D.new(); scene.wake_world.add_child(host)
+	var bl: CharacterBody3D = load("res://scripts/blockling.gd").new()
+	bl.configure("blockolith", null, Vector3.ZERO)
+	bl.position = scene.player.global_position + Vector3(1.0, 0, 0)
+	host.add_child(bl)
+	await physics_frame
+	var hp0: int = G.player_hp
+	for i in range(90): await physics_frame
+	_a(bl.is_in_group("blockolith") and bl.max_hp == bl.BLOCKOLITH_HP and G.player_hp == hp0, 12063)   # нейтрален: не кусает
+	for m in get_nodes_in_group("block_mother"): m.free()
+	bl.take_damage(999)
+	for i in range(3): await process_frame
+	_a(get_nodes_in_group("block_mother").size() == 1 and G.blockoliths_killed == 1, 12064)
+	var mom: Node = get_nodes_in_group("block_mother")[0]
+	# Никогда два босса: Анаконда не выходит при живой Матери.
+	_a(load("res://scripts/boss_anaconda.gd").spawn_at(host, Vector3(30, 0, 30), "smoke") == null, 12065)
+	# Мать: 3 пластины × 6, кирка 2 / кирка2 6, меч по броне 0 (отскок).
+	mom._enter(mom.S.IDLE)
+	_a(mom.PLATE_COUNT == 3 and mom.PLATE_DURABILITY == 6 and mom.PICK_PLATE_DAMAGE["pickaxe"] == 2 and mom.PICK_PLATE_DAMAGE["pickaxe2"] == 6, 12070)
+	var r0: Dictionary = mom.receive_weapon_hit(24, "sword3")
+	_a(int(r0.dealt) == 0 and bool(r0.bounce) and mom.hp == mom.MAX_HP, 12071)
+	mom._open_plate()
+	_a(mom.state == mom.S.PLATE_OPEN and mom.open_plate >= 0, 12072)
+	var op: int = mom.open_plate
+	_a(int(mom.receive_weapon_hit(8, "sword").dealt) == 0 and mom.hp == mom.MAX_HP, 12073)   # меч и по открытой пластине — 0
+	mom.receive_weapon_hit(2, "pickaxe"); mom.receive_weapon_hit(2, "pickaxe")
+	_a(int(mom.plates[op]["dur"]) == 2 and mom.state == mom.S.PLATE_OPEN, 12074)
+	mom.receive_weapon_hit(2, "pickaxe")
+	_a(int(mom.plates[op]["dur"]) == 0 and mom.state == mom.S.CORE and mom.is_vulnerable(), 12075)   # ядро открыто + оглушение
+	var hpc: int = mom.hp
+	mom.receive_weapon_hit(8, "sword")
+	_a(mom.hp == hpc - 10, 12076)                                  # ×1.25 по ядру
+	_a(mom.CORE_TIME >= 2.5 and mom.CORE_TIME <= 3.5 and mom.PLATE_OPEN_TIME >= 3.0 and mom.PLATE_OPEN_TIME <= 4.0, 12077)
+	# Фаза II: носильщик возвращает пластину; фаза III — без восстановления.
+	mom.phase = 2
+	_a(mom.restore_plate() and int(mom.plates[op]["dur"]) == mom.PLATE_DURABILITY, 12078)
+	mom.plates[op]["dur"] = 0; mom.plates[op]["broken"] = true
+	mom.on_carrier_delivered(null)
+	_a(int(mom.plates[op]["dur"]) == mom.PLATE_DURABILITY, 12079)
+	mom.plates[op]["dur"] = 0; mom.plates[op]["broken"] = true
+	mom.phase = 3
+	_a(not mom.restore_plate() and int(mom.plates[op]["dur"]) == 0, 12080)
+	# Кирпичный дождь: 4–6 кирпичей, тени, навес спасает.
+	var plan: Array = mom.rain_plan(scene.player.global_position, 6)
+	_a(plan.size() == 6 and mom.RAIN_BRICKS_MIN >= 4 and mom.RAIN_BRICKS_MAX <= 6, 12081)
+	for i in range(plan.size()):
+		for j in range(i + 1, plan.size()):
+			var pi_: Vector3 = plan[i]["pos"]; var pj_: Vector3 = plan[j]["pos"]
+			_a(Vector2(pi_.x - pj_.x, pi_.z - pj_.z).length() >= 1.85, 12082)
+	mom._spawn_cover(scene.player.global_position)
+	_a(not mom._covers.is_empty() and mom.under_cover((mom._covers[0]["pos"] as Vector3)) and not mom.under_cover((mom._covers[0]["pos"] as Vector3) + Vector3(5, 0, 0)), 12083)
+	# Скрытого хила нет, урон ≤35% HP.
+	_a(mom.heal_from_blocks(5) == 0, 12084)
+	for d in [mom.SLAM_DAMAGE, mom.WAVE_DAMAGE, mom.REASSEMBLE_DAMAGE, mom.BRICK_DAMAGE, mom.CONTACT_DAMAGE]:
+		_a(int(d) <= 35, 12085)
+	mom.free()
+	await process_frame
+	# Анаконда: кеш факелов.
+	G.reset_state()
+	var reb0: int = G.torch_cache_rebuilds
+	G.wake_blocks[Vector3i(1, 1, 1)] = {"kind": "torch"}
+	_a(G.torch_cells().size() == 1, 12090)
+	var reb1: int = G.torch_cache_rebuilds
+	for i in range(50): G.torch_cells()
+	_a(G.torch_cache_rebuilds == reb1 and reb1 > reb0, 12091)       # без изменений — без пересканирования
+	_a(G.remove_torch(Vector3i(1, 1, 1)) and G.torch_cells().is_empty(), 12092)
+	# Сердца: сохраняются, Сердце структуры: клинья +2, перенос без мутаций.
+	G.heart_light = true; G.heart_structure = true
+	_a(G.wedge_size() == G.WEDGE_SIZE + 2 and G.anchor3_size() == G.ANCHOR3_SIZE + 2, 12100)
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	var g3: Node = load("res://scripts/game_state.gd").new()
+	root.add_child(g3)
+	g3.apply_save_dict(sv)
+	_a(g3.heart_light and g3.heart_structure, 12101)
+	g3.queue_free()
+	_a(G.recipe_available(_rec(G, "lumen"), {"is_dream": true}) and G.is_placeable_block("lumen"), 12102)
+	G.heart_light = false
+	_a(not G.recipe_available(_rec(G, "lumen"), {"is_dream": true}), 12103)
+	G.heart_structure = false
+	_a(G.wedge_size() == G.WEDGE_SIZE, 12104)
+	host.queue_free()
+	await process_frame
+	print("SMOKE: v0.11.1 placement/lantern/jump/battery/inventory/sword3/torch/blockolith/plates/carriers/cover/cache/hearts OK")
