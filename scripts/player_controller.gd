@@ -3,7 +3,12 @@ extends CharacterBody3D
 
 const SPEED := 6.0
 const SPRINT := 10.0
-const JUMP_VELOCITY := 5.5
+## v0.11.1: земная физика прыжка — сильная гравитация, короткая дуга, высота ≈1.25 блока.
+## h = v²/(2g): 8.4² / (2·28) ≈ 1.26 м; время в воздухе ≈ 0.6 с (было 5.5 и 9.8 → 1.54 м, 1.1 с «как на Луне»).
+const JUMP_VELOCITY := 8.4
+const PLAYER_GRAVITY := 28.0
+const FALL_GRAVITY_MULT := 1.25   # падение чуть быстрее подъёма — «снэппи» дуга
+const MAX_FALL_SPEED := 45.0
 const FLY_SPEED := 10.0
 const MOUSE_SENS_DEFAULT := 0.001
 const MOUSE_SENS_MIN := 0.0002
@@ -28,7 +33,7 @@ const PICKUP_BUDGET_USEC:=1500
 @onready var ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
 
 var flying: bool = false
-var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+var gravity: float = PLAYER_GRAVITY
 var mouse_sens: float = MOUSE_SENS_DEFAULT
 
 
@@ -106,7 +111,8 @@ func _physics_process(delta: float) -> void:
 		velocity.y = y_move * FLY_SPEED
 	else:
 		if not is_on_floor():
-			velocity.y -= gravity * delta
+			velocity.y -= gravity * delta * (FALL_GRAVITY_MULT if velocity.y < 0.0 else 1.0)
+			velocity.y = maxf(velocity.y, -MAX_FALL_SPEED)
 		if Input.is_action_just_pressed("jump") and is_on_floor() and not GameState.ui_blocked():
 			velocity.y = JUMP_VELOCITY
 		if direction != Vector3.ZERO:

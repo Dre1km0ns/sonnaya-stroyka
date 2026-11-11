@@ -1,66 +1,75 @@
 extends Node3D
-## v0.7: босс «Анаконда» — подземный сегментный червь. Живёт в гнёздах (пещеры и закрытые купола).
-## Выходит ТОЛЬКО ночью, на рассвете уходит в глубину. Оружие её не берёт (чешуя) — урон наносит
-## только СВЕТ: поставленные факелы (зона r=3.5 м) и факел в руке (r=2.5 м). Контрплей — заманить
-## под свет: вынырнув в освещённой точке, она слепнет (оглушение, урон ×2).
-## Дизайн и баланс — docs/boss_anaconda.md.
+## v0.11.1: босс «Анаконда» — подземный сегментный червь. Живёт в гнёздах, выходит ТОЛЬКО ночью (ночь 420 с),
+## на рассвете уходит. Дизайн и баланс — docs/boss_anaconda.md, docs/boss_redesign_v0.11.md.
+##
+## Урон наносят ТОЛЬКО поставленные факелы (оружие = 0, факел в руке = 0). Перекрёстный огонь по голове:
+##   1 источник — «обнаружение» (урона нет, она вздрагивает), 2 — жжёт, 3+ — усиленный ожог.
+## Оглушения нет совсем. Контрплей вместо стана: усиленный ожог (3+ источника) заставляет её
+## ВЫНУЖДЕННО ОТСТУПИТЬ (раньше нырнуть) — окно короче, но урон выше.
+## Каждая секция тела (голова + все сегменты) ломает факел касанием. Факелы берутся из кеша GameState.torch_cells().
+## Фазы: I — подкоп с трещинами-телеграфом; II — 3–4 читаемые зоны обвала + землеройки (до 2), гасящие факелы;
+##        III — кольцо вокруг игрока, рвётся только факелом, ПОСТАВЛЕННЫМ внутри кольца во время сжатия.
 
 const BlockTex := preload("res://scripts/block_tex.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 const _Vis := preload("res://scripts/enemy_visuals.gd")
 
-enum S { SPAWN, UNDER, TELEGRAPH, BURST, REST, STUNNED, DIVE, CAVEIN, COIL, CONSTRICT, TRANSITION, LEAVING, DEAD }
-const STATE_NAMES := ["SPAWN", "UNDER", "TELEGRAPH", "BURST", "REST", "STUNNED", "DIVE", "CAVEIN", "COIL", "CONSTRICT", "TRANSITION", "LEAVING", "DEAD"]
+enum S { SPAWN, UNDER, TELEGRAPH, BURST, REST, RETREAT, DIVE, CAVEIN, COIL, CONSTRICT, TRANSITION, LEAVING, DEAD }
+const STATE_NAMES := ["SPAWN", "UNDER", "TELEGRAPH", "BURST", "REST", "RETREAT", "DIVE", "CAVEIN", "COIL", "CONSTRICT", "TRANSITION", "LEAVING", "DEAD"]
 
-# ---- баланс (см. дизайн-док, раздел 3)
-const MAX_HP := 2850                   # TTK ≈ 210 с при 3 факелах (tools/anaconda_sim.gd)
+# ---- баланс (см. docs/boss_anaconda.md, раздел 3)
+const MAX_HP := 1250
 const P2_AT := MAX_HP * 66 / 100       # 66%
 const P3_AT := MAX_HP * 33 / 100       # 33%
 const SEGMENTS := 10
 const SPACING := 0.95
 const HEAD_SIZE := 1.3
-const UNDER_DEPTH := 2.6               # голова под полом во время подкопа
+const UNDER_DEPTH := 2.6
 const UNDER_SPEED := [7.0, 8.0, 9.0]
-const TELEGRAPH := [1.0, 0.85, 0.7]    # трещины на полу перед выныриванием (≥0.6 с)
+const TELEGRAPH := [1.1, 1.0, 0.9]    # трещины на полу перед выныриванием (≥0.8 с)
 const BURST_TIME := 0.35
 const BURST_HEIGHT := 3.4
 const BURST_RADIUS := 1.8
-const BURST_DAMAGE := 30               # 30% HP игрока
-const REST_TIME := [1.4, 1.2, 1.0]
-const STUN_TIME := [2.6, 2.3, 2.0]
+const BURST_DAMAGE := 30               # 30% HP игрока (кап 35%)
+const REST_TIME := [2.4, 2.2, 2.0]     # голова на поверхности — окно для перекрёстного огня
+const RETREAT_AFTER := 1.6             # столько секунд усиленного ожога — и она вынужденно отступает
+const RETREAT_TIME := 0.5
 const DIVE_TIME := 0.6
-const CONTACT_DAMAGE := 5              # голова на поверхности, вплотную (≤5%)
+const CONTACT_DAMAGE := 5
 const CONTACT_CD := 1.0
-const CAVEIN_EVERY := 2                # фаза 2+: каждый 2-й нырок — обвал
-const CAVEIN_WINDUP := 1.0             # тени камней
-const CAVEIN_ROCKS := 6
+const CAVEIN_EVERY := 2
+const CAVEIN_WINDUP := 1.3             # зоны обвала видны 1.3 с
+const CAVEIN_ZONES_MIN := 3
+const CAVEIN_ZONES_MAX := 4
 const ROCK_DAMAGE := 14
-const ROCK_RADIUS := 0.9
-const COIL_EVERY := 3                  # фаза 3: каждый 3-й нырок — кольцо
+const ROCK_RADIUS := 1.5
+const COIL_EVERY := 3
 const COIL_RADIUS := 5.0
-const COIL_TIME := 3.0
+const COIL_TIME := 3.5
 const CONSTRICT_WINDUP := 1.2
 const CONSTRICT_DAMAGE := 25
 const CONSTRICT_INNER := 4.2
+const CONSTRICT_SAFE_R := 1.6          # у своего факела внутри кольца сжатие не достаёт
 const COIL_CONTACT := 8
+const RING_BREAK_DAMAGE := 45          # факел внутри кольца: ожог + вынужденный нырок
 const TRANSITION_TIME := 2.0
 # ---- свет
 const TORCH_RADIUS := 3.5
-const HELD_TORCH_RADIUS := 2.5
-const HEAD_LIGHT_DPS := 6.0            # за каждую зону света (макс. 2 зоны)
-const BODY_LIGHT_DPS := 1.5            # за сегмент в свете (макс. 4 сегмента)
-const STUN_MULT := 2.0
-# ---- миньоны (землеройки)
-const MINION_SPAWN := 2
-const MINION_CAP := 4
-const MINION_PITY := 3                 # 3 нырка без миньонов → гарантированно 1
+const HELD_TORCH_RADIUS := 2.5         # только для подсказок: урона факел в руке не наносит
+const BURN_DPS := 13.0                 # 2 источника
+const BOOST_MULT := 2.0                # 3+ источника
+const TORCH_BREAK_R := 0.65            # касание секцией тела по горизонтали (полширины сегмента + 0.07)
+const TORCH_BREAK_DY := 1.0
+# ---- землеройки
+const MINION_SPAWN := 1
+const MINION_CAP := 2
 # ---- поведение
 const LEASH_DIST := 42.0
 const LEASH_TIME := 8.0
 const REWARD_DUST := 300
 const REWARD_R3 := 4
 const REWARD_R2 := 3
-const SUMMON_DIST := 6.0              # призыв яйцом: в 6 м перед игроком
+const SUMMON_DIST := 6.0
 
 var hp: int = MAX_HP
 var max_hp: int = MAX_HP
@@ -69,12 +78,19 @@ var state: int = S.SPAWN
 var nest_id: String = ""
 var home: Vector3 = Vector3.ZERO
 var frozen: bool = false
-var attack_log := {"burst": 0, "burst_hit": 0, "stun": 0, "rest": 0, "cavein": 0, "rock_hit": 0, "coil": 0, "constrict_hit": 0, "coil_broken": 0, "transition": 0, "minions": 0}
+var attack_log := {"burst": 0, "burst_hit": 0, "rest": 0, "retreat": 0, "detected": 0, "cavein": 0, "rock_hit": 0,
+	"coil": 0, "constrict_hit": 0, "coil_broken": 0, "transition": 0, "minions": 0, "contact_hit": 0, "coil_hit": 0}
+var damage_by_source := {"crossfire2": 0.0, "crossfire3": 0.0, "ring_break": 0.0, "held": 0.0, "weapon": 0.0}
 var state_log: Array = []
+var phases_seen := {1: true}
 var light_damage_total: float = 0.0
 var weapon_hits_ignored: int = 0
+var held_light_ignored: float = 0.0
 var leave_reason: String = ""
 var hit_radius: float = 0.8
+var torches_broken := 0
+var torches_broken_by_body := 0
+var break_states: Dictionary = {}
 
 var _t: float = 0.0
 var _head: Node3D
@@ -85,7 +101,6 @@ var _emerge: Vector3 = Vector3.ZERO
 var _crack: MeshInstance3D = null
 var _rocks: Array = []                 # [{shadow, at, t}]
 var _dives: int = 0
-var _no_minion_dives: int = 0
 var _pending_transition: int = 0
 var _dmg_acc: float = 0.0
 var _contact_cd: float = 0.0
@@ -94,14 +109,11 @@ var _leash_t: float = 0.0
 var _coil_center: Vector3 = Vector3.ZERO
 var _coil_ang: float = 0.0
 var _coil_hit_cd: float = 0.0
-var _torches: Array[Vector3] = []
-var _torch_scan: float = 0.0
-var torch_break_cd := 0.0
-var torches_broken := 0
-var _torch_contacts: Dictionary = {}
+var _coil_start_torches: Dictionary = {}
+var _boost_t: float = 0.0
+var _detect_flag := false
 var _rng := RandomNumberGenerator.new()
 var _floor_y: float = 0.0
-var _stun_len: float = 0.0
 
 
 static func spawn_at(host: Node3D, pos: Vector3, nid: String) -> Node:
@@ -109,6 +121,8 @@ static func spawn_at(host: Node3D, pos: Vector3, nid: String) -> Node:
 		return null
 	if host.get_tree().get_nodes_in_group("anaconda").size() > 0:
 		return null
+	if host.get_tree().get_nodes_in_group("block_mother").size() > 0:
+		return null  # никогда два босса одновременно
 	var script: GDScript = load("res://scripts/boss_anaconda.gd")
 	var b: Node3D = script.new()
 	b.set("nest_id", nid)
@@ -123,15 +137,27 @@ func boss_title() -> String:
 
 
 func boss_hint() -> String:
-	if state == S.STUNNED:
-		return "   — ОСЛЕПЛЕНА СВЕТОМ!"
+	if state == S.RETREAT:
+		return "   — ОТСТУПАЕТ от света!"
+	if state == S.COIL:
+		return "   — поставь факел ВНУТРИ кольца!"
 	if is_invulnerable():
 		return "   — в земле"
-	return "   — бей СВЕТОМ (факелы)"
+	match crossfire_level():
+		0: return "   — нужен свет поставленных факелов"
+		1: return "   — один факел только заметил её: нужен второй"
+		2: return "   — горит в перекрёстном огне"
+	return "   — ожог ×2 (3+ факела)"
+
+
+func set_seed(v: int) -> void:
+	_rng.seed = v
+	set_meta("seeded", true)
 
 
 func _ready() -> void:
-	_rng.randomize()
+	if not has_meta("seeded"):
+		_rng.randomize()
 	add_to_group("anaconda")
 	add_to_group("boss")
 	add_to_group("enemy")
@@ -147,7 +173,7 @@ func _ready() -> void:
 	_on_world(GameState.is_dream())
 	_enter(S.SPAWN)
 	roar()
-	GameState.chat("Из гнезда поднимается Анаконда! Сталь её не берёт — ставь факелы и заманивай под свет.", Color(1.0, 0.5, 0.3))
+	GameState.chat("Из гнезда поднимается Анаконда! Сталь и факел в руке её не берут — жгут только ПОСТАВЛЕННЫЕ факелы, 2–3 с разных сторон.", Color(1.0, 0.5, 0.3))
 
 
 func _on_world(is_dream: bool) -> void:
@@ -204,17 +230,23 @@ func is_invulnerable() -> bool:
 
 
 func is_vulnerable() -> bool:
-	return state == S.STUNNED
+	## Оглушения больше нет. «Уязвима» = голова на поверхности (свет может жечь).
+	return state in [S.BURST, S.REST, S.RETREAT, S.COIL, S.CONSTRICT, S.CAVEIN]
 
 
 func take_damage(_amount: int) -> void:
-	## Меч и кирка не пробивают чешую — только свет.
+	receive_weapon_hit(_amount, "")
+
+
+func receive_weapon_hit(_amount: int, _weapon_id: String = "") -> Dictionary:
+	## Меч и кирка не пробивают чешую — 0 урона, только подсказка.
 	weapon_hits_ignored += 1
 	if weapon_hits_ignored == 1 or weapon_hits_ignored % 8 == 0:
-		GameState.set_hint("Клинок соскальзывает с чешуи — Анаконду жжёт только свет факелов!", weapon_hits_ignored == 1)
+		GameState.set_hint("Клинок соскальзывает с чешуи — Анаконду жгут только поставленные факелы!", weapon_hits_ignored == 1)
+	return {"dealt": 0, "target": "scales", "bounce": true}
 
 
-func apply_light_damage(amount: float) -> int:
+func apply_light_damage(amount: float, source: String = "crossfire2") -> int:
 	if state == S.DEAD or state == S.LEAVING or is_invulnerable() or amount <= 0.0:
 		return 0
 	_dmg_acc += amount
@@ -229,7 +261,9 @@ func apply_light_damage(amount: float) -> int:
 		floor_hp = P3_AT
 	var before := hp
 	hp = maxi(floor_hp, hp - dmg)
-	light_damage_total += float(before - hp)
+	var dealt := before - hp
+	light_damage_total += float(dealt)
+	damage_by_source[source] = float(damage_by_source.get(source, 0.0)) + float(dealt)
 	_Vis.update_hp_bar(_head, hp, max_hp)
 	if phase == 1 and hp <= P2_AT:
 		_pending_transition = 2
@@ -237,17 +271,22 @@ func apply_light_damage(amount: float) -> int:
 		_pending_transition = 3
 	if hp <= 0:
 		_die()
-	return before - hp
+	return dealt
+
+
+static func torch_pos(c: Vector3i) -> Vector3:
+	return Vector3(float(c.x) + 0.5, float(c.y) + 0.6, float(c.z) + 0.5)
 
 
 func light_zones() -> Array:
-	## [{pos, r, held}] — поставленные факелы + факел в руке игрока.
+	## [{pos, r, held}] — только ПОСТАВЛЕННЫЕ факелы (кеш GameState). Факел в руке в список не входит.
 	var out: Array = []
-	for t in _torches:
-		out.append({"pos": t, "r": TORCH_RADIUS, "held": false})
-	var p := _player()
-	if p and GameState.selected_is("torch") and not GameState.is_dream():
-		out.append({"pos": p.global_position + Vector3(0, 1.2, 0), "r": HELD_TORCH_RADIUS, "held": true})
+	if GameState.is_dream():
+		return out
+	for c in GameState.torch_cells():
+		var wp := torch_pos(c)
+		if _head == null or wp.distance_to(_head.global_position) < 40.0:
+			out.append({"pos": wp, "r": TORCH_RADIUS, "held": false, "cell": c})
 	return out
 
 
@@ -258,38 +297,31 @@ func is_point_lit(pt: Vector3) -> bool:
 	return false
 
 
+func crossfire_level() -> int:
+	## Сколько разных поставленных факелов освещают голову.
+	if _head == null:
+		return 0
+	var n := 0
+	var hp_pos := _head.global_position
+	for z in light_zones():
+		if (z["pos"] as Vector3).distance_to(hp_pos) <= float(z["r"]) + 0.4:
+			n += 1
+	return n
+
+
 func light_dps() -> float:
-	## Текущий урон светом в секунду (голова — до 2 зон, тело — до 4 сегментов).
+	## 1 источник — 0 (обнаружение), 2 — BURN_DPS, 3+ — BURN_DPS × BOOST_MULT. Факел в руке — всегда 0.
 	if is_invulnerable():
 		return 0.0
-	var zones := light_zones()
-	var head_z := 0
-	var hp_pos := _head.global_position
-	for z in zones:
-		if (z["pos"] as Vector3).distance_to(hp_pos) <= float(z["r"]) + 0.4:
-			head_z += 1
-	var body := 0
-	for s in _segs:
-		if body >= 4:
-			break
-		for z2 in zones:
-			if (z2["pos"] as Vector3).distance_to(s.global_position) <= float(z2["r"]):
-				body += 1
-				break
-	var dps := HEAD_LIGHT_DPS * float(mini(head_z, 2)) + BODY_LIGHT_DPS * float(body)
-	if state == S.STUNNED:
-		dps *= STUN_MULT
-	return dps
+	var n := crossfire_level()
+	if n < 2:
+		return 0.0
+	return BURN_DPS * (BOOST_MULT if n >= 3 else 1.0)
 
 
-func _scan_torches() -> void:
-	_torches.clear()
-	for c in GameState.wake_blocks.keys():
-		if str((GameState.wake_blocks[c] as Dictionary).get("kind", "")) == "torch":
-			var cell: Vector3i = c
-			var wp := Vector3(float(cell.x) + 0.5, float(cell.y) + 0.6, float(cell.z) + 0.5)
-			if wp.distance_to(global_position) < 60.0:
-				_torches.append(wp)
+func held_torch_near() -> bool:
+	var p := _player()
+	return p != null and _head != null and GameState.selected_is("torch") and p.global_position.distance_to(_head.global_position) <= HELD_TORCH_RADIUS + 1.0
 
 
 # ---------------------------------------------------------------- машина состояний
@@ -325,25 +357,18 @@ func _physics_process(delta: float) -> void:
 
 
 func tick(delta: float) -> void:
-	torch_break_cd = maxf(0.0, torch_break_cd - delta)
-	_check_torch_collision()
 	if frozen or state == S.DEAD or state == S.LEAVING:
 		return
+	check_body_torch_contacts()
 	_t += delta
 	_contact_cd = maxf(0.0, _contact_cd - delta)
 	_coil_hit_cd = maxf(0.0, _coil_hit_cd - delta)
-	_torch_scan -= delta
-	if _torch_scan <= 0.0:
-		_torch_scan = 0.5
-		_scan_torches()
-	# Рассвет — уходит.
 	if not GameState.is_night():
 		leave("Светает — Анаконда уходит в глубину.")
 		return
 	var player := _player()
 	if player == null:
 		return
-	# Поводок: игрок убежал от гнезда.
 	if player.global_position.distance_to(home) > LEASH_DIST:
 		_leash_t += delta
 		if _leash_t > LEASH_TIME:
@@ -351,11 +376,17 @@ func tick(delta: float) -> void:
 			return
 	else:
 		_leash_t = 0.0
+	var lvl := crossfire_level() if not is_invulnerable() else 0
+	if lvl == 1 and not _detect_flag:
+		attack_log["detected"] += 1
+	_detect_flag = lvl == 1
 	var dps := light_dps()
 	if dps > 0.0:
-		apply_light_damage(dps * delta)
+		apply_light_damage(dps * delta, "crossfire3" if lvl >= 3 else "crossfire2")
 		if state == S.DEAD:
 			return
+	if held_torch_near() and not is_invulnerable():
+		held_light_ignored += delta
 	_tick_rocks(delta, player)
 	match state:
 		S.SPAWN:
@@ -375,15 +406,33 @@ func tick(delta: float) -> void:
 			var f := minf(1.0, _t / BURST_TIME)
 			_move_head(_emerge + Vector3(0, -UNDER_DEPTH + (UNDER_DEPTH + BURST_HEIGHT) * f, 0), delta, 40.0)
 			if _t >= BURST_TIME:
-				_after_burst()
-		S.REST, S.STUNNED:
+				attack_log["rest"] += 1
+				_boost_t = 0.0
+				_rest_lock = _rest_dir()
+				_enter(S.REST)
+				# Фаза II+: на каждом втором выныривании она бьёт хвостом по своду — обвал, пока голова снаружи.
+				if phase >= 2 and _dives % CAVEIN_EVERY == 1:
+					_start_cavein(player)
+		S.REST:
 			var lie := _emerge + Vector3(0, HEAD_SIZE * 0.45, 0) + _rest_dir() * 1.6
 			_move_head(lie, delta, 6.0)
 			_contact(player)
-			var len := _stun_len if state == S.STUNNED else float(REST_TIME[phase - 1])
+			_boost_t = _boost_t + delta if lvl >= 3 else maxf(0.0, _boost_t - delta * 0.5)
 			if _pending_transition > 0:
 				_start_transition()
-			elif _t >= len:
+			elif _boost_t >= RETREAT_AFTER:
+				# Вынужденное отступление вместо стана: усиленный ожог гонит её под землю раньше.
+				attack_log["retreat"] += 1
+				_enter(S.RETREAT)
+				roar(false)
+				_flash_body(true)
+			elif _t >= float(REST_TIME[phase - 1]):
+				_start_dive()
+		S.RETREAT:
+			var away := _emerge + _rest_dir() * 2.4 + Vector3(0, HEAD_SIZE * 0.3, 0)
+			_move_head(away, delta, 9.0)
+			if _t >= RETREAT_TIME:
+				_flash_body(false)
 				_start_dive()
 		S.DIVE:
 			var f2 := minf(1.0, _t / DIVE_TIME)
@@ -432,6 +481,7 @@ func _tick_under(delta: float, player: CharacterBody3D) -> void:
 
 
 func _start_burst(player: CharacterBody3D) -> void:
+	_rest_lock = Vector3.ZERO
 	_enter(S.BURST)
 	attack_log["burst"] += 1
 	_free_crack()
@@ -443,19 +493,13 @@ func _start_burst(player: CharacterBody3D) -> void:
 			player.velocity += Vector3(to.x, 0, to.z).normalized() * 7.0 + Vector3(0, 4.0, 0)
 
 
-func _after_burst() -> void:
-	if is_point_lit(_emerge + Vector3(0, 1.0, 0)):
-		attack_log["stun"] += 1
-		_stun_len = float(STUN_TIME[phase - 1])
-		_enter(S.STUNNED)
-		roar(false)
-		GameState.set_hint("Анаконда ослеплена светом! Урон ×2", false)
-	else:
-		attack_log["rest"] += 1
-		_enter(S.REST)
+var _rest_lock := Vector3.ZERO
 
 
 func _rest_dir() -> Vector3:
+	## Направление, куда ляжет тело, фиксируется в момент выныривания (читаемо: тело не «метёт» по кругу).
+	if _rest_lock != Vector3.ZERO and state in [S.REST, S.RETREAT, S.DIVE]:
+		return _rest_lock
 	var p := _player()
 	if p == null:
 		return Vector3(1, 0, 0)
@@ -473,12 +517,6 @@ func _after_dive(player: CharacterBody3D) -> void:
 	if phase >= 3 and _dives % COIL_EVERY == 0:
 		_start_coil(player)
 		return
-	if phase >= 2 and _dives % CAVEIN_EVERY == 0:
-		_start_cavein(player)
-		return
-	_no_minion_dives += 1
-	if phase >= 2 and _no_minion_dives >= MINION_PITY:
-		_spawn_minions(1)
 	_go_under()
 
 
@@ -487,31 +525,87 @@ func _contact(player: CharacterBody3D) -> void:
 		return
 	if player.global_position.distance_to(_head.global_position) < HEAD_SIZE * 0.5 + 0.6:
 		_contact_cd = CONTACT_CD
-		GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONTACT_DAMAGE), "Анаконда: касание")
+		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONTACT_DAMAGE), "Анаконда: касание") > 0:
+			attack_log["contact_hit"] += 1
+
+
+# ---------------------------------------------------------------- касание тела ломает факелы
+
+func check_body_torch_contacts() -> int:
+	## Каждая секция (голова и все сегменты) ломает поставленный факел при касании. Без шанса и без КД.
+	if _head == null or GameState.is_dream():
+		return 0
+	var cells := GameState.torch_cells()
+	if cells.is_empty():
+		return 0
+	var parts: Array = segment_positions()
+	var hpos := _head.global_position
+	var victims: Array = []
+	for c in cells:
+		var tp := torch_pos(c)
+		if tp.distance_to(hpos) > SPACING * float(SEGMENTS) + 3.0:
+			continue
+		for pp in parts:
+			var q: Vector3 = pp
+			if Vector2(q.x - tp.x, q.z - tp.z).length() <= TORCH_BREAK_R and absf(q.y - tp.y) <= TORCH_BREAK_DY:
+				victims.append(c)
+				break
+	for v in victims:
+		break_torch(v, "тело")
+	return victims.size()
+
+
+func break_torch(c: Vector3i, by: String = "тело") -> bool:
+	if not GameState.remove_torch(c):
+		return false
+	torches_broken += 1
+	if by == "тело":
+		torches_broken_by_body += 1
+		var bk := "break_in_" + str(STATE_NAMES[state])
+		break_states[bk] = int(break_states.get(bk, 0)) + 1
+	if is_inside_tree():
+		for v in get_tree().get_nodes_in_group("voxel_world"):
+			if not v.is_dream_layer:
+				v.remove_block(c)
+		_dust_puff(torch_pos(c))
+	GameState.chat("Анаконда сломала факел (%s)!" % by, Color(1, 0.7, 0.3))
+	return true
+
+
+func try_break_torch(c: Vector3i, _roll: float = -1.0) -> bool:
+	## Совместимость v0.11: теперь касание ломает всегда.
+	return break_torch(c, "тело")
 
 
 # ---------------------------------------------------------------- фаза 2: обвал + землеройки
 
+func cavein_zone_count() -> int:
+	return CAVEIN_ZONES_MIN + (1 if _rng.randf() < 0.5 else 0)
+
+
 func _start_cavein(player: CharacterBody3D) -> void:
-	_enter(S.CAVEIN)
+	## Обвал не отнимает окно урона: камни падают, пока голова на поверхности (состояние REST сохраняется).
 	attack_log["cavein"] += 1
 	roar(true)
-	GameState.set_hint("Обвал! Уходи с теней камней.", false)
+	GameState.set_hint("Обвал! Уходи из тёмных кругов.", false)
 	var center := player.global_position
-	for i in range(CAVEIN_ROCKS):
+	var n := cavein_zone_count()
+	var base := _rng.randf() * TAU
+	for i in range(n):
 		var p: Vector3
 		if i == 0:
 			p = center
 		else:
-			var a := _rng.randf() * TAU
-			var r := 1.6 + _rng.randf() * 3.8
-			p = center + Vector3(cos(a) * r, 0, sin(a) * r)
+			# Зоны по кругу с промежутками: между ними всегда есть безопасный проход.
+			var a := base + TAU * float(i) / float(n - 1) * 0.85
+			p = center + Vector3(cos(a) * 3.4, 0, sin(a) * 3.4)
 		p.y = _floor_at(p)
 		var sh := _disc(ROCK_RADIUS, Color(0.15, 0.1, 0.05, 0.75))
 		sh.position = p + Vector3(0, 0.05, 0)
 		_world().add_child(sh)
-		_rocks.append({"shadow": sh, "at": p, "t": CAVEIN_WINDUP + 0.08 * float(i)})
-	_spawn_minions(MINION_SPAWN)
+		_rocks.append({"shadow": sh, "at": p, "t": CAVEIN_WINDUP + 0.1 * float(i)})
+	attack_log["cavein_n"] = int(attack_log.get("cavein_n", 0)) + n
+	_spawn_minions(MINION_SPAWN)   # по одной землеройке на обвал, живых не больше 2
 
 
 func _tick_rocks(delta: float, player: CharacterBody3D) -> void:
@@ -521,7 +615,7 @@ func _tick_rocks(delta: float, player: CharacterBody3D) -> void:
 		if float(r["t"]) > 0.0:
 			var sh: MeshInstance3D = r["shadow"]
 			if is_instance_valid(sh):
-				var k := 1.0 + 0.4 * (1.0 - clampf(float(r["t"]) / CAVEIN_WINDUP, 0.0, 1.0))
+				var k := 1.0 + 0.25 * (1.0 - clampf(float(r["t"]) / CAVEIN_WINDUP, 0.0, 1.0))
 				sh.scale = Vector3(k, 1, k)
 			keep.append(r)
 			continue
@@ -529,7 +623,7 @@ func _tick_rocks(delta: float, player: CharacterBody3D) -> void:
 		_free_node(r["shadow"])
 		_dust_puff(at + Vector3(0, 0.3, 0))
 		var d := player.global_position - at
-		if Vector2(d.x, d.z).length() <= ROCK_RADIUS + 0.35 and d.y > -0.6 and d.y < 2.0:
+		if Vector2(d.x, d.z).length() <= ROCK_RADIUS + 0.3 and d.y > -0.6 and d.y < 2.0:
 			if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,ROCK_DAMAGE), "Анаконда: обвал") > 0:
 				attack_log["rock_hit"] += 1
 	_rocks = keep
@@ -548,14 +642,14 @@ func _spawn_minions(count: int) -> int:
 	var n := mini(count, room)
 	if n <= 0:
 		return 0
-	_no_minion_dives = 0
 	var script: GDScript = load("res://scripts/anaconda_worm.gd")
 	for i in range(n):
 		var w: Node3D = script.new()
 		var a := _rng.randf() * TAU
-		var p := _head.global_position + Vector3(cos(a) * 2.5, 0, sin(a) * 2.5)
+		var p := _head.global_position + Vector3(cos(a) * 4.0, 0, sin(a) * 4.0)
 		p.y = _floor_at(p)
 		w.position = p
+		w.set("boss", self)
 		_world().add_child(w)
 	attack_log["minions"] += n
 	return n
@@ -571,7 +665,14 @@ func _start_coil(player: CharacterBody3D) -> void:
 	_coil_center.y = _floor_at(_coil_center)
 	var d := _head.global_position - _coil_center
 	_coil_ang = atan2(d.z, d.x)
-	GameState.set_hint("Анаконда сворачивается кольцом! Выпрыгни через тело или встань под факел.", false)
+	_coil_start_torches = {}
+	for c in GameState.torch_cells():
+		_coil_start_torches[c] = true
+	GameState.set_hint("Анаконда сворачивается кольцом! Поставь факел ВНУТРИ кольца — или выпрыгни.", false)
+
+
+func coil_center() -> Vector3:
+	return _coil_center
 
 
 func _coil_point(ang: float) -> Vector3:
@@ -583,28 +684,38 @@ func _tick_coil_body(delta: float) -> void:
 	_move_head(_coil_point(_coil_ang), delta, 30.0)
 
 
+func torch_placed_inside_coil() -> bool:
+	## Кольцо рвёт только факел, поставленный внутри кольца ПОСЛЕ его начала (факел в руке не считается).
+	for c in GameState.torch_cells():
+		if _coil_start_torches.has(c):
+			continue
+		var tp := torch_pos(c)
+		if Vector2(tp.x - _coil_center.x, tp.z - _coil_center.z).length() <= COIL_RADIUS - 0.6:
+			return true
+	return false
+
+
 func _tick_coil(delta: float, player: CharacterBody3D) -> void:
 	_coil_ang += TAU / COIL_TIME * delta
 	_move_head(_coil_point(_coil_ang), delta, 30.0)
-	# Тело кольца — стена: касание сегмента бьёт (контрплей — не стоять у тела).
 	if _coil_hit_cd <= 0.0:
 		for s in _segs:
 			if s.global_position.distance_to(player.global_position + Vector3(0, 0.6, 0)) < 0.9:
 				_coil_hit_cd = 1.0
-				GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,COIL_CONTACT), "Анаконда: чешуя кольца")
+				if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,COIL_CONTACT), "Анаконда: чешуя кольца") > 0:
+					attack_log["coil_hit"] += 1
 				break
-	# Свет внутри кольца — кольцо рвётся, она слепнет.
-	for z in light_zones():
-		var zp: Vector3 = z["pos"]
-		if Vector2(zp.x - _coil_center.x, zp.z - _coil_center.z).length() <= COIL_RADIUS + 0.5 and _t > 0.6:
-			attack_log["coil_broken"] += 1
-			_emerge = _head.global_position
-			_emerge.y = _floor_at(_emerge)
-			_stun_len = float(STUN_TIME[phase - 1]) + 1.0
-			_enter(S.STUNNED)
-			roar(false)
-			GameState.set_hint("Свет разорвал кольцо — Анаконда ослеплена!", false)
+	if _t > 0.4 and torch_placed_inside_coil():
+		attack_log["coil_broken"] += 1
+		apply_light_damage(float(RING_BREAK_DAMAGE), "ring_break")
+		if state == S.DEAD:
 			return
+		_emerge = _head.global_position
+		_emerge.y = _floor_at(_emerge)
+		roar(false)
+		GameState.set_hint("Факел внутри кольца — Анаконда обожглась и отступает!", false)
+		_enter(S.RETREAT)
+		return
 	if _t >= COIL_TIME:
 		_enter(S.CONSTRICT)
 
@@ -612,7 +723,12 @@ func _tick_coil(delta: float, player: CharacterBody3D) -> void:
 func _resolve_constrict(player: CharacterBody3D) -> void:
 	var d := player.global_position - _coil_center
 	var inside := Vector2(d.x, d.z).length() < CONSTRICT_INNER and d.y < 1.6
-	if inside and not is_point_lit(player.global_position + Vector3(0, 1.0, 0)):
+	var safe := false
+	for c in GameState.torch_cells():
+		if torch_pos(c).distance_to(player.global_position + Vector3(0, 0.6, 0)) <= CONSTRICT_SAFE_R:
+			safe = true
+			break
+	if inside and not safe:
 		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONSTRICT_DAMAGE), "Анаконда: удушение") > 0:
 			attack_log["constrict_hit"] += 1
 	_emerge = _head.global_position
@@ -636,11 +752,12 @@ func _start_transition() -> void:
 	if to <= phase:
 		return
 	phase = to
+	phases_seen[phase] = true
 	attack_log["transition"] += 1
 	_enter(S.TRANSITION)
 	roar(true)
 	Sfx.play3d(_head, Sfx.ANACONDA_RUMBLE, 0.0, 60.0)
-	var what := "Обвалы и землеройки!" if phase == 2 else "Удушающее кольцо — держи факел рядом!"
+	var what := "Обвалы и землеройки — они гасят факелы!" if phase == 2 else "Удушающее кольцо — ставь факел внутри него!"
 	GameState.chat("Анаконда в ярости — фаза %d. %s" % [phase, what], Color(1.0, 0.5, 0.3))
 
 
@@ -653,15 +770,16 @@ func _die() -> void:
 	_cleanup_fx()
 	roar(false)
 	GameState.reward_kill(true, "Анаконда")
+	if GameState.has_method("on_anaconda_killed"): GameState.on_anaconda_killed()
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)
-		GameState.add_item_count("dust", REWARD_DUST - GameState.DUST_PER_BOSS_KILL)
-	var scales := randi_range(6,22)
+		GameState.add_item_count("dust", maxi(0, REWARD_DUST - GameState.DUST_PER_ANACONDA_KILL))
+	var scales := randi_range(14,22)
 	set_meta("last_scale_drop",scales)
 	GameState.add_mined_block("anaconda_scale",scales)
 	GameState.add_mined_block("anaconda_egg", 1)
-	GameState.chat("Анаконда повержена! Награда: %d осыпи, %d реагент3, %d реагент2 и Яйцо Анаконды, %d чешуи." % [REWARD_DUST, REWARD_R3, REWARD_R2,scales], Color(0.6, 1.0, 0.6))
+	GameState.chat("Анаконда повержена! Сердце света твоё. Награда: %d осыпи, %d реагент3, %d реагент2, Яйцо Анаконды, %d чешуи." % [REWARD_DUST, REWARD_R3, REWARD_R2,scales], Color(0.6, 1.0, 0.6))
 	for m in get_tree().get_nodes_in_group("anaconda_minion"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()
@@ -807,7 +925,8 @@ func _free_node(n: Variant) -> void:
 
 func debug_snapshot() -> Dictionary:
 	return {"state": STATE_NAMES[state], "phase": phase, "hp": hp, "log": attack_log.duplicate(),
-		"light_total": light_damage_total, "ignored": weapon_hits_ignored, "minions": alive_minions()}
+		"light_total": light_damage_total, "ignored": weapon_hits_ignored, "minions": alive_minions(),
+		"by_source": damage_by_source.duplicate(), "torches_broken": torches_broken}
 
 
 # ---------------------------------------------------------------- появление (вызывается из ThreatDirector)
@@ -819,6 +938,9 @@ static func try_spawn(host: Node3D, player: Node3D, chunks: Node) -> Node:
 	if not GameState.is_night() or GameState.peaceful or GameState.is_dream():
 		return null
 	if host.get_tree().get_nodes_in_group("anaconda").size() > 0:
+		return null
+	# v0.11.1: ограничение «только после Матери» откачено; правило «не два босса сразу» осталось.
+	if GameState.boss_alive:
 		return null
 	if not chunks.has_method("nests_near"):
 		return null
@@ -851,6 +973,9 @@ static func summon_with_egg(host: Node3D, player: Node3D, chunks: Node) -> Node:
 	if host.get_tree().get_nodes_in_group("anaconda").size() > 0:
 		GameState.set_hint("Анаконда уже здесь!", false)
 		return null
+	if GameState.boss_alive:
+		GameState.set_hint("Сначала разберись с Матерью блоков.", false)
+		return null
 	if GameState.count_item("anaconda_egg") <= 0:
 		return null
 	var fwd := -player.global_transform.basis.z
@@ -865,34 +990,3 @@ static func summon_with_egg(host: Node3D, player: Node3D, chunks: Node) -> Node:
 		return null
 	GameState.chat("Яйцо треснуло — земля дрожит… Анаконда идёт на зов!", Color(1.0, 0.45, 0.3))
 	return spawn_at(host, p, "summon")
-
-
-func _check_torch_collision() -> void:
-	if _head == null or state in [S.DEAD, S.LEAVING] or GameState.is_dream():
-		return
-	var contacts: Dictionary = {}
-	for c in GameState.wake_blocks.keys():
-		if GameState.wake_blocks[c].get("kind", "") != "torch":
-			continue
-		var pos := Vector3(c) + Vector3(0.5, 0.65, 0.5)
-		if _head.global_position.distance_to(pos) > HEAD_SIZE * 0.5 + 0.15:
-			continue
-		contacts[c] = true
-		if not _torch_contacts.has(c) and try_break_torch(c):
-			break
-	_torch_contacts = contacts
-
-func try_break_torch(c: Vector3i, roll: float = -1.0) -> bool:
-	if torch_break_cd > 0.0 or GameState.wake_blocks.get(c, {}).get("kind", "") != "torch":
-		return false
-	if (randf() if roll < 0.0 else roll) >= 1.0 / 3.0:
-		return false
-	torch_break_cd = 5.0
-	torches_broken += 1
-	GameState.wake_blocks.erase(c)
-	for v in get_tree().get_nodes_in_group("voxel_world"):
-		if not v.is_dream_layer:
-			v.remove_block(c)
-	_scan_torches()
-	GameState.chat("Анаконда сломала факел!", Color(1,0.7,0.3))
-	return true

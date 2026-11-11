@@ -99,8 +99,10 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("planks"))
 		"workbench":
 			return _f(tile("bench_side"), tile("bench_top"), tile("planks"))
-		"beacon":
+		"beacon", "lumen_cold":
 			return _all(tile("beacon"))
+		"lumen":
+			return _all(tile("torch"))
 		"mouth":
 			return _all(tile("mouth"))
 		"torch":
@@ -273,9 +275,13 @@ static func station_mesh(kind: String) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
 	if kind == "chest":
+		# v0.11: только корпус; крышка — отдельный меш на шарнире (chest_lid_mesh), открывается анимацией.
 		_mesh_part(st, "planks", Vector3(-0.45,-0.5,-0.45), Vector3(0.9,0.75,0.9))
-		_mesh_part(st, "log", Vector3(-0.47,0.24,-0.47), Vector3(0.94,0.15,0.94))
-		_mesh_part(st, "beacon", Vector3(-0.08,0.05,0.46), Vector3(0.16,0.18,0.04))
+		_mesh_part(st, "log", Vector3(-0.47,0.17,-0.47), Vector3(0.94,0.08,0.94))
+		# Тёмное «нутро»: при открытой крышке видно пустое дно, а не закрытую верхнюю грань.
+		st.append_from(cube_mesh("planks", Vector3(0.8, 0.01, 0.8), false, Color(0.28, 0.2, 0.14)), 0,
+			Transform3D(Basis.IDENTITY, Vector3(0.0, 0.252, 0.0)))
+		_mesh_part(st, "beacon", Vector3(-0.08,0.10,0.46), Vector3(0.16,0.12,0.04))
 	else:
 		for x in [-0.35,0.25]:
 			for z in [-0.35,0.25]:
@@ -298,6 +304,24 @@ static func station_mesh(kind: String) -> ArrayMesh:
 	st.set_material(material())
 	return st.commit()
 
+const CHEST_HINGE := Vector3(0.0, 0.25, -0.47)
+
+
+static func chest_lid_mesh() -> ArrayMesh:
+	## Крышка в координатах шарнира (задняя верхняя грань корпуса): закрыта при rotation.x = 0.
+	if _cubes.has("chest_lid"):
+		return _cubes["chest_lid"]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_mesh_part(st, "planks", Vector3(-0.47, 0.0, 0.0), Vector3(0.94, 0.15, 0.94))
+	_mesh_part(st, "log", Vector3(-0.48, 0.13, -0.01), Vector3(0.96, 0.04, 0.96))
+	_mesh_part(st, "beacon", Vector3(-0.08, -0.06, 0.93), Vector3(0.16, 0.14, 0.04))
+	st.set_material(material())
+	var m := st.commit()
+	_cubes["chest_lid"] = m
+	return m
+
+
 static func _mesh_part(st: SurfaceTool, kind: String, mn: Vector3, size: Vector3) -> void:
 	# Кубы используют тот же атлас/UV, без новых материалов.
 	var mesh := cube_mesh(kind,size)
@@ -305,7 +329,7 @@ static func _mesh_part(st: SurfaceTool, kind: String, mn: Vector3, size: Vector3
 	st.append_from(mesh,0,xf)
 
 static func tool_mesh(kind: String) -> ArrayMesh:
-	if kind=="sword3": return scale_sword_mesh()
+	if kind=="sword3": return sword3_mesh()  # v0.11.1: 3D-модель вместо выдавленного спрайта
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var head := "stone" if kind.ends_with("2") else "planks"
@@ -381,3 +405,85 @@ static func scale_sword_mesh() -> ArrayMesh:
 					st.add_vertex(Vector3((x+c.x-4)*step,(h-y-1+c.y-4)*step,(c.z-0.5)*0.065))
 	var mat:=StandardMaterial3D.new();mat.albedo_texture=load("res://assets/textures/sword3.png");mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_NEAREST;mat.roughness=1.0
 	st.set_material(mat);var result:=st.commit();_cubes["sword3"]=result;return result
+
+
+# --- v0.11.1: факел — деревянная рукоять, обмотка, обугленный верх и язык пламени (не «палка с шариком») ---
+
+static func torch_mesh() -> ArrayMesh:
+	## Корпус факела в координатах ячейки (центр ячейки = 0, низ рукояти y = −0.36).
+	if _cubes.has("torch_v2"):
+		return _cubes["torch_v2"]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var parts := [
+		# [тайл, мин. угол, размер, оттенок]
+		["log", Vector3(-0.045, -0.36, -0.045), Vector3(0.09, 0.50, 0.09), Color(0.95, 0.88, 0.8)],     # рукоять
+		["log", Vector3(-0.055, 0.10, -0.055), Vector3(0.11, 0.06, 0.11), Color(0.75, 0.68, 0.6)],      # утолщение под обмоткой
+		["blanket", Vector3(-0.07, 0.15, -0.07), Vector3(0.14, 0.05, 0.14), Color(0.62, 0.46, 0.3)],   # обмотка 1
+		["blanket", Vector3(-0.075, 0.20, -0.075), Vector3(0.15, 0.04, 0.15), Color(0.5, 0.36, 0.24)], # обмотка 2
+		["blanket", Vector3(-0.07, 0.24, -0.07), Vector3(0.14, 0.05, 0.14), Color(0.62, 0.46, 0.3)],   # обмотка 3
+		["deep_stone", Vector3(-0.065, 0.29, -0.065), Vector3(0.13, 0.03, 0.13), Color(0.35, 0.3, 0.28)], # обугленный верх
+	]
+	for p in parts:
+		st.append_from(cube_mesh(str(p[0]), p[2], false, p[3]), 0, Transform3D(Basis.IDENTITY, Vector3(p[1]) + Vector3(p[2]) * 0.5))
+	st.set_material(material())
+	var m := st.commit()
+	_cubes["torch_v2"] = m
+	return m
+
+
+static func torch_flame_mesh() -> ArrayMesh:
+	## Пламя: три вложенных «языка» (оранжевый низ → жёлтое ядро → тонкий кончик), эмиссивный материал.
+	if _cubes.has("torch_flame"):
+		return _cubes["torch_flame"]
+	var am := ArrayMesh.new()
+	var layers := [
+		[Vector3(0.15, 0.13, 0.15), 0.315, Color(1.0, 0.42, 0.08)],
+		[Vector3(0.10, 0.16, 0.10), 0.345, Color(1.0, 0.72, 0.18)],
+		[Vector3(0.05, 0.10, 0.05), 0.45, Color(1.0, 0.93, 0.55)],
+	]
+	for l in layers:
+		var b := BoxMesh.new()
+		b.size = l[0]
+		var arr := b.get_mesh_arrays()
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		for i in range(verts.size()):
+			verts[i] += Vector3(0, float(l[1]) + Vector3(l[0]).y * 0.5, 0)
+		arr[Mesh.ARRAY_VERTEX] = verts
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = l[2]
+		mat.emission_enabled = true
+		mat.emission = l[2]
+		mat.emission_energy_multiplier = 2.2
+		am.surface_set_material(am.get_surface_count() - 1, mat)
+	_cubes["torch_flame"] = am
+	return am
+
+
+static func sword3_mesh() -> ArrayMesh:
+	## v0.11.1: Чешуйчатый меч — объёмная 3D-модель той же длины, что деревянный и каменный мечи
+	## (рукоять внизу, клинок по +Y): чешуйчатый клинок с сужением, светлый дол, гарда с загнутыми концами,
+	## обмотанная рукоять и самоцвет-навершие. Заменяет выдавленный пиксельный спрайт.
+	if _cubes.has("sword3_mesh"):
+		return _cubes["sword3_mesh"]
+	var st := new_stream()
+	var teal := Color(0.62, 1.0, 0.9)
+	var gold := Color(1.0, 0.86, 0.5)
+	var w := Color(1, 1, 1)
+	emit_box(st, Vector3(-0.045, -0.03, -0.045), Vector3(0.09, 0.07, 0.09), teal, 0, faces_for("blade2"), true)      # навершие
+	emit_box(st, Vector3(-0.035, 0.04, -0.035), Vector3(0.07, 0.25, 0.07), w, 0, faces_for("log"), true)           # рукоять
+	emit_box(st, Vector3(-0.042, 0.09, -0.042), Vector3(0.084, 0.03, 0.084), Color(0.4, 0.3, 0.25), 0, faces_for("blanket"), true)
+	emit_box(st, Vector3(-0.042, 0.19, -0.042), Vector3(0.084, 0.03, 0.084), Color(0.4, 0.3, 0.25), 0, faces_for("blanket"), true)
+	emit_box(st, Vector3(-0.19, 0.28, -0.05), Vector3(0.38, 0.06, 0.1), gold, 0, faces_for("scale"), true)         # гарда
+	emit_box(st, Vector3(-0.21, 0.3, -0.04), Vector3(0.05, 0.09, 0.08), gold, 0, faces_for("scale"), true)         # загнутые концы
+	emit_box(st, Vector3(0.16, 0.3, -0.04), Vector3(0.05, 0.09, 0.08), gold, 0, faces_for("scale"), true)
+	emit_box(st, Vector3(-0.065, 0.34, -0.024), Vector3(0.13, 0.48, 0.048), teal, 0, faces_for("scale"), true)      # клинок
+	emit_box(st, Vector3(-0.016, 0.36, -0.028), Vector3(0.032, 0.44, 0.056), Color(0.85, 1.0, 1.0), 0, faces_for("blade2"), true) # дол
+	emit_box(st, Vector3(-0.047, 0.82, -0.022), Vector3(0.094, 0.09, 0.044), teal, 0, faces_for("scale"), true)      # сужение
+	emit_box(st, Vector3(-0.028, 0.91, -0.02), Vector3(0.056, 0.07, 0.04), teal, 0, faces_for("scale"), true)
+	emit_box(st, Vector3(-0.012, 0.98, -0.016), Vector3(0.024, 0.05, 0.032), Color(0.85, 1.0, 1.0), 0, faces_for("blade2"), true) # острие
+	var m := stream_to_mesh(st)
+	_cubes["sword3_mesh"] = m
+	return m

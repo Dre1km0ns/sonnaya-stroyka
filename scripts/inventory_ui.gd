@@ -15,7 +15,6 @@ var _title: Label
 var _specials: Array = []
 var _pouch: Array = []
 var _armor_views: Array = []
-var _quick_heal: Panel
 var _armor_caption: Label
 
 
@@ -112,10 +111,7 @@ func _build() -> void:
 		sv.slot_clicked.connect(_on_special_clicked)
 		special_row.add_child(sv)
 		_specials.append([sv, str(sp["id"])])
-	var heal_row:=HBoxContainer.new();left.add_child(heal_row)
-	_quick_heal=SlotView.new();_quick_heal.index=-20;_quick_heal.set_key_hint("H")
-	_quick_heal.slot_clicked.connect(_on_quick_heal_clicked);heal_row.add_child(_quick_heal)
-	var heal_help:=Label.new();heal_help.text="Быстрое лечение H · Хилка1 / Хилка2\nПервое зелье по порядку слотов (1→36)";heal_help.add_theme_font_size_override("font_size",12);heal_row.add_child(heal_help)
+	# v0.11.1: никаких текстовых подсказок в инвентаре (по просьбе игрока).
 	# Броня и кошель.
 	var right := VBoxContainer.new()
 	right.name = "ArmorAndPouch"
@@ -163,11 +159,6 @@ func _build() -> void:
 		pv.mouse_filter = Control.MOUSE_FILTER_PASS
 		pgrid.add_child(pv)
 		_pouch.append([pv, pid])
-	var help := Label.new()
-	help.text = "ЛКМ — взять/положить   ПКМ — половина   Shift+ЛКМ — перенос/надеть   I / Tab / Esc — закрыть"
-	help.add_theme_font_size_override("font_size", 12)
-	help.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
-	box.add_child(help)
 	_held_view = SlotView.new()
 	_held_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_held_view.visible = false
@@ -304,22 +295,12 @@ func _on_special_clicked(anchor_index: int, _button: int, _shift: bool) -> void:
 		GameState.select_anchor(anchor_index as GameState.AnchorType)
 
 
-func _on_quick_heal_clicked(_i: int,button: int,shift: bool) -> void:
-	if not _held.is_empty() and _held.get("id","") not in ["heal1","heal2"]:
-		GameState.set_hint("Сюда можно положить Хилку1 или Хилку2.",false);return
-	var slot: int=GameState.first_heal_slot()
-	_on_slot_clicked(slot if slot>=0 else 0,button,shift)
-
 func _refresh() -> void:
-	if _quick_heal:
-		var i: int=GameState.first_heal_slot()
-		var sl: Dictionary=GameState.get_slot(i) if i>=0 else {}
-		_quick_heal.set_item(sl.get("id",""),int(sl.get("count",0)),false,false)
 
 	if _armor_caption: _armor_caption.text = "Броня • %d защиты" % GameState.armor_points()
 	if not visible:
 		return
-	_title.text = ("Инвентарь сна" if GameState.is_dream() else "Инвентарь яви") + ("   [DEV-сид: всё бесконечно]" if GameState.dev_mode else "")
+	_title.text = ("Инвентарь сна" if GameState.is_dream() else "Инвентарь яви") 
 	for i in range(4):
 		var d: Dictionary = GameState.armor[i]
 		var id: String = d.get("id","")

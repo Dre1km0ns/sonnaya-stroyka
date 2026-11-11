@@ -68,20 +68,20 @@ func _run() -> void:
 	_a(gs.NAIL_CRAFT_DUST == 10, 65)
 
 	# Клин из осыпи — только во сне, не на верстаке
-	gs.dust = 100
+	gs.dust = gs.WEDGE_CRAFT_DUST
 	var wedges_before: int = gs.wedges
 	_a(gs.craft_recipe("wedge", {"is_dream": true}), 70)
 	_a(gs.wedges == wedges_before + 1, 71)
 	_a(gs.dust == 0, 72)
-	_a(gs.WEDGE_CRAFT_DUST == 100, 73)
-	gs.dust = 250
+	_a(gs.WEDGE_CRAFT_DUST == 60, 73) # v0.11: клин дешевле (был 100)
+	gs.dust = gs.ANCHOR3_CRAFT_DUST
 	var a3_before: int = gs.anchors3
 	_a(gs.craft_recipe("anchor3", {"is_dream": true}), 76)
 	_a(gs.anchors3 == a3_before + 1, 77)
 	_a(gs.dust == 0, 78)
-	_a(gs.ANCHOR3_CRAFT_DUST == 250, 79)
+	_a(gs.ANCHOR3_CRAFT_DUST == 180, 79) # v0.11
 	_a(gs.ANCHOR3_SIZE == 9, 80)
-	_a(is_equal_approx(gs.CLARITY_DRAIN_PER_SEC, 1.25), 81)
+	_a(is_equal_approx(gs.CLARITY_DRAIN_PER_SEC, 0.85), 81) # v0.11: ≈118 с
 	_a(gs.recipe_defs().size() >= 7, 82)
 	_a(not gs.find_recipe("torch").is_empty(), 83)
 	_a(not gs.find_recipe("sword").is_empty(), 84)
@@ -165,8 +165,8 @@ func _run() -> void:
 	_a(gs_c.wake_blocks.has(wb), 162)
 	_a(str(gs_c.wake_blocks[wb].get("kind")) == "workbench", 163)
 	# v0.7: кирку крафтим на верстаке в яви — она попадает в инвентарь яви.
-	gs_c.reagent_counts = [0, 2, 3]
-	gs_c.reagents = 5
+	gs_c.reagent_counts = [2, 1, 0] # v0.11: кирка = 2 р1 + 1 р2
+	gs_c.reagents = 3
 	_a(gs_c.craft_recipe("pickaxe", {"at_workbench": true}), 167)
 	_a(_slot_of(gs_c, "pickaxe") >= 0, 168)
 	_a(gs_c.inv_dream.all(func(it): return str(it.get("id", "")) != "pickaxe"), 169)
@@ -193,8 +193,9 @@ func _run() -> void:
 	_a(stored_c >= 1, 190)
 	var gs_t: Node = gs_script.new()
 	root.add_child(gs_t)
-	gs_t.reagent_counts = [1, 1, 0]
-	gs_t.reagents = 2
+	gs_t.reagent_counts = [1, 0, 0] # v0.11: факел ×4 = 1 р1 + 1 бревно
+	gs_t.reagents = 1
+	gs_t.add_item_count("log", 1)
 	_a(gs_t.craft_recipe("torch", {"at_workbench": true}), 195)
 	_a(_slot_of(gs_t, "torch") >= 0, 196)
 	var torch_cell := Vector3i(4, 0, 5)
@@ -496,9 +497,9 @@ func _run() -> void:
 	_a(g1.collision_mask & 2 != 0, 493)
 	_a(g1.collision_mask & 4 != 0, 494)
 	_a(g1.has_node("Model"), 495)
-	_a(g1.hp == 50, 496)
+	_a(g1.hp == 40, 496) # v0.11: призраки 40 HP
 	g1.take_damage(10)
-	_a(g1.hp == 40, 498)
+	_a(g1.hp == 30, 498)
 	_a(vis.has_clip(g1, "walk"), 499)
 	_a(vis.has_clip(g1, "attack"), 500)
 	var boss_script: GDScript = load("res://scripts/block_mother.gd")
@@ -508,13 +509,13 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	_a(boss.is_in_group("block_mother"), 507)
-	_a(boss.hp == 500, 508)
-	_a(boss.max_hp == 500, 509)
+	_a(boss.hp == 620, 508) # v0.11.1: Мать 620 HP (фиксировано)
+	_a(boss.max_hp == 620, 509)
 	boss.take_damage(10)           # SPAWN — неуязвима
-	_a(boss.hp == 500, 511)
+	_a(boss.hp == 620, 511)
 	boss._enter(boss.S.IDLE)
-	boss.take_damage(10)
-	_a(boss.hp == 490, 514)
+	boss.take_damage(10)           # v0.11.1: броня закрыта → меч отскакивает
+	_a(boss.hp == 620 and boss.plate_log.bounces >= 1, 514)
 	_a(boss.get_tree() != null, 515)
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
@@ -603,11 +604,12 @@ func _run() -> void:
 	await _v010_stream_checks()
 	await _v010_entity_checks()
 	await _v010_transfer_checks()
+	await _v011_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
 		return
-	print("SMOKE: OK v0.10 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
+	print("SMOKE: OK v0.11 transferred=%d dust_result=%d mutations=%d nails=%d wedges=%d a3=%d chunks=%d enemies=%d ghosts=%d lakes=%d ruins=%d reagents=%d ruin_max=%d save=1 exits=%d persist=%d hill4=%d night=1 torch=1 sword=1 boss=1 drops=1 music=1 col=0 mine=1 tools=1 bossbar=1" % [
 		int(result["transferred"]), int(result["dust"]), int(result["mutations"]), gs.nails, gs.wedges, gs.anchors3,
 		cm.get_loaded_count(), enemy_count, ghost_count, cm.count_loaded_lakes(), cm.count_loaded_ruins(),
 		cm.count_loaded_reagents(), max_ruin_reagents, gs_m.dream_exit_count, persist_count, 1 if found_h4 else 0
@@ -707,8 +709,8 @@ func _v05_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(kill_reward >= 5 and kill_reward <= 8,685)
 	_a(gi.dust == kill_reward,686)
 	_a("+%d осыпи" % kill_reward in gi.last_hint,687)
-	_a(gi.reward_kill(true, "Мать блоков") == 250, 688)
-	_a(gi.dust == 250+kill_reward,689)
+	_a(gi.reward_kill(true, "Мать блоков") == 200, 688) # v0.11: Мать 200 осыпи
+	_a(gi.dust == 200+kill_reward,689)
 
 	# --- Дев-сид 6767676767: всё бесконечно ---
 	var gd: Node = gs_script.new()
@@ -877,7 +879,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	g2.apply_save_dict(JSON.parse_string(JSON.stringify(blob)))
 	_a(g2.is_terrain_removed((tree["logs"] as Array)[0]), 856)
 	_a(g2.is_terrain_removed(leaves[0]), 857)
-	_a(int(blob["version"]) == 9, 858)
+	_a(int(blob["version"]) == 10, 858)
 	cm.queue_free()
 	anchor.queue_free()
 	# --- Бревно → доски (верстак) ---
@@ -894,19 +896,39 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(is_equal_approx(G.boss_spawn_chance(), 0.01), 872)
 	G.boss_next_mine = false
 	G.set_boss_alive(false)
-	_a(not G.on_block_mined(0.5), 875)       # 0.5 ≥ 1% → нет
-	_a(not G.boss_next_mine, 876)
-	_a(not G.on_block_mined(0.005), 877)     # бросок на СЛЕДУЮЩИЙ блок → предвестие
-	_a(G.boss_next_mine, 878)
-	_a(chats.has(G.BOSS_OMEN_TEXT), 879)
+	# v0.11: «Угроза глубин» вместо 1% на любой блок. Поверхность не копит угрозу.
+	G.milestones["first_transfer"] = true
+	G.dream_exit_count = 2
+	G.mother_cooldown = 0.0
+	G.peaceful = false
+	G.deep_threat = 0.0
+	_a(not G.on_block_mined_at(Vector3i(3, -2, 3), "stone", 0.5) and G.deep_threat == 0.0, 875)
+	_a(G.deep_threat_gain(Vector3i(0, -8, 0), "stone") == 1.0 and G.deep_threat_gain(Vector3i(0, -20, 0), "deep_stone") == 3.0 and G.deep_threat_gain(Vector3i(0, -8, 0), "ruin") == 3.0, 876)
+	# v0.11.1: 1% на КАЖДЫЙ блок (угроза глубин — только атмосфера, не вызывает Мать).
+	var spawned_at := -1
+	for i in range(120):
+		if G.on_block_mined_at(Vector3i(i, -8, 0), "stone", 0.5):
+			spawned_at = i
+			break
+	_a(spawned_at == -1 and G.deep_threat < 100.0, 877)   # 120 блоков без удачного броска → Матери нет (шкала сбрасывается на 100)
+	_a(not G.on_block_mined_at(Vector3i(0, -2, 0), "stone", 0.009) and G.boss_next_mine and chats.any(func(t): return G.BOSS_OMEN_TEXT in str(t)), 878)
+	_a(G.on_block_mined_at(Vector3i(1, -2, 0), "stone", 0.99) and not G.boss_next_mine, 879)   # предвестие → Мать на следующем блоке
+	_a(not G.on_block_mined_at(Vector3i(2, -2, 0), "stone", 0.0101), 8790)
 	_a(G.BOSS_OMEN_TEXT == "Вы слышите разъярённые крики убитой горем матери", 880)
+	G.deep_threat = 55.0
 	var b2: Dictionary = G.to_save_dict()
 	var g3: Node = gs_script.new()
 	root.add_child(g3)
 	g3.apply_save_dict(JSON.parse_string(JSON.stringify(b2)))
-	_a(g3.boss_next_mine, 885)
-	_a(G.on_block_mined(0.9), 886)           # следующий блок — босс
-	_a(not G.boss_next_mine, 887)
+	_a(is_equal_approx(g3.deep_threat, 55.0), 885)
+	G.set_boss_alive(true)               # пока жив другой босс — Мать не приходит
+	G.deep_threat = 99.5
+	_a(not G.on_block_mined_at(Vector3i(0, -8, 0), "stone", 0.0) and not G.boss_next_mine, 886)
+	G.set_boss_alive(false)
+	G.peaceful = true
+	_a(not G.on_block_mined_at(Vector3i(0, -8, 0), "stone", 0.0), 887)
+	G.peaceful = false
+	G.deep_threat = 0.0
 	G.chat_message.disconnect(cb)
 	# --- Урон-капы игрока ---
 	G.heal_player_full()
@@ -948,21 +970,22 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var boss: CharacterBody3D = bs.new()
 	host.add_child(boss)
 	await process_frame
-	_a(boss.hp == 500 and boss.phase == 1, 929)
-	boss._enter(boss.S.IDLE)
-	boss.take_damage(400)                 # не проваливается сквозь порог фазы
+	_a(boss.hp == 620 and boss.phase == 1, 929)
+	# v0.11.1: урон мечом только по открытому ядру (CORE ×1.25) → пороги фаз не проскакиваются.
+	boss._enter(boss.S.CORE)
+	boss.take_damage(450)                 # не проваливается сквозь порог фазы
 	_a(boss.hp == boss.P2_AT, 932)
 	_a(boss.phase == 2 and boss.state == boss.S.TRANSITION, 933)
 	boss.take_damage(50)                  # переход неуязвим
 	_a(boss.hp == boss.P2_AT, 935)
-	boss._enter(boss.S.STAGGER)
-	boss._stagger_len = 2.0
+	boss._enter(boss.S.CORE)
 	_a(boss.is_vulnerable(), 938)
-	boss.take_damage(10)                  # ×1.5 в окне уязвимости
-	_a(boss.hp == boss.P2_AT - 15, 940)
+	boss.receive_weapon_hit(8, "sword")   # ×1.25 по ядру → 10
+	_a(boss.hp == boss.P2_AT - 10, 940)
+	boss._enter(boss.S.CORE)
 	boss.take_damage(400)
 	_a(boss.hp == boss.P3_AT and boss.phase == 3, 942)
-	boss._enter(boss.S.STAGGER)
+	boss._enter(boss.S.CORE_LONG)
 	boss.take_damage(400)
 	_a(boss.hp <= 0 or boss.state == boss.S.DEAD, 945)
 	# Пити-таймер блоклингов и жёсткий кап
@@ -975,7 +998,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 			got += 1
 	_a(got == 1, 954)                       # 3 неудачи подряд → гарантия
 	_a(not b3.minion_roll(0.0) and not b3.minion_roll(0.0), 955)   # локаут 2 приземления
-	_a(b3.MINION_HARD_CAP == 6, 956)
+	_a(b3.MINION_HARD_CAP == 4, 956)
 	for cap in b3.MINION_CAP:
 		_a(int(cap) <= b3.MINION_HARD_CAP, 958)
 	# Телеграфы ≥0.4 с, урон одного удара ≤40% HP
@@ -1041,7 +1064,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(not G.craft_recipe("heal1", {"is_dream": false}), 1019)
 	var dust0: int = G.count_item("dust")
 	_a(G.craft_recipe("heal1", {"is_dream": true}), 1021)
-	_a(G.count_item("dust") == dust0 - 50, 1022)
+	_a(G.count_item("dust") == dust0 - G.HEAL1_DUST and G.HEAL1_DUST == 35, 1022)
 	_a(G.pillow_count("heal1") == 1 and G.count_item("heal1") == 0, 1023)
 	G.resolve_wake()
 	_a(G.count_item("heal1") == 0, 1025)
@@ -1095,40 +1118,40 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.reset_state()
 	var lathe_ids: Array = G.get_visible_recipes({"at_lathe": true}).map(func(r): return str(r["id"]))
 	var bench_ids: Array = G.get_visible_recipes({"at_workbench": true}).map(func(r): return str(r["id"]))
-	_a(lathe_ids == ["sword3", "sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
+	_a(lathe_ids == ["sword3", "sword2", "pickaxe2", "scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
 	_a(not ("lathe" in bench_ids) and not ("sword2" in bench_ids), 1077)
 	for rid in bench_ids:
 		_a(not (rid in lathe_ids), 1079)
 	var lr: Dictionary = G.find_recipe("lathe")
-	_a(int((lr["items"] as Dictionary).get("workbench", 0)) == 1 and int(lr["reagent3"]) == 7, 1081)
-	G.add_item_count("workbench", 1)
-	G.add_item_count("reagent3", 6)
+	# v0.11: станок во Сне платится только кошелём (5 р3 + 2 р2 + 20 осыпи), верстак-предмет не нужен.
+	_a(not (lr as Dictionary).has("items") and int(lr["reagent3"]) == 5 and int(lr["reagent2"]) == 2 and int(lr["dust"]) == 20, 1081)
+	G.add_item_count("reagent3", 4)
+	G.add_item_count("reagent2", 2)
+	G.add_item_count("dust", 20)
 	_a(not G.craft_recipe("lathe", {"at_workbench": true}), 1084)
 	G.add_item_count("reagent3", 1)
 	_a(not G.craft_recipe("lathe", {"at_lathe": true}), 1086)
 	G.enter_dream()
-	G.add_item_count("workbench", 1)
 	_a(G.craft_recipe("lathe", {"is_dream": true}), 1087)
-	_a(G.count_item("lathe") == 1 and G.count_item("workbench") == 0 and G.count_item("reagent3") == 0, 1088)
+	_a(G.count_item("lathe") == 1 and G.count_item("reagent3") == 0 and G.count_item("reagent2") == 0 and G.dust == 0, 1088)
 	G.resolve_wake()
 	var sr: Dictionary = G.find_recipe("sword2")
-	_a(sr["items"] == {"sword": 1} and int(sr["reagent1"]) == 2 and int(sr["reagent2"]) == 2 and int(sr["reagent3"]) == 2, 1090)
-	G.add_item_count("reagent1", 2)
+	_a(sr["items"] == {"sword": 1, "stone": 6} and int(sr["reagent2"]) == 2, 1090)
+	G.add_item_count("stone", 6)
 	G.add_item_count("reagent2", 2)
-	G.add_item_count("reagent3", 2)
 	_a(not G.craft_recipe("sword2", {"at_lathe": true}), 1094)     # без Меча — нельзя
 	G.add_item_count("sword", 1)
 	_a(not G.craft_recipe("sword2", {"at_workbench": true}), 1096)
 	_a(G.craft_recipe("sword2", {"at_lathe": true}), 1097)
 	_a(G.count_item("sword2") == 1 and G.count_item("sword") == 0, 1098)
-	_a(G.count_item("reagent1") == 0 and G.count_item("reagent2") == 0 and G.count_item("reagent3") == 0, 1099)
+	_a(G.count_item("stone") == 0 and G.count_item("reagent2") == 0, 1099)
 	var bc: GDScript = load("res://scripts/build_controller.gd")
-	_a(bc.SWORD2_DAMAGE == 13 and bc.SWORD_DAMAGE==7 and bc.SWORD3_DAMAGE==23 and is_equal_approx(bc.SWORD2_REACH, bc.SWORD_REACH * 1.25), 1101)
+	_a(bc.SWORD2_DAMAGE == 14 and bc.SWORD_DAMAGE==8 and bc.SWORD3_DAMAGE==24 and is_equal_approx(bc.SWORD2_REACH, bc.SWORD_REACH * 1.25), 1101)
 	var cmenu: Node = load("res://scripts/craft_menu.gd").new()
 	root.add_child(cmenu)
 	await process_frame
 	cmenu.open_lathe()
-	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2","scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
+	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2", "scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
 	cmenu.close()
 	cmenu.queue_free()
 	_a(G.is_placeable_block("bed") and G.is_placeable_block("lathe"), 1109)
@@ -1176,10 +1199,10 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(Sfx.count(Sfx.MOTHER_ROAR) > roars0, 1151)
 	_a(ResourceLoader.exists(Sfx.MOTHER_ROAR) and ResourceLoader.exists(Sfx.ANACONDA_ROAR), 1152)
 	boss.hp = 400
-	_a(boss.heal_from_blocks(3) == 15 and boss.hp == 415, 1154)
+	_a(boss.heal_from_blocks(3) == 0 and boss.hp == 400, 1154)   # v0.11.1: скрытый хил от деревьев убран
 	boss.hp = boss.max_hp-1
 	boss.heal_from_blocks(4)
-	_a(boss.hp == boss.max_hp, 1157)
+	_a(boss.hp == boss.max_hp-1, 1157)
 	boss.queue_free()
 	await process_frame
 	G.reset_state()
@@ -1312,7 +1335,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
 	var ana: Node3D = AS.spawn_at(host2, Vector3(40, 0, 40), "test")
 	await process_frame
-	_a(ana != null and ana.hp == ana.MAX_HP and ana.MAX_HP == 2850, 1290)
+	_a(ana != null and ana.hp == ana.MAX_HP and ana.MAX_HP == 1250, 1290)
 	_a(G.boss_alive, 1291)
 	_a(Sfx.count(Sfx.ANACONDA_ROAR) > 0, 1292)
 	# OST Анаконды: зациклен, приоритет над темой Матери, кроссфейд обратно после ухода.
@@ -1329,41 +1352,47 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(mus.current_key() == "anaconda", 1304)
 	ana.take_damage(200)
 	_a(ana.hp == ana.MAX_HP and ana.weapon_hits_ignored == 1, 1306)
+	_a(ana.receive_weapon_hit(24, "sword3").dealt == 0 and ana.hp == ana.MAX_HP, 13060)   # v0.11.1: меч = 0
 	_a(ana.is_invulnerable(), 1307)                 # SPAWN — в земле
-	# Вынырнула и лежит (REST): без света урона нет.
-	ana.torch_break_cd = 999.0 # light-DPS fixture, torch destruction tested separately
+	# v0.11.1: урон наносят ТОЛЬКО поставленные факелы, перекрёстный огонь 1/2/3.
 	ana._emerge = Vector3(40, 0, 40)
 	ana._enter(ana.S.REST)
-	for i in range(5):
-		ana.tick(0.05)
 	_a(ana.light_dps() == 0.0 and ana.hp == ana.MAX_HP, 1313)
-	# Факел рядом с головой → урон.
-	var hpos: Vector3 = ana.hit_center()
-	G.wake_blocks[Vector3i(floori(hpos.x), floori(hpos.y), floori(hpos.z))] = {"kind": "torch", "mutant": false}
-	ana._torch_scan = 0.0
-	ana.tick(0.05)
-	_a(ana.light_dps() >= ana.HEAD_LIGHT_DPS, 1319)
-	ana._enter(ana.S.REST)
-	var hp_before: int = ana.hp
-	for i in range(20):
-		ana._t = 0.0
-		ana.tick(0.1)
-	print("SMOKE: anaconda light dps=%.1f hp %d→%d" % [ana.light_dps(), hp_before, ana.hp])
-	_a(ana.hp < hp_before, 1326)
-	# Ослеплена (STUNNED) — ×2 урон.
-	ana._enter(ana.S.STUNNED)
-	ana._stun_len = 5.0
-	_a(ana.is_vulnerable(), 1330)
-	var d_stun: float = ana.light_dps()
-	ana._enter(ana.S.REST)
-	_a(is_equal_approx(d_stun, ana.light_dps() * 2.0), 1333)
-	# Ни одного неизбежного урона: телеграф ≥0.6 с, удар ≤40%, кап комбо 70.
+	ana._head.global_position = Vector3(40.5, 0.6, 40.5)
+	for sg in ana._segs:
+		sg.global_position = Vector3(40.5, 0.6, 52.5)       # тело «далеко» для изоляции теста света
+	var hc := Vector3i(40, 0, 40)
+	G.wake_blocks[hc + Vector3i(2, 0, 0)] = {"kind": "torch", "mutant": false}
+	_a(ana.crossfire_level() == 1 and ana.light_dps() == 0.0, 1319)        # 1 источник — только обнаружение
+	G.wake_blocks[hc + Vector3i(0, 0, 2)] = {"kind": "torch", "mutant": false}
+	_a(ana.crossfire_level() == 2 and is_equal_approx(ana.light_dps(), ana.BURN_DPS), 1326)   # 2 — ожог
+	G.wake_blocks[hc + Vector3i(-2, 0, 0)] = {"kind": "torch", "mutant": false}
+	_a(ana.crossfire_level() >= 3 and is_equal_approx(ana.light_dps(), ana.BURN_DPS * ana.BOOST_MULT), 1330)   # 3 — усиление
+	print("SMOKE: anaconda crossfire dps=%.1f" % ana.light_dps())
+	_a(ana.apply_light_damage(10.0, "crossfire3") == 10 and ana.hp == ana.MAX_HP - 10, 1333)
+	_a(not ("STUNNED" in ana.STATE_NAMES) and not ("stun" in ana.debug_snapshot()), 13330)   # оглушения факелом нет
+	# Факел в руке: в light_zones не входит.
+	for z in ana.light_zones():
+		_a(not bool(z["held"]), 13331)
+	# Касание любой секцией тела ломает факел (без шанса и КД).
+	ana._segs[ana._segs.size() - 1].global_position = Vector3(46.5, 0.6, 40.5)
+	var tail_c := Vector3i(46, 0, 40)
+	G.wake_blocks.clear()
+	G.wake_blocks[tail_c] = {"kind": "torch", "mutant": false}
+	var broke_n: int = ana.check_body_torch_contacts()
+	_a(broke_n == 1 and not G.wake_blocks.has(tail_c) and ana.torches_broken_by_body == 1, 13332)   # хвост
+	G.wake_blocks[hc] = {"kind": "torch", "mutant": false}
+	_a(ana.check_body_torch_contacts() >= 1 and not G.wake_blocks.has(hc), 13333)   # голова
+	G.wake_blocks[hc] = {"kind": "torch", "mutant": false}
+	_a(ana.check_body_torch_contacts() >= 1, 13334)                                  # повторно сразу — без КД
+	G.wake_blocks.clear()
+	# Ни одного неизбежного урона: телеграф ≥0.6 с, удар ≤35%, кап комбо 70.
 	for tt in ana.TELEGRAPH:
 		_a(float(tt) >= 0.6, 1336)
 	for dmg in [ana.BURST_DAMAGE, ana.ROCK_DAMAGE, ana.CONSTRICT_DAMAGE, ana.CONTACT_DAMAGE, ana.COIL_CONTACT]:
-		_a(int(dmg) <= 40, 1338)
+		_a(int(dmg) <= 35, 1338)
 	_a(G.COMBO_CAP <= 70, 1339)
-	_a(ana.MINION_PITY == 3 and ana.MINION_CAP <= 4, 1340)
+	_a(ana.MINION_CAP <= 3 and ana.cavein_zone_count() >= 3 and ana.cavein_zone_count() <= 4, 1340)
 	# Рассвет — уходит.
 	G.day_time = 1440.0 + 400.0
 	_a(not G.is_night(), 1343)
@@ -1444,7 +1473,7 @@ func _v08_checks() -> void:
 	var Rules: GDScript = load("res://scripts/mining_rules.gd")
 	G.reset_state()
 	G.dev_mode = false
-	_a(G.SAVE_FORMAT == 9, 8001)
+	_a(G.SAVE_FORMAT == 10, 8001)
 	for pair in [["ground",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
 		_a(is_equal_approx(Rules.hardness(pair[0]),pair[1]),8002)
 	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),3.0),8003)
@@ -1504,50 +1533,50 @@ func _v08_checks() -> void:
 	_a(G.recipe_available(G.find_recipe("idea_catcher"),{"is_dream":true}),8020)
 	_a(not G.recipe_available(G.find_recipe("planks"),{"at_workbench":true}),8021)
 	_a(G.recipe_available(G.find_recipe("planks"),{"station":"sawmill"}),8022)
-	_a(not G.recipe_available(G.find_recipe("door"),{"station":"sawmill","upgraded":false}),8023)
-	_a(G.recipe_available(G.find_recipe("door"),{"station":"sawmill","upgraded":true}),8024)
+	# v0.11: дверь и сундук — на обычной лесопилке; деревянная броня — только в мастерской (лесопилка у верстака).
+	_a(G.recipe_available(G.find_recipe("door"),{"station":"sawmill","upgraded":false}) and G.recipe_available(G.find_recipe("chest"),{"station":"sawmill","upgraded":false}),8023)
+	_a(not G.recipe_available(G.find_recipe("wood_chest"),{"station":"sawmill","upgraded":false}) and G.recipe_available(G.find_recipe("wood_chest"),{"station":"sawmill","upgraded":true}),8024)
 	G.wake_blocks[c] = {"kind":"sawmill"}
 	G.wake_blocks[c+Vector3i(1,0,1)] = {"kind":"workbench"}
 	_a(not G.station_upgraded(c),8025)
 	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"workbench"}
 	_a(G.station_upgraded(c),8026)
 	G.wake_blocks.clear()
-	_a(G.find_recipe("pickaxe2").items == {"pickaxe":1},8027)
+	_a(G.find_recipe("pickaxe2").items == {"pickaxe":1,"stone":6},8027)
 	G.add_item_count("pickaxe",1)
-	G.add_item_count("reagent1",2)
-	G.add_item_count("reagent2",2)
-	G.add_item_count("reagent3",2)
+	G.add_item_count("stone",6)
+	G.add_item_count("reagent2",1)
 	_a(G.craft_recipe("pickaxe2",{"at_lathe":true}),8028)
 	_a(G.count_item("pickaxe")==0 and G.count_item("pickaxe2")==1,8029)
 	G.add_item_count("reagent1",1)
-	G.add_item_count("reagent2",1)
-	_a(G.craft_recipe("torch",{"at_workbench":true}) and G.count_item("torch")==2,8030)
+	G.add_item_count("log",1)
+	_a(G.craft_recipe("torch",{"at_workbench":true}) and G.count_item("torch")==4 and G.count_item("log")==0,8030)
 	G.add_item_count("heal2",1)
 	G.select_item_slot(_slot_of(G,"heal2"))
 	G.player_hp = 40
 	G.heal_cd = 0
 	_a(G.use_heal() and G.player_hp == 80 and G.heal_cd == 15,8031)
 	_a(not G.use_heal(),8032)
-	# Catcher stack exactly 100; 99 stays; one bonus per type, forever/save.
+	# v0.11: Ловец ест стопку ≥ 50 (49 остаётся); бонус ×2; один раз на тип, навсегда/в сейве.
 	G.reset_state()
-	G.set_slot(0,{"id":"stone","count":99})
-	_a(G.storage_deposit(c,0,true)==99 and G.dream_bonus_seconds==0,8033)
+	G.set_slot(0,{"id":"stone","count":49})
+	_a(G.storage_deposit(c,0,true)==49 and G.dream_bonus_seconds==0,8033)
 	G.set_slot(0,{"id":"stone","count":1})
-	_a(G.storage_deposit(c,0,true)==1 and G.dream_bonus_seconds==5,8034)
+	_a(G.storage_deposit(c,0,true)==1 and G.dream_bonus_seconds==10,8034)
 	G.set_slot(0,{"id":"stone","count":100})
 	G.storage_deposit(c,0,true)
-	_a(G.storage_slots(c)[0].count==100 and G.dream_bonus_seconds==5,8035)
+	_a(G.storage_slots(c,false,true)[0].count==100 and G.dream_bonus_seconds==10,8035)
 	G.set_slot(0,{"id":"sword","count":1})
 	_a(G.storage_deposit(c,0,true)==0,8036)
 	G.add_item_count("reagent1",2)
 	_a(G.storage_deposit(c,_slot_of(G,"reagent1"),true)==0,8037)
 	var blob: Dictionary = G.to_save_dict()
 	G.apply_save_dict(blob)
-	_a(G.idea_eaten.has("stone") and G.dream_bonus_seconds==5 and G.storage_slots(c)[0].count==100,8038)
+	_a(G.idea_eaten.has("stone") and G.dream_bonus_seconds==10 and G.storage_slots(c,false,true)[0].count==100,8038)
 	_a(not G.storage_take(c,0,true),8039)
 	G.enter_dream()
 	_a(G.storage_take(c,0,true) and G.count_item("stone")==100,8040)
-	_a(is_equal_approx(G.clarity,G.CLARITY_MAX+6.25),8041)
+	_a(is_equal_approx(G.clarity,G.CLARITY_MAX+10.0*G.CLARITY_DRAIN_PER_SEC),8041)
 	_a(G.storage_deposit(c,0,true)==0,8042)
 	G.resolve_wake()
 	# Chest roundtrip preserves worn tools and refuses mining while full.
@@ -1622,11 +1651,11 @@ func _v08_checks() -> void:
 	G.wake_blocks[c] = {"kind":"torch"}
 	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"torch"}
 	var ana: Node3D = AS.spawn_at(host,Vector3(50,0,50),"smoke08")
-	_a(not ana.try_break_torch(c,0.34),8065)
-	_a(ana.try_break_torch(c,0.0) and ana.torch_break_cd==5,8066)
-	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8067)
-	ana.torch_break_cd = 0
-	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)
+	# v0.11.1: касание ломает ВСЕГДА — без шанса и без КД (try_break_torch — совместимый враппер).
+	_a(ana.try_break_torch(c,0.99),8065)
+	_a(not G.wake_blocks.has(c),8066)
+	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.99),8067)
+	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)   # уже сломан
 	host.queue_free()
 	# Falling drops only; placed unsupported blocks retain their grid position.
 	var drop: CharacterBody3D = load("res://scripts/block_pickup.gd").new()
@@ -1657,12 +1686,13 @@ func _v08_checks() -> void:
 	G.reset_state()
 	G.enter_dream()
 	G.on_mother_killed()
-	G.add_item_count("workbench",1)
-	G.add_item_count("stone",8)
-	G.add_item_count("reagent2",3)
+	# v0.11: алхимия во Сне — только кошель (4 р2 + 4 р3 + 60 осыпи); подушка не трогается.
+	G.add_item_count("reagent2",4)
+	G.add_item_count("reagent3",4)
+	G.add_item_count("dust",60)
 	G.add_to_pillow("heal1",1)
 	_a(G.craft_recipe("alchemy",{"is_dream":true}),1662)
-	_a(G.count_item("workbench")==0 and G.count_item("stone")==0 and G.pillow_count("heal1")==0 and G.count_item("alchemy")==1,1663)
+	_a(G.get_reagent_count(2)==0 and G.get_reagent_count(3)==0 and G.dust==0 and G.pillow_count("heal1")==1 and G.count_item("alchemy")==1,1663)
 	# Маяк блокирует и источник, и цель распространения пасти.
 	G.reset_state()
 	var mouth := Vector3i(100,3,100)
@@ -1692,7 +1722,7 @@ func _v08_checks() -> void:
 	water_cm.queue_free()
 	# Порог задержки призраков и предел явно закреплены.
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
-	_a(td_script.GHOST_RESPAWN_DELAY >= 20.0 and td_script.GHOST_RESPAWN_DELAY <= 30.0,1673)
+	_a(is_equal_approx(td_script.GHOST_RESPAWN_DELAY, 60.0),1673) # v0.11: было 25 с
 	_a(td_script.MAX_GHOSTS_PER_SPOT == 3,1674)
 	var director: Node = td_script.new()
 	root.add_child(director)
@@ -1701,12 +1731,12 @@ func _v08_checks() -> void:
 	_a(not director._ghost_can_spawn(0,1),1675)
 	director.awake_time = 101.0
 	_a(not director._ghost_can_spawn(0,0),1676)
-	director.awake_time = 125.9
+	director.awake_time = 160.9
 	_a(not director._ghost_can_spawn(0,0),1677)
 	var gdump: Dictionary = JSON.parse_string(JSON.stringify(director.to_save_dict()))
 	director.apply_save_dict(gdump)
 	_a(not director._ghost_can_spawn(0,0),1678)
-	director.awake_time = 126.0
+	director.awake_time = 161.0
 	_a(director._ghost_can_spawn(0,0) and not director._ghost_can_spawn(0,3),1679)
 	director.queue_free()
 	G.reset_state()
@@ -1728,7 +1758,7 @@ func _v08_checks() -> void:
 	_a(not G.craft_recipe("idea_catcher",{"is_dream":true}),1683)
 	_a(G.dust==500 and G.get_reagent_count(1)==6,1684)
 	G.set_slot(0,{})
-	_a(G.craft_recipe("idea_catcher",{"is_dream":true}) and G.dust==100,1685)
+	_a(G.craft_recipe("idea_catcher",{"is_dream":true}) and G.dust==350,1685)
 	G.reset_state()
 	var old_save: Dictionary = G.to_save_dict()
 	old_save["version"] = 7
@@ -1774,7 +1804,7 @@ func _v09_checks() -> void:
 			var id: String = tier+"_"+A.PARTS[i]
 			var material := "planks" if tier=="wood" else "anaconda_scale"
 			var context := {"station":"sawmill","upgraded":true} if tier=="wood" else {"at_lathe":true}
-			G.add_item_count(material,A.COST[i])
+			G.add_item_count(material,A.COST[i] if tier=="wood" else A.SCALE_COST[i])
 			_a(not G.craft_recipe(id,{"at_workbench":true}),9007)
 			_a(G.craft_recipe(id,context) and G.raw_count(material)==0,9008)
 			_a(G.equip_armor_from_slot(_slot_of(G,id)),9009)
@@ -1785,7 +1815,7 @@ func _v09_checks() -> void:
 		_a(G.armor[0].durability==A.durability(tier+"_helmet")-1,9012)
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
 	G.apply_save_dict(saved)
-	_a(G.armor_points()==15 and G.armor[2].durability==104,9013)
+	_a(G.armor_points()==15 and G.armor[2].durability==A.SCALE_DURABILITY[2]-1,9013)
 	G.armor[0].durability = 1
 	G.damage_player(5,"break-test",true)
 	_a(G.armor[0].is_empty(),9014)
@@ -1856,7 +1886,7 @@ func _v09_checks() -> void:
 	_a(G.mother_cooldown==0,9030)
 	for mob in ["seam","elite","enemy1","enemy2","enemy3","enemy4","ghost","minion","mother","anaconda"]:
 		_a(not console.execute("spawn "+mob).begins_with("Ошибка"),9031)
-	_a(console._mobs("all").size()==10,9032)
+	_a(console._mobs("all").size()==9 and console._mobs("anaconda").is_empty(),9032)   # v0.11.1: два босса одновременно — никогда
 	console.execute("mob damage 19 all")
 	console.execute("mob speed 2.7 all")
 	console.execute("mob hp 111 nearest")
@@ -1866,17 +1896,21 @@ func _v09_checks() -> void:
 	_a(console._mobs("nearest")[0].hp==111,9034)
 	# Persistent crafting flag and live HP rebalance; new spawns use same base values.
 	console.execute("sword2 on")
-	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==188 and console._mobs("mother")[0].max_hp==1500 and console._mobs("anaconda")[0].max_hp==2850,9035)
+	# v0.11: крафт оружия больше НЕ раздувает HP врагов.
+	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==620,9035)
 	var flag_save: Dictionary = G.to_save_dict()
 	_a(flag_save.sword2_crafted,9036)
 	console.execute("sword2 off")
-	_a(console._mobs("seam")[0].max_hp==50 and console._mobs("mother")[0].max_hp==500,9037)
+	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==620,9037)
 	# Anaconda deterministic probability boundaries and real scale reward.
+	for mm in console._mobs("mother"):
+		mm.free()
+	_a(not console.execute("spawn anaconda").begins_with("Ошибка") and console._mobs("anaconda").size()==1,90380)
 	var ana: Node = console._mobs("anaconda")[0]
 	var torch_cell := Vector3i(10,0,10)
 	G.wake_blocks[torch_cell] = {"kind":"torch"}
-	_a(not ana.try_break_torch(torch_cell,0.334) and ana.try_break_torch(torch_cell,0.333),9038)
-	_a(ana.torch_break_cd==5 and not ana.try_break_torch(torch_cell,0.0),9039)
+	_a(ana.max_hp==1250 and ana.try_break_torch(torch_cell,0.99),9038)
+	_a(not G.wake_blocks.has(torch_cell),9039)
 	ana._die()
 	_a(int(ana.get_meta("last_scale_drop"))>=6 and int(ana.get_meta("last_scale_drop"))<=22,9040)
 	console.execute("kill all")
@@ -2150,7 +2184,8 @@ func _v010_gameplay_checks() -> void:
 	G.heal_cd=0
 	_a(G.use_heal("heal1") and G.player_hp==70 and G.get_slot(9).count==2,10016)
 	var ui: Node=get_first_node_in_group("inventory_ui")
-	ui._on_slot_clicked(4,MOUSE_BUTTON_LEFT,false);ui._on_quick_heal_clicked(-20,MOUSE_BUTTON_LEFT,false);ui.close()
+	ui._on_slot_clicked(4,MOUSE_BUTTON_LEFT,false);ui._on_slot_clicked(4,MOUSE_BUTTON_LEFT,false);ui.close()
+	_a(not ui.has_method("_on_quick_heal_clicked") and ui.find_child("HealHelp",true,false)==null and ui.find_children("*","Label",true,false).all(func(l): return not str(l.text).contains("ЛКМ")),10116)
 	_a(G.count_item("heal2")==1 and G.count_item("heal1")==2,10017)
 	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
 	G.add_item_count("sword2",1);G.add_item_count("anaconda_scale",5);G.set_sword3_flag(false)
@@ -2317,7 +2352,7 @@ func _v010_transfer_checks() -> void:
 	# Real v0.9.1 serializer fixture (source commit recorded in JSON), not a new save with fields removed.
 	var old:Dictionary=JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/v091_save.json"));gs.apply_save_dict(old)
 	_a(old._fixture_source.begins_with("89cbb0d") and gs.dream_mapping=="legacy_workshop" and not gs.sword3_crafted,10079)
-	_a(gs.inv_wake[0].durability==117 and gs.armor[1].id=="scale_chest" and gs.armor[1].durability==37 and gs.storage_slots(Vector3i(45,4,40))[0].count==23,10080)
+	_a(gs.inv_wake[0].durability==117 and gs.armor[1].id=="scale_chest" and gs.armor[1].durability==37 and gs.storage_slots(Vector3i(45,4,40),false)[0].count==23 and gs.world_storage.has("w:45,4,40"),10080)
 	_a(gs.wake_blocks[Vector3i(40,4,40)].facing==3 and gs.wake_blocks[Vector3i(40,4,40)].open and gs.transfer_plan().cells.size()==2,10081)
 	var old_r1:int=gs.pouch.reagent1;gs.cancel_anchors();_a(gs.pouch.reagent1==old_r1+1 and gs.dream_blocks.size()==2,10082)
 	gs.queue_free();await process_frame
@@ -2348,5 +2383,393 @@ func _v010_transfer_checks() -> void:
 	for command in ["help transfer","transfer plan","transfer risk","transfer cancel"]:_a(not console.execute(command).begins_with("Ошибка"),10092)
 	_a(console.completion_candidates("transfer ").size()==5,10093)
 	print("SMOKE: v0.10 atomic preflight/apply ",JSON.stringify(times)," rolls7%=",rolled.rolled,"/10000; beacon protected=",protected_result.protected," legacy v091/receipts/refund overflow/multicell/async validation/pause/Esc/Y safe abort OK")
-	var file:=FileAccess.open("/workspace/v010/transfer_measures.json",FileAccess.WRITE);file.store_string(JSON.stringify({"sizes":times,"rolls_10000":rolled.rolled,"beacon_protected":protected_result.protected},"  "));file.close()
+	var file:=FileAccess.open("user://transfer_measures.json",FileAccess.WRITE)
+	if file: file.store_string(JSON.stringify({"sizes":times,"rolls_10000":rolled.rolled,"beacon_protected":protected_result.protected},"  "));file.close()
 	scene.queue_free();await process_frame;current_scene=null;G.reset_state()
+
+
+# ============================================================ v0.11 (раздел 16 ТЗ)
+
+func _rec(gs: Node, id: String) -> Dictionary:
+	for r in gs.recipe_defs():
+		if str(r.get("id", "")) == id: return r
+	return {}
+
+
+func _v011_checks() -> void:
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	# --- 16.1 H-автолечение: 90/75/50/10, без зелий, кулдаун, нет слота ---
+	_a(gs.choose_heal(10,3,2) == "heal1" and gs.choose_heal(25,3,2) == "heal1" and gs.choose_heal(50,3,2) == "heal2" and gs.choose_heal(90,3,2) == "heal2", 11001)
+	_a(gs.choose_heal(90,1,0) == "heal1" and gs.choose_heal(10,0,2) == "heal2" and gs.choose_heal(4,3,3) == "", 11002)
+	gs.reset_state(); gs.dev_mode = false
+	gs.set_slot(2, {"id":"heal1","name":"хилка1","count":3}); gs.set_slot(22, {"id":"heal2","name":"хилка2","count":2})  # хилка2 в рюкзаке, не в хотбаре
+	gs.select_item_slot(0)
+	var expect := {90: ["heal1", 100], 75: ["heal1", 95], 50: ["heal2", 90], 10: ["heal2", 50]}
+	for hp in [90, 75, 50, 10]:
+		gs.player_hp = hp; gs.heal_cd = 0.0
+		_a(gs.use_heal() and gs.last_heal_choice == expect[hp][0] and gs.player_hp == expect[hp][1], 11003)
+	_a(gs.count_item("heal1") == 1 and gs.count_item("heal2") == 0, 11004)
+	gs.player_hp = 40
+	_a(not gs.use_heal() and gs.player_hp == 40 and gs.heal_cd > 14.0 and gs.count_item("heal1") == 1, 11005)  # кулдаун, зелье не списано
+	gs.heal_cd = 0.0; gs.player_hp = 97
+	_a(not gs.use_heal() and gs.count_item("heal1") == 1, 11006)  # почти полное HP — не тратим
+	gs.set_slot(2, {}); gs.player_hp = 30; gs.heal_cd = 0.0
+	_a(not gs.use_heal() and gs.player_hp == 30 and gs.heal_cd == 0.0, 11007)  # нет зелий: ничего не происходит
+	_a(gs.heal_status_text().contains("нет зелий"), 11008)
+	# --- 16.2 Сундук: сохранение/загрузка (w:), перенос якорем (d:→w:), возврат содержимого несвязанного ---
+	gs.reset_state(); gs.dev_mode = false
+	var wc := Vector3i(300,5,300)
+	_a(gs.place_wake_block(wc, "chest"), 11010)
+	gs.set_slot(0, {"id":"log","name":"Бревно","count":10})
+	gs.storage_deposit(wc, 0, false)
+	_a(gs.world_storage.has("w:300,5,300") and str(gs.storage_slots(wc, false)[0].id) == "log" and int(gs.storage_slots(wc, false)[0].count) == 10 and gs.count_item("log") == 0, 11011)
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.world_storage.has("w:300,5,300") and int(gs.storage_slots(wc, false)[0].count) == 10, 11012)
+	_a(gs.storage_take(wc, 0, false) and gs.count_item("log") == 10, 11013)
+	gs.enter_dream()
+	var dc := Vector3i(310,5,310); var lost := Vector3i(320,5,320)
+	gs.place_dream_block(dc, "chest"); gs.place_dream_block(lost, "chest")
+	gs.storage_slots(dc, true)[0] = {"id":"stone","name":"Камень","count":7}
+	gs.storage_slots(lost, true)[0] = {"id":"planks","name":"Доски","count":4}
+	_a(gs.world_storage.has("d:310,5,310") and gs.world_storage.has("d:320,5,320") and not gs.world_storage.has("w:310,5,310"), 11014)
+	var dsv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict())); gs.apply_save_dict(dsv)
+	_a(gs.world_storage.has("d:310,5,310") and int(gs.world_storage["d:310,5,310"][0].count) == 7, 11015)
+	gs.dream_blocks[dc].anchored = true
+	gs.pending_anchors = [{"type":2,"cells":[dc],"receipt":{"dev":true}}]
+	var cr: Dictionary = gs.resolve_wake()
+	_a(cr.ok and cr.transferred == 1 and int(cr.chest_moved) == 1 and int(cr.chest_returned) == 1, 11016)
+	_a(str(gs.wake_blocks.get(dc,{}).get("kind","")) == "chest" and gs.world_storage.has("w:310,5,310") and int(gs.world_storage["w:310,5,310"][0].count) == 7, 11017)
+	_a(not gs.world_storage.has("d:310,5,310") and not gs.world_storage.has("d:320,5,320") and gs._inv_count(gs.inv_dream, "planks") + gs.dream_stash.size() >= 1, 11018)
+	# --- 16.3 Дом 100+ блоков с дверью и сундуком → перенос целиком, цель «Убежище» ---
+	gs.reset_state(); gs.dev_mode = false; gs.enter_dream()
+	var base := Vector3i(400, 10, 400)
+	var door_at := base + Vector3i(2, 1, 0)
+	for x in range(5):
+		for z in range(5):
+			gs.place_dream_block(base + Vector3i(x, 0, z), "planks")
+			gs.place_dream_block(base + Vector3i(x, 5, z), "planks")
+			for y in range(1, 5):
+				var edge := x == 0 or x == 4 or z == 0 or z == 4
+				var p := base + Vector3i(x, y, z)
+				if edge and not (p == door_at or p == door_at + Vector3i.UP):
+					gs.place_dream_block(p, "stone" if y < 3 else "planks")
+	_a(gs.place_dream_block(door_at, "door", 0), 11020)
+	var hc := base + Vector3i(2, 1, 2)
+	gs.place_dream_block(hc, "chest"); gs.storage_slots(hc, true)[3] = {"id":"torch","name":"Факел","count":9}
+	var house_cells: Array = []
+	for c in gs.dream_blocks.keys():
+		gs.dream_blocks[c].anchored = true; house_cells.append(c)
+	var roots := 0
+	for c in gs.dream_blocks.keys():
+		if not gs.dream_blocks[c].has("root"): roots += 1
+	_a(house_cells.size() >= 100, 11021)
+	gs.pending_anchors = [{"type":2,"cells":house_cells,"receipt":{"dev":true}}]
+	var hr: Dictionary = gs.resolve_wake()
+	_a(hr.ok and hr.transferred == roots and gs.dream_blocks.is_empty() and gs.wake_blocks.size() == house_cells.size() and int(hr.chest_moved) == 1, 11022)
+	_a(gs.wake_build_count() >= 100 and gs.wake_kind_count("door") == 1 and int(gs.world_storage["w:" + gs.cell_key(hc)][3].count) == 9, 11023)
+	gs._objectives_eval(true)
+	_a(gs.milestones.has("first_transfer") and gs.milestones.has("shelter") and gs.milestones.has("chest"), 11024)
+	# --- 16.4 Переключение миров: раздельные инвентари, стартовый верстак Сна — один раз ---
+	gs.reset_state(); gs.dev_mode = false
+	gs.set_slot(0, {"id":"pickaxe","name":"Кирка","count":1,"dur":100})
+	_a(not gs.starter_kit_given, 11030)
+	gs.enter_dream()
+	_a(gs.is_dream() and str(gs.get_slot(0).get("id","")) != "pickaxe" and gs._inv_count(gs.inv_dream, "workbench") == 1 and gs.milestones.has("first_dream"), 11031)
+	gs.resolve_wake(true)
+	_a(not gs.is_dream() and str(gs.get_slot(0).get("id","")) == "pickaxe", 11032)
+	gs.enter_dream()
+	_a(gs._inv_count(gs.inv_dream, "workbench") == 1, 11033)  # повторно не выдаётся
+	gs.resolve_wake(true)
+	# --- 16.6 Обычный бой: HP задаёт мир, а не оружие; усталость от фарма ---
+	gs.reset_state(); gs.dev_mode = false; gs.creation_spawn = Vector3.ZERO
+	_a(is_equal_approx(gs.enemy_zone_mult(Vector3(20,2,20)), 1.0) and is_equal_approx(gs.enemy_zone_mult(Vector3(200,2,0)), gs.FAR_LANDS_HP) and is_equal_approx(gs.enemy_zone_mult(Vector3(5,-20,5)), gs.DEPTH_HP), 11040)
+	gs.set_sword3_flag(true)
+	_a(is_equal_approx(gs.enemy_zone_mult(Vector3(20,2,20)), 1.0), 11041)  # чешуйчатый меч не раздувает HP мобов
+	var BC: GDScript = load("res://scripts/build_controller.gd")
+	_a(ceili(40.0 / BC.SWORD_DAMAGE) == 5 and ceili(40.0 / BC.SWORD2_DAMAGE) == 3 and ceili(50.0 / BC.SWORD2_DAMAGE) == 4 and ceili(90.0 / BC.SWORD3_DAMAGE) == 4, 11042)
+	gs.kill_log = []
+	var first_mult: float = gs.kill_fatigue_mult()
+	for i in range(10): gs.reward_kill(false, "")
+	_a(is_equal_approx(first_mult, 1.0) and gs.kill_fatigue_mult() <= gs.KILL_FATIGUE_MIN + 0.001, 11043)
+	_a(gs.reward_kill(true, "Мать блоков") == gs.DUST_PER_BOSS_KILL and gs.reward_kill(true, "Анаконда") == gs.DUST_PER_ANACONDA_KILL, 11044)
+	# --- 16.7 Мать блоков: приход только после первого переноса, угроза глубин 40/70/100 ---
+	gs.reset_state(); gs.dev_mode = false; gs.dream_exit_count = gs.MOBS_UNLOCK_AT_EXITS
+	_a(not gs.mother_can_come() and not gs.on_block_mined_at(Vector3i(0,-20,0), "stone") and gs.deep_threat == 0.0, 11050)
+	gs.milestones["first_transfer"] = true
+	_a(gs.mother_can_come() and not gs.on_block_mined_at(Vector3i(0,-3,0), "stone") and gs.deep_threat == 0.0, 11051)  # у поверхности тихо
+	# v0.11.1: угроза глубин — только атмосфера; Мать — 1% на каждый блок (предвестие → следующий блок).
+	var spawned := false; var n := 0
+	while not spawned and n < 200:
+		spawned = gs.on_block_mined_at(Vector3i(0,-20,0), "stone", 0.5); n += 1
+	_a(not spawned and n == 200, 11052)
+	_a(not gs.on_block_mined_at(Vector3i(0,-20,0), "stone", 0.0) and gs.on_block_mined_at(Vector3i(0,-20,0), "stone", 0.5), 110520)
+	_a(gs.milestones.has("mother_signs") and not gs.milestones.has("mother"), 11053)
+	gs.boss_alive = true
+	_a(not gs.mother_can_come(), 11054)
+	_a(not gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}), 11055)
+	gs.boss_alive = false; gs.on_mother_killed()
+	_a(gs.mother_defeated and gs.deep_threat == 0.0 and not gs.mother_can_come(), 11056)  # кулдаун после победы
+	gs._objectives_eval(true)
+	_a(gs.milestones.has("mother") and gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}) and gs.recipe_available(_rec(gs, "idea_catcher"), {"is_dream": true}), 11057)
+	_a(load("res://scripts/block_mother.gd").MAX_HP == 620, 11058)
+	# --- 16.8 Анаконда: гнёзда спят до Матери, только свет ---
+	var AN: GDScript = load("res://scripts/boss_anaconda.gd")
+	_a(AN.MAX_HP == 1250, 11060)
+	var G: Node = root.get_node("GameState")
+	G.reset_state(); G.mother_defeated = false
+	var host := Node3D.new(); root.add_child(host)
+	_a(AN.try_spawn(host, host, host) == null, 11061)
+	host.queue_free()
+	gs.nest_found = true; gs.on_anaconda_killed(); gs._objectives_eval(true)
+	_a(gs.anaconda_defeated and gs.milestones.has("nest") and gs.milestones.has("anaconda"), 11062)
+	# --- 16.9 Цепочка целей: следующий этап после выполнения текущего ---
+	gs.reset_state(); gs.dev_mode = false
+	var o0: Dictionary = gs.current_objective()
+	_a(str(o0.id) == "reagents" and int(o0.stage) == 0, 11070)
+	gs.collected_reagent_ids = {"a": true, "b": true} if typeof(gs.collected_reagent_ids) == TYPE_DICTIONARY else ["a", "b"]
+	gs._objectives_eval(true)
+	_a(str(gs.current_objective().id) == "first_dream", 11071)
+	gs.enter_dream()
+	_a(str(gs.current_objective().id) == "dream_build", 11072)
+	for i in range(5): gs.place_dream_block(Vector3i(500 + i, 5, 500), "drift")
+	gs._objectives_eval(true)
+	_a(str(gs.current_objective().id) == "first_anchor" and bool(gs.next_big_objective().get("big", false)), 11073)
+	gs.resolve_wake(true)
+	gs.milestones["chest"] = true  # перескочил вперёд: ★«Первый перенос» всё равно остаётся текущей целью
+	_a(str(gs.current_objective().id) == "first_transfer", 11074)
+	gs.milestones["first_transfer"] = true
+	_a(str(gs.current_objective().id) == "shelter", 11075)
+	# --- 16.10 Миграция реальных сейвов v0.10 ---
+	for f in ["res://tests/fixtures/v010_wake_save.json", "res://tests/fixtures/v010_dream_save.json"]:
+		gs.reset_state()
+		var old: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(f))
+		_a(int(old.version) < 10, 11080)
+		gs.apply_save_dict(old)
+		_a(gs.world_storage.has("w:12,1,11") and not gs.world_storage.has("12,1,11"), 11081)
+		_a(gs.starter_camp_built and gs.starter_kit_given and gs.milestones.has("first_dream") and gs.milestones.has("first_transfer"), 11082)
+		if f.contains("dream"):
+			_a(gs.is_dream() and gs.world_storage.has("d:0,2,10") and gs.dream_blocks.size() == 32 and gs.pending_anchors.size() == 1, 11083)
+			var mr: Dictionary = gs.resolve_wake()
+			_a(mr.ok and not gs.is_dream() and not gs.world_storage.has("d:0,2,10"), 11084)
+		var resave: Dictionary = gs.to_save_dict()
+		_a(int(resave.version) == gs.SAVE_FORMAT and int(resave.get("progression_revision", 0)) == gs.PROGRESSION_REVISION, 11085)
+	gs.queue_free(); await process_frame
+	print("SMOKE: v0.11 H-heal 90/75/50/10, chest w:/d: save+anchor, house>=100, worlds, combat zones/fatigue, Mother/Anaconda gates, objectives chain, v0.10 fixtures OK")
+	await _v011_scene_checks()
+
+
+func _v011_scene_checks() -> void:
+	## Сцена: стартовый лагерь, нет слота хилки в HUD, смена оружия → ViewModelRig, урон мечей, взмах возвращается в ноль.
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v011 test", "", "424242", 424242, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene; scene.switcher.show_result_ui = false
+	for i in range(3): await process_frame
+	var camp := 0
+	for c in G.wake_blocks:
+		if G.wake_blocks[c].get("camp", false): camp += 1
+	_a(G.starter_camp_built and camp >= 30 and G.wake_kind_count("torch") == 0 and int(G.pouch.reagent1) == G.START_REAGENT1, 11100)
+	var hud: Node = scene.get_node("HUD")
+	var hs: Dictionary = hud.heal_indicator_state()
+	_a(not hs.slot and hud.find_child("HealSlot", true, false) == null and hud.find_child("ObjectivePanel", true, false) != null, 11101)
+	G.dev_mode = false
+	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i, {})
+	G.set_slot(0, {"id":"sword","name":"Меч","count":1}); G.set_slot(1, {"id":"sword2","name":"Каменный меч","count":1})
+	G.set_slot(2, {"id":"sword3","name":"Чешуйчатый меч","count":1}); G.set_slot(3, {"id":"pickaxe2","name":"Каменная кирка","count":1})
+	G.set_slot(4, {"id":"torch","name":"Факел","count":4}); G.set_slot(5, {"id":"stone","name":"Камень","count":10})
+	var build: Node = scene.build
+	var dmg := {0: 8, 1: 14, 2: 24}
+	for s in [0, 1, 2]:
+		G.select_item_slot(s); build._update_hand_tools()
+		var vm: Node3D = build.viewmodel
+		_a(vm != null and vm.current == str(G.get_slot(s).id) and vm.hand_root.visible, 11102)
+		build._try_sword()
+		_a(build.last_sword_damage == dmg[s], 11103)
+	var vm: Node3D = build.viewmodel
+	_a(vm.name == "ViewModelRoot" and vm.get_parent() is Camera3D and vm.hand_root.get_parent() == vm and vm.grip_pivot.get_parent() == vm.hand_root and vm.swing_pivot.get_parent() == vm.grip_pivot, 11104)
+	var vis := 0
+	for k in vm.models:
+		if vm.models[k].visible: vis += 1
+	_a(vis == 1, 11105)
+	G.select_item_slot(3); build._update_hand_tools()
+	_a(vm.current == "pickaxe2" and vm.models["pickaxe2"].visible and not vm.models["sword3"].visible, 11106)
+	G.select_item_slot(4); build._update_hand_tools()
+	_a(vm.current == "torch" and vm.get_node("HandRoot/GripPivot/SwingPivot/HeldLight").visible, 11107)
+	G.select_item_slot(5); build._update_hand_tools()
+	_a(vm.current == "" and not vm.hand_root.visible, 11108)
+	G.select_item_slot(1); build._update_hand_tools()
+	var hand_pos: Vector3 = vm.hand_root.position
+	build._play_tool_swing()
+	_a(vm.swinging and vm.swing_count >= 1, 11109)
+	await create_timer(0.7).timeout
+	_a(not vm.swinging and vm.swing_pivot.rotation.length() < 0.001 and vm.hand_root.position.distance_to(hand_pos) < 0.05, 11110)
+	await _v0111_scene_checks(scene)
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.11 starter camp, no heal slot, weapon switch → ViewModelRig, sword dmg 8/14/24, swing returns to rest OK")
+
+
+
+func _labels_text(n: Node) -> Array:
+	var out: Array = []
+	for l in n.find_children("*", "Label", true, false):
+		out.append(str((l as Label).text))
+	return out
+
+
+func _v0111_scene_checks(scene: Node) -> void:
+	## v0.11.1 §9: правки пользователя A1–A8 + новые механики боссов.
+	var G: Node = root.get_node("GameState")
+	var build: Node = scene.build
+	var hud: Node = scene.get_node("HUD")
+	# A2: опора как в Minecraft — в воздухе ставить нельзя, рядом с блоком можно.
+	var air := Vector3i(3, 60, 3)
+	_a(not build.placement_supported(air, false) and not build.placement_supported(air, true), 12001)
+	G.wake_blocks[Vector3i(3, 59, 3)] = {"kind": "stone"}
+	_a(build.placement_supported(air, false), 12002)
+	G.wake_blocks.erase(Vector3i(3, 59, 3))
+	G.wake_blocks[Vector3i(4, 60, 3)] = {"kind": "torch"}
+	_a(not build.placement_supported(air, false), 12003)   # факел — не опора
+	G.wake_blocks.erase(Vector3i(4, 60, 3))
+	G.dream_blocks[Vector3i(3, 60, 4)] = {"kind": "drift"}
+	_a(build.placement_supported(air, true) and not build.placement_supported(air, false), 12004)   # опора своего слоя
+	G.dream_blocks.erase(Vector3i(3, 60, 4))
+	# A3: фонаря нет, миграция сейва → 4 факела.
+	_a(not G.find_recipe("lantern").size() > 0 and not ResourceLoader.exists("res://assets/icons/lantern.png"), 12010)
+	var save: Dictionary = G.to_save_dict()
+	var inv: Array = save.get("item_slots", [])
+	if inv.size() > 7:
+		inv[7] = {"id": "lantern", "name": "Фонарь", "count": 2}
+		save["item_slots"] = inv
+		var g2: Node = load("res://scripts/game_state.gd").new()
+		root.add_child(g2)
+		g2.apply_save_dict(JSON.parse_string(JSON.stringify(save)))
+		var torches := 0
+		var lanterns := 0
+		for sl in g2.inv_wake:
+			if typeof(sl) == TYPE_DICTIONARY and str(sl.get("id", "")) == "torch": torches += int(sl.get("count", 0))
+			if typeof(sl) == TYPE_DICTIONARY and str(sl.get("id", "")) == "lantern": lanterns += 1
+		_a(lanterns == 0 and torches >= 8, 12011)
+		g2.queue_free()
+	else:
+		_a(G.LANTERN_TORCH_REFUND == 4, 12011)
+	# A6: земной прыжок — высота апекса ≈1.26 м (v²/2g), меньше 1.5 блока.
+	var PC: GDScript = load("res://scripts/player_controller.gd")
+	var apex: float = PC.JUMP_VELOCITY * PC.JUMP_VELOCITY / (2.0 * PC.PLAYER_GRAVITY)
+	_a(apex > 1.1 and apex < 1.4, 12020)
+	print("SMOKE: v0.11.1 jump apex=%.2f m" % apex)
+	# A7: батарейка с числом внутри, без «100 HP» и «H — хилка1».
+	var hs: Dictionary = hud.heal_indicator_state()
+	var bat: Node = hud.find_child("HealthBattery", true, false)
+	_a(bool(hs.battery) and bat != null and str(bat.label.text) == str(G.player_hp) and not bool(hs.hearts), 12030)
+	for t in _labels_text(hud):
+		_a(not ("хилк" in t.to_lower()) and not (" HP" in t) and not ("HP " in t), 12031)
+	G.damage_player(30, "smoke", true)
+	await process_frame
+	_a(str(bat.label.text) == str(G.player_hp) and bat.fraction() < 1.0, 12032)
+	G.heal_player_full()
+	# A8: инвентарь без текстовых подсказок.
+	hud.inventory.open()
+	await process_frame
+	_a(hud.inventory.find_child("HealHelp", true, false) == null, 12040)
+	for t in _labels_text(hud.inventory):
+		_a(not ("ЛКМ" in t) and not ("Shift" in t) and not ("DEV" in t) and not ("Лечение" in t), 12041)
+	hud.inventory.toggle()
+	await process_frame
+	# A1: меч3 — объёмная 3D-модель (не плоская текстура).
+	var BT: GDScript = load("res://scripts/block_tex.gd")
+	var sm: Mesh = BT.sword3_mesh()
+	var aabb: AABB = sm.get_aabb()
+	_a(sm != null and aabb.size.x > 0.05 and aabb.size.z > 0.05 and aabb.size.y > 0.9 and aabb.size.y < 1.2, 12050)
+	var tm: Mesh = BT.torch_mesh()
+	_a(tm != null and tm.get_aabb().size.y > 0.6 and BT.torch_flame_mesh() != null, 12051)
+	# A4: 1% на блок; блоколиты 1/120 после первой победы, нейтральны, убийство зовёт Мать.
+	G.reset_state(); G.peaceful = false; G.dev_mode = false
+	_a(not G.blockolith_roll(0.0), 12060)                       # до победы над Матерью — нет
+	G.mother_defeated = true
+	_a(G.blockolith_roll(0.008) and not G.blockolith_roll(0.0084), 12061)   # 1/120 = 0.00833
+	G.set_boss_alive(true)
+	_a(not G.blockolith_roll(0.0), 12062)
+	G.set_boss_alive(false)
+	var host := Node3D.new(); scene.wake_world.add_child(host)
+	var bl: CharacterBody3D = load("res://scripts/blockling.gd").new()
+	bl.configure("blockolith", null, Vector3.ZERO)
+	bl.position = scene.player.global_position + Vector3(1.0, 0, 0)
+	host.add_child(bl)
+	await physics_frame
+	var hp0: int = G.player_hp
+	for i in range(90): await physics_frame
+	_a(bl.is_in_group("blockolith") and bl.max_hp == bl.BLOCKOLITH_HP and G.player_hp == hp0, 12063)   # нейтрален: не кусает
+	for m in get_nodes_in_group("block_mother"): m.free()
+	bl.take_damage(999)
+	for i in range(3): await process_frame
+	_a(get_nodes_in_group("block_mother").size() == 1 and G.blockoliths_killed == 1, 12064)
+	var mom: Node = get_nodes_in_group("block_mother")[0]
+	# Никогда два босса: Анаконда не выходит при живой Матери.
+	_a(load("res://scripts/boss_anaconda.gd").spawn_at(host, Vector3(30, 0, 30), "smoke") == null, 12065)
+	# Мать: 3 пластины × 6, кирка 2 / кирка2 6, меч по броне 0 (отскок).
+	mom._enter(mom.S.IDLE)
+	_a(mom.PLATE_COUNT == 3 and mom.PLATE_DURABILITY == 6 and mom.PICK_PLATE_DAMAGE["pickaxe"] == 2 and mom.PICK_PLATE_DAMAGE["pickaxe2"] == 6, 12070)
+	var r0: Dictionary = mom.receive_weapon_hit(24, "sword3")
+	_a(int(r0.dealt) == 0 and bool(r0.bounce) and mom.hp == mom.MAX_HP, 12071)
+	mom._open_plate()
+	_a(mom.state == mom.S.PLATE_OPEN and mom.open_plate >= 0, 12072)
+	var op: int = mom.open_plate
+	_a(int(mom.receive_weapon_hit(8, "sword").dealt) == 0 and mom.hp == mom.MAX_HP, 12073)   # меч и по открытой пластине — 0
+	mom.receive_weapon_hit(2, "pickaxe"); mom.receive_weapon_hit(2, "pickaxe")
+	_a(int(mom.plates[op]["dur"]) == 2 and mom.state == mom.S.PLATE_OPEN, 12074)
+	mom.receive_weapon_hit(2, "pickaxe")
+	_a(int(mom.plates[op]["dur"]) == 0 and mom.state == mom.S.CORE and mom.is_vulnerable(), 12075)   # ядро открыто + оглушение
+	var hpc: int = mom.hp
+	mom.receive_weapon_hit(8, "sword")
+	_a(mom.hp == hpc - 10, 12076)                                  # ×1.25 по ядру
+	_a(mom.CORE_TIME >= 2.5 and mom.CORE_TIME <= 3.5 and mom.PLATE_OPEN_TIME >= 3.0 and mom.PLATE_OPEN_TIME <= 4.0, 12077)
+	# Фаза II: носильщик возвращает пластину; фаза III — без восстановления.
+	mom.phase = 2
+	_a(mom.restore_plate() and int(mom.plates[op]["dur"]) == mom.PLATE_DURABILITY, 12078)
+	mom.plates[op]["dur"] = 0; mom.plates[op]["broken"] = true
+	mom.on_carrier_delivered(null)
+	_a(int(mom.plates[op]["dur"]) == mom.PLATE_DURABILITY, 12079)
+	mom.plates[op]["dur"] = 0; mom.plates[op]["broken"] = true
+	mom.phase = 3
+	_a(not mom.restore_plate() and int(mom.plates[op]["dur"]) == 0, 12080)
+	# Кирпичный дождь: 4–6 кирпичей, тени, навес спасает.
+	var plan: Array = mom.rain_plan(scene.player.global_position, 6)
+	_a(plan.size() == 6 and mom.RAIN_BRICKS_MIN >= 4 and mom.RAIN_BRICKS_MAX <= 6, 12081)
+	for i in range(plan.size()):
+		for j in range(i + 1, plan.size()):
+			var pi_: Vector3 = plan[i]["pos"]; var pj_: Vector3 = plan[j]["pos"]
+			_a(Vector2(pi_.x - pj_.x, pi_.z - pj_.z).length() >= 1.85, 12082)
+	mom._spawn_cover(scene.player.global_position)
+	_a(not mom._covers.is_empty() and mom.under_cover((mom._covers[0]["pos"] as Vector3)) and not mom.under_cover((mom._covers[0]["pos"] as Vector3) + Vector3(5, 0, 0)), 12083)
+	# Скрытого хила нет, урон ≤35% HP.
+	_a(mom.heal_from_blocks(5) == 0, 12084)
+	for d in [mom.SLAM_DAMAGE, mom.WAVE_DAMAGE, mom.REASSEMBLE_DAMAGE, mom.BRICK_DAMAGE, mom.CONTACT_DAMAGE]:
+		_a(int(d) <= 35, 12085)
+	mom.free()
+	await process_frame
+	# Анаконда: кеш факелов.
+	G.reset_state()
+	var reb0: int = G.torch_cache_rebuilds
+	G.wake_blocks[Vector3i(1, 1, 1)] = {"kind": "torch"}
+	_a(G.torch_cells().size() == 1, 12090)
+	var reb1: int = G.torch_cache_rebuilds
+	for i in range(50): G.torch_cells()
+	_a(G.torch_cache_rebuilds == reb1 and reb1 > reb0, 12091)       # без изменений — без пересканирования
+	_a(G.remove_torch(Vector3i(1, 1, 1)) and G.torch_cells().is_empty(), 12092)
+	# Сердца: сохраняются, Сердце структуры: клинья +2, перенос без мутаций.
+	G.heart_light = true; G.heart_structure = true
+	_a(G.wedge_size() == G.WEDGE_SIZE + 2 and G.anchor3_size() == G.ANCHOR3_SIZE + 2, 12100)
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	var g3: Node = load("res://scripts/game_state.gd").new()
+	root.add_child(g3)
+	g3.apply_save_dict(sv)
+	_a(g3.heart_light and g3.heart_structure, 12101)
+	g3.queue_free()
+	_a(G.recipe_available(_rec(G, "lumen"), {"is_dream": true}) and G.is_placeable_block("lumen"), 12102)
+	G.heart_light = false
+	_a(not G.recipe_available(_rec(G, "lumen"), {"is_dream": true}), 12103)
+	G.heart_structure = false
+	_a(G.wedge_size() == G.WEDGE_SIZE, 12104)
+	host.queue_free()
+	await process_frame
+	print("SMOKE: v0.11.1 placement/lantern/jump/battery/inventory/sword3/torch/blockolith/plates/carriers/cover/cache/hearts OK")

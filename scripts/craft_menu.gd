@@ -214,7 +214,14 @@ func _refresh_status() -> void:
 		return
 	var rec: Dictionary = _recipes[_selected]
 	var can := GameState.can_afford_recipe(rec)
-	_status.text = "Выбрано: %s (%s)" % [str(rec.get("name", "?")), "хватит ресурсов" if can else "мало ресурсов"]
+	_status.text = "Выбрано: %s (%s)" % [str(rec.get("name", "?")), "хватит ресурсов" if can else "не хватает: " + GameState.recipe_missing_text(rec)]
+	# v0.11: объяснение, куда попадёт результат и что ещё откроется.
+	if GameState.is_dream() and str(rec.get("where","")) == "dream" and str(rec.get("item","")) != "":
+		_status.text += "\nПредмет ляжет в инвентарь Сна: поставь его и закрепи якорем, чтобы он появился в Яви."
+	if _station_id == "sawmill" and not _upgraded:
+		_status.text += "\nМастерская: поставь лесопилку вплотную к верстаку — откроется деревянная броня."
+	if GameState.is_dream() and _station_id == "" and not _at_workbench and not _at_lathe and not GameState.mother_defeated and not GameState.dev_mode:
+		_status.text += "\n🔒 После победы над Матерью блоков: Алхимический стол, Ловец идей."
 	_craft_btn.disabled = not can
 	_craft_btn.text = "Создать: %s" % str(rec.get("name", "?"))
 
