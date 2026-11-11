@@ -1596,6 +1596,7 @@ func on_block_mined_at(cell: Vector3i, kind: String) -> bool:
 		_deep_warned = 1
 		chat("Где-то в глубине кто-то плачет по разбитым блокам… (угроза глубин 40%)", Color(1.0, 0.6, 0.4))
 		toast.emit("Следы Матери блоков: угроза глубин 40%")
+		milestones_mark("mother_signs")
 	if deep_threat >= DEEP_THREAT_WARN2 and _deep_warned < 2:
 		_deep_warned = 2
 		chat(BOSS_OMEN_TEXT + " — она близко. Приготовь зелья и меч.", Color(1.0, 0.35, 0.35))

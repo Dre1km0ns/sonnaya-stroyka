@@ -604,6 +604,7 @@ func _run() -> void:
 	await _v010_stream_checks()
 	await _v010_entity_checks()
 	await _v010_transfer_checks()
+	await _v011_checks()
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -2373,3 +2374,216 @@ func _v010_transfer_checks() -> void:
 	var file:=FileAccess.open("user://transfer_measures.json",FileAccess.WRITE)
 	if file: file.store_string(JSON.stringify({"sizes":times,"rolls_10000":rolled.rolled,"beacon_protected":protected_result.protected},"  "));file.close()
 	scene.queue_free();await process_frame;current_scene=null;G.reset_state()
+
+
+# ============================================================ v0.11 (раздел 16 ТЗ)
+
+func _rec(gs: Node, id: String) -> Dictionary:
+	for r in gs.recipe_defs():
+		if str(r.get("id", "")) == id: return r
+	return {}
+
+
+func _v011_checks() -> void:
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	# --- 16.1 H-автолечение: 90/75/50/10, без зелий, кулдаун, нет слота ---
+	_a(gs.choose_heal(10,3,2) == "heal1" and gs.choose_heal(25,3,2) == "heal1" and gs.choose_heal(50,3,2) == "heal2" and gs.choose_heal(90,3,2) == "heal2", 11001)
+	_a(gs.choose_heal(90,1,0) == "heal1" and gs.choose_heal(10,0,2) == "heal2" and gs.choose_heal(4,3,3) == "", 11002)
+	gs.reset_state(); gs.dev_mode = false
+	gs.set_slot(2, {"id":"heal1","name":"хилка1","count":3}); gs.set_slot(22, {"id":"heal2","name":"хилка2","count":2})  # хилка2 в рюкзаке, не в хотбаре
+	gs.select_item_slot(0)
+	var expect := {90: ["heal1", 100], 75: ["heal1", 95], 50: ["heal2", 90], 10: ["heal2", 50]}
+	for hp in [90, 75, 50, 10]:
+		gs.player_hp = hp; gs.heal_cd = 0.0
+		_a(gs.use_heal() and gs.last_heal_choice == expect[hp][0] and gs.player_hp == expect[hp][1], 11003)
+	_a(gs.count_item("heal1") == 1 and gs.count_item("heal2") == 0, 11004)
+	gs.player_hp = 40
+	_a(not gs.use_heal() and gs.player_hp == 40 and gs.heal_cd > 14.0 and gs.count_item("heal1") == 1, 11005)  # кулдаун, зелье не списано
+	gs.heal_cd = 0.0; gs.player_hp = 97
+	_a(not gs.use_heal() and gs.count_item("heal1") == 1, 11006)  # почти полное HP — не тратим
+	gs.set_slot(2, {}); gs.player_hp = 30; gs.heal_cd = 0.0
+	_a(not gs.use_heal() and gs.player_hp == 30 and gs.heal_cd == 0.0, 11007)  # нет зелий: ничего не происходит
+	_a(gs.heal_status_text().contains("нет зелий"), 11008)
+	# --- 16.2 Сундук: сохранение/загрузка (w:), перенос якорем (d:→w:), возврат содержимого несвязанного ---
+	gs.reset_state(); gs.dev_mode = false
+	var wc := Vector3i(300,5,300)
+	_a(gs.place_wake_block(wc, "chest"), 11010)
+	gs.set_slot(0, {"id":"log","name":"Бревно","count":10})
+	gs.storage_deposit(wc, 0, false)
+	_a(gs.world_storage.has("w:300,5,300") and str(gs.storage_slots(wc, false)[0].id) == "log" and int(gs.storage_slots(wc, false)[0].count) == 10 and gs.count_item("log") == 0, 11011)
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.world_storage.has("w:300,5,300") and int(gs.storage_slots(wc, false)[0].count) == 10, 11012)
+	_a(gs.storage_take(wc, 0, false) and gs.count_item("log") == 10, 11013)
+	gs.enter_dream()
+	var dc := Vector3i(310,5,310); var lost := Vector3i(320,5,320)
+	gs.place_dream_block(dc, "chest"); gs.place_dream_block(lost, "chest")
+	gs.storage_slots(dc, true)[0] = {"id":"stone","name":"Камень","count":7}
+	gs.storage_slots(lost, true)[0] = {"id":"planks","name":"Доски","count":4}
+	_a(gs.world_storage.has("d:310,5,310") and gs.world_storage.has("d:320,5,320") and not gs.world_storage.has("w:310,5,310"), 11014)
+	var dsv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict())); gs.apply_save_dict(dsv)
+	_a(gs.world_storage.has("d:310,5,310") and int(gs.world_storage["d:310,5,310"][0].count) == 7, 11015)
+	gs.dream_blocks[dc].anchored = true
+	gs.pending_anchors = [{"type":2,"cells":[dc],"receipt":{"dev":true}}]
+	var cr: Dictionary = gs.resolve_wake()
+	_a(cr.ok and cr.transferred == 1 and int(cr.chest_moved) == 1 and int(cr.chest_returned) == 1, 11016)
+	_a(str(gs.wake_blocks.get(dc,{}).get("kind","")) == "chest" and gs.world_storage.has("w:310,5,310") and int(gs.world_storage["w:310,5,310"][0].count) == 7, 11017)
+	_a(not gs.world_storage.has("d:310,5,310") and not gs.world_storage.has("d:320,5,320") and gs._inv_count(gs.inv_dream, "planks") + gs.dream_stash.size() >= 1, 11018)
+	# --- 16.3 Дом 100+ блоков с дверью и сундуком → перенос целиком, цель «Убежище» ---
+	gs.reset_state(); gs.dev_mode = false; gs.enter_dream()
+	var base := Vector3i(400, 10, 400)
+	var door_at := base + Vector3i(2, 1, 0)
+	for x in range(5):
+		for z in range(5):
+			gs.place_dream_block(base + Vector3i(x, 0, z), "planks")
+			gs.place_dream_block(base + Vector3i(x, 5, z), "planks")
+			for y in range(1, 5):
+				var edge := x == 0 or x == 4 or z == 0 or z == 4
+				var p := base + Vector3i(x, y, z)
+				if edge and not (p == door_at or p == door_at + Vector3i.UP):
+					gs.place_dream_block(p, "stone" if y < 3 else "planks")
+	_a(gs.place_dream_block(door_at, "door", 0), 11020)
+	var hc := base + Vector3i(2, 1, 2)
+	gs.place_dream_block(hc, "chest"); gs.storage_slots(hc, true)[3] = {"id":"torch","name":"Факел","count":9}
+	var house_cells: Array = []
+	for c in gs.dream_blocks.keys():
+		gs.dream_blocks[c].anchored = true; house_cells.append(c)
+	var roots := 0
+	for c in gs.dream_blocks.keys():
+		if not gs.dream_blocks[c].has("root"): roots += 1
+	_a(house_cells.size() >= 100, 11021)
+	gs.pending_anchors = [{"type":2,"cells":house_cells,"receipt":{"dev":true}}]
+	var hr: Dictionary = gs.resolve_wake()
+	_a(hr.ok and hr.transferred == roots and gs.dream_blocks.is_empty() and gs.wake_blocks.size() == house_cells.size() and int(hr.chest_moved) == 1, 11022)
+	_a(gs.wake_build_count() >= 100 and gs.wake_kind_count("door") == 1 and int(gs.world_storage["w:" + gs.cell_key(hc)][3].count) == 9, 11023)
+	gs._objectives_eval(true)
+	_a(gs.milestones.has("first_transfer") and gs.milestones.has("shelter") and gs.milestones.has("chest"), 11024)
+	# --- 16.4 Переключение миров: раздельные инвентари, стартовый верстак Сна — один раз ---
+	gs.reset_state(); gs.dev_mode = false
+	gs.set_slot(0, {"id":"pickaxe","name":"Кирка","count":1,"dur":100})
+	_a(not gs.starter_kit_given, 11030)
+	gs.enter_dream()
+	_a(gs.is_dream() and str(gs.get_slot(0).get("id","")) != "pickaxe" and gs._inv_count(gs.inv_dream, "workbench") == 1 and gs.milestones.has("first_dream"), 11031)
+	gs.resolve_wake(true)
+	_a(not gs.is_dream() and str(gs.get_slot(0).get("id","")) == "pickaxe", 11032)
+	gs.enter_dream()
+	_a(gs._inv_count(gs.inv_dream, "workbench") == 1, 11033)  # повторно не выдаётся
+	gs.resolve_wake(true)
+	# --- 16.6 Обычный бой: HP задаёт мир, а не оружие; усталость от фарма ---
+	gs.reset_state(); gs.dev_mode = false; gs.creation_spawn = Vector3.ZERO
+	_a(is_equal_approx(gs.enemy_zone_mult(Vector3(20,2,20)), 1.0) and is_equal_approx(gs.enemy_zone_mult(Vector3(200,2,0)), gs.FAR_LANDS_HP) and is_equal_approx(gs.enemy_zone_mult(Vector3(5,-20,5)), gs.DEPTH_HP), 11040)
+	gs.set_sword3_flag(true)
+	_a(is_equal_approx(gs.enemy_zone_mult(Vector3(20,2,20)), 1.0), 11041)  # чешуйчатый меч не раздувает HP мобов
+	var BC: GDScript = load("res://scripts/build_controller.gd")
+	_a(ceili(40.0 / BC.SWORD_DAMAGE) == 5 and ceili(40.0 / BC.SWORD2_DAMAGE) == 3 and ceili(50.0 / BC.SWORD2_DAMAGE) == 4 and ceili(90.0 / BC.SWORD3_DAMAGE) == 4, 11042)
+	gs.kill_log = []
+	var first_mult: float = gs.kill_fatigue_mult()
+	for i in range(10): gs.reward_kill(false, "")
+	_a(is_equal_approx(first_mult, 1.0) and gs.kill_fatigue_mult() <= gs.KILL_FATIGUE_MIN + 0.001, 11043)
+	_a(gs.reward_kill(true, "Мать блоков") == gs.DUST_PER_BOSS_KILL and gs.reward_kill(true, "Анаконда") == gs.DUST_PER_ANACONDA_KILL, 11044)
+	# --- 16.7 Мать блоков: приход только после первого переноса, угроза глубин 40/70/100 ---
+	gs.reset_state(); gs.dev_mode = false; gs.dream_exit_count = gs.MOBS_UNLOCK_AT_EXITS
+	_a(not gs.mother_can_come() and not gs.on_block_mined_at(Vector3i(0,-20,0), "stone") and gs.deep_threat == 0.0, 11050)
+	gs.milestones["first_transfer"] = true
+	_a(gs.mother_can_come() and not gs.on_block_mined_at(Vector3i(0,-3,0), "stone") and gs.deep_threat == 0.0, 11051)  # у поверхности тихо
+	var spawned := false; var n := 0
+	while not spawned and n < 200:
+		spawned = gs.on_block_mined_at(Vector3i(0,-20,0), "stone"); n += 1
+	_a(spawned and n == 50 and gs.deep_threat == 0.0 and gs._deep_warned == 0, 11052)  # 50 блоков на y<-15 → Мать, шкала сброшена
+	_a(gs.milestones.has("mother_signs") and not gs.milestones.has("mother"), 11053)
+	gs.boss_alive = true
+	_a(not gs.mother_can_come(), 11054)
+	_a(not gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}), 11055)
+	gs.boss_alive = false; gs.on_mother_killed()
+	_a(gs.mother_defeated and gs.deep_threat == 0.0 and not gs.mother_can_come(), 11056)  # кулдаун после победы
+	gs._objectives_eval(true)
+	_a(gs.milestones.has("mother") and gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}) and gs.recipe_available(_rec(gs, "idea_catcher"), {"is_dream": true}), 11057)
+	_a(load("res://scripts/block_mother.gd").MAX_HP == 560, 11058)
+	# --- 16.8 Анаконда: гнёзда спят до Матери, только свет ---
+	var AN: GDScript = load("res://scripts/boss_anaconda.gd")
+	_a(AN.MAX_HP == 2100, 11060)
+	var G: Node = root.get_node("GameState")
+	G.reset_state(); G.mother_defeated = false
+	var host := Node3D.new(); root.add_child(host)
+	_a(AN.try_spawn(host, host, host) == null, 11061)
+	host.queue_free()
+	gs.nest_found = true; gs.on_anaconda_killed(); gs._objectives_eval(true)
+	_a(gs.anaconda_defeated and gs.milestones.has("nest") and gs.milestones.has("anaconda"), 11062)
+	# --- 16.9 Цепочка целей: следующий этап после выполнения текущего ---
+	gs.reset_state(); gs.dev_mode = false
+	var o0: Dictionary = gs.current_objective()
+	_a(str(o0.id) == "reagents" and int(o0.stage) == 0, 11070)
+	gs.collected_reagent_ids = {"a": true, "b": true} if typeof(gs.collected_reagent_ids) == TYPE_DICTIONARY else ["a", "b"]
+	gs._objectives_eval(true)
+	_a(str(gs.current_objective().id) == "first_dream", 11071)
+	gs.enter_dream()
+	_a(str(gs.current_objective().id) == "dream_build", 11072)
+	for i in range(5): gs.place_dream_block(Vector3i(500 + i, 5, 500), "drift")
+	gs._objectives_eval(true)
+	_a(str(gs.current_objective().id) == "first_anchor" and bool(gs.next_big_objective().get("big", false)), 11073)
+	gs.resolve_wake(true)
+	# --- 16.10 Миграция реальных сейвов v0.10 ---
+	for f in ["res://tests/fixtures/v010_wake_save.json", "res://tests/fixtures/v010_dream_save.json"]:
+		gs.reset_state()
+		var old: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(f))
+		_a(int(old.version) < 10, 11080)
+		gs.apply_save_dict(old)
+		_a(gs.world_storage.has("w:12,1,11") and not gs.world_storage.has("12,1,11"), 11081)
+		_a(gs.starter_camp_built and gs.starter_kit_given and gs.milestones.has("first_dream") and gs.milestones.has("first_transfer"), 11082)
+		if f.contains("dream"):
+			_a(gs.is_dream() and gs.world_storage.has("d:0,2,10") and gs.dream_blocks.size() == 32 and gs.pending_anchors.size() == 1, 11083)
+			var mr: Dictionary = gs.resolve_wake()
+			_a(mr.ok and not gs.is_dream() and not gs.world_storage.has("d:0,2,10"), 11084)
+		var resave: Dictionary = gs.to_save_dict()
+		_a(int(resave.version) == gs.SAVE_FORMAT and int(resave.get("progression_revision", 0)) == gs.PROGRESSION_REVISION, 11085)
+	gs.queue_free(); await process_frame
+	print("SMOKE: v0.11 H-heal 90/75/50/10, chest w:/d: save+anchor, house>=100, worlds, combat zones/fatigue, Mother/Anaconda gates, objectives chain, v0.10 fixtures OK")
+	await _v011_scene_checks()
+
+
+func _v011_scene_checks() -> void:
+	## Сцена: стартовый лагерь, нет слота хилки в HUD, смена оружия → ViewModelRig, урон мечей, взмах возвращается в ноль.
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v011 test", "", "424242", 424242, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene; scene.switcher.show_result_ui = false
+	for i in range(3): await process_frame
+	var camp := 0
+	for c in G.wake_blocks:
+		if G.wake_blocks[c].get("camp", false): camp += 1
+	_a(G.starter_camp_built and camp >= 30 and G.wake_kind_count("torch") == 0 and int(G.pouch.reagent1) == G.START_REAGENT1, 11100)
+	var hud: Node = scene.get_node("HUD")
+	var hs: Dictionary = hud.heal_indicator_state()
+	_a(not hs.slot and hud.find_child("HealSlot", true, false) == null and hud.find_child("ObjectivePanel", true, false) != null, 11101)
+	G.dev_mode = false
+	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i, {})
+	G.set_slot(0, {"id":"sword","name":"Меч","count":1}); G.set_slot(1, {"id":"sword2","name":"Каменный меч","count":1})
+	G.set_slot(2, {"id":"sword3","name":"Чешуйчатый меч","count":1}); G.set_slot(3, {"id":"pickaxe2","name":"Каменная кирка","count":1})
+	G.set_slot(4, {"id":"torch","name":"Факел","count":4}); G.set_slot(5, {"id":"stone","name":"Камень","count":10})
+	var build: Node = scene.build
+	var dmg := {0: 8, 1: 14, 2: 24}
+	for s in [0, 1, 2]:
+		G.select_item_slot(s); build._update_hand_tools()
+		var vm: Node3D = build.viewmodel
+		_a(vm != null and vm.current == str(G.get_slot(s).id) and vm.hand_root.visible, 11102)
+		build._try_sword()
+		_a(build.last_sword_damage == dmg[s], 11103)
+	var vm: Node3D = build.viewmodel
+	_a(vm.name == "ViewModelRoot" and vm.get_parent() is Camera3D and vm.hand_root.get_parent() == vm and vm.grip_pivot.get_parent() == vm.hand_root and vm.swing_pivot.get_parent() == vm.grip_pivot, 11104)
+	var vis := 0
+	for k in vm.models:
+		if vm.models[k].visible: vis += 1
+	_a(vis == 1, 11105)
+	G.select_item_slot(3); build._update_hand_tools()
+	_a(vm.current == "pickaxe2" and vm.models["pickaxe2"].visible and not vm.models["sword3"].visible, 11106)
+	G.select_item_slot(4); build._update_hand_tools()
+	_a(vm.current == "torch" and vm.get_node("HandRoot/GripPivot/SwingPivot/HeldLight").visible, 11107)
+	G.select_item_slot(5); build._update_hand_tools()
+	_a(vm.current == "" and not vm.hand_root.visible, 11108)
+	G.select_item_slot(1); build._update_hand_tools()
+	var hand_pos: Vector3 = vm.hand_root.position
+	build._play_tool_swing()
+	_a(vm.swinging and vm.swing_count >= 1, 11109)
+	await create_timer(0.7).timeout
+	_a(not vm.swinging and vm.swing_pivot.rotation.length() < 0.001 and vm.hand_root.position.distance_to(hand_pos) < 0.05, 11110)
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.11 starter camp, no heal slot, weapon switch → ViewModelRig, sword dmg 8/14/24, swing returns to rest OK")

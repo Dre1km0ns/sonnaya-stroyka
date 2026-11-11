@@ -5,7 +5,7 @@ extends SceneTree
 ## бьёт мечом (10 урона / 0.45 с, дальность 2.6 + hit_radius) когда босс уязвим или стоит.
 ## Бот «idle»: стоит рядом и только бьёт — проверка, что урон-капы держатся (≤40 за удар, ≤70 за 3 с).
 
-const SWORD_DAMAGE := 10
+var SWORD_DAMAGE := 14  # v0.11: меч2 (меч1 = 8, чешуйчатый = 24); --dmg=N
 const SWORD_CD := 0.45
 const SWORD_REACH := 2.6
 const WALK := 6.0
@@ -34,6 +34,8 @@ var alog: Dictionary = {}
 
 func _init() -> void:
 	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--dmg="):
+			SWORD_DAMAGE = int(a.substr(6))
 		if a.begins_with("--bot="):
 			bot = a.substr(6)
 	call_deferred("_setup")
