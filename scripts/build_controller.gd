@@ -125,25 +125,20 @@ func _update_ghost() -> void:
 	var place_pos := hit_pos + normal * 0.51
 	var cell: Vector3i = dream_voxels.world_to_cell(place_pos)
 	ghost.global_position = dream_voxels.cell_to_world(cell)
-	ghost.visible = true
+	ghost.visible = placement_supported(cell, GameState.is_dream()) # v0.11.1: без опоры — ни призрака, ни блока
 
 
 func _try_place() -> void:
+	## v0.11.1: как в Minecraft — блок ставится только на грань соседнего блока (в воздух нельзя).
 	var aim := _aim()
 	if not aim.get("hit", false):
-		# Размещение в воздухе перед игроком
-		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
-		var forward := -cam.global_transform.basis.z
-		var place_pos := cam.global_position + forward * 4.0
-		var cell: Vector3i = dream_voxels.world_to_cell(place_pos)
-		if cell.y < 0:
-			cell.y = 0
-		_place_at(cell)
 		return
 	var normal: Vector3 = aim["normal"]
 	var hit_pos: Vector3 = aim["position"]
 	var place_pos2 := hit_pos + normal * 0.51
 	var cell2: Vector3i = dream_voxels.world_to_cell(place_pos2)
+	if not placement_supported(cell2, true):
+		return
 	_place_at(cell2)
 
 
@@ -246,7 +241,7 @@ func _try_place_beacon() -> void:
 	if not aim.get("hit", false):
 		return
 	var cell: Vector3i = vox.world_to_cell(aim["position"] + aim["normal"] * 0.51)
-	if not _wake_cell_free(cell):
+	if not _wake_cell_free(cell) or not placement_supported(cell, false):
 		return
 	if not GameState.consume_item("beacon", 1):
 		GameState.set_hint("Нет маяков. Крафт во сне: %d осыпи + 1 реагент3." % GameState.BEACON_CRAFT_DUST)
@@ -311,10 +306,8 @@ func _try_place_torch() -> void:
 		var normal: Vector3 = aim["normal"]
 		cell = vox.world_to_cell(hit_pos + normal * 0.51)
 	else:
-		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
-		var forward := -cam.global_transform.basis.z
-		cell = vox.world_to_cell(cam.global_position + forward * 3.0)
-	if not _wake_cell_free(cell):
+		return # v0.11.1: в воздух ставить нельзя
+	if not _wake_cell_free(cell) or not placement_supported(cell, false):
 		return
 	if not GameState.consume_item("torch", 1):
 		return
@@ -322,6 +315,34 @@ func _try_place_torch() -> void:
 		vox.sync_cells([cell])
 	else:
 		GameState.add_item("torch", "Факел", 1)
+
+const _NEIGHBOURS6 := [Vector3i(1,0,0), Vector3i(-1,0,0), Vector3i(0,1,0), Vector3i(0,-1,0), Vector3i(0,0,1), Vector3i(0,0,-1)]
+
+func _layer_chunks(dream: bool) -> Node:
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if bool(cm.get("is_dream_layer")) == dream and not bool(cm.get("panorama_mode")):
+			return cm
+	return null
+
+
+func placement_supported(cell: Vector3i, dream: bool) -> bool:
+	## v0.11.1: опора как в Minecraft — хотя бы один из 6 соседей твёрдый (рельеф или поставленный блок
+	## этого мира; факел и открытая дверь опорой не считаются). Генерация лагеря/платформ идёт мимо этой проверки.
+	var cm := _layer_chunks(dream)
+	for d in _NEIGHBOURS6:
+		var n: Vector3i = cell + d
+		if dream:
+			if GameState.dream_blocks.has(n):
+				return true
+			if cm and cm.has_method("is_cell_solid") and not GameState.wake_blocks.has(n) and bool(cm.is_cell_solid(n)):
+				return true
+		else:
+			if GameState.wake_solid(n):
+				return true
+			if cm and cm.has_method("is_cell_solid") and bool(cm.is_cell_solid(n)):
+				return true
+	return false
+
 
 func _wake_cell_free(cell: Vector3i) -> bool:
 	## v0.7: ставить можно и под землёй (до y=-30), но не внутрь твёрдой клетки и не в игрока.
@@ -371,10 +392,8 @@ func _try_place_wake_item() -> void:
 		var normal: Vector3 = aim["normal"]
 		cell = vox.world_to_cell(hit_pos + normal * 0.51)
 	else:
-		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
-		var forward := -cam.global_transform.basis.z
-		cell = vox.world_to_cell(cam.global_position + forward * 3.0)
-	if not _wake_cell_free(cell) or (GameState.shape_part(id) != "" and not _wake_cell_free(cell + GameState.part_offset(id))):
+		return # v0.11.1: в воздух ставить нельзя
+	if not _wake_cell_free(cell) or not placement_supported(cell, false) or (GameState.shape_part(id) != "" and not _wake_cell_free(cell + GameState.part_offset(id))):
 		return
 	if not GameState.consume_placeable(id):
 		return
