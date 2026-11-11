@@ -5,7 +5,7 @@ var _last := ""
 var _timer := 0.0
 var _tween: Tween
 func _ready() -> void:
-	position = Vector2(10,155)
+	position = Vector2(10,330)
 	custom_minimum_size = Vector2(260,70)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var st := StyleBoxFlat.new()
@@ -48,17 +48,9 @@ func _process(delta: float) -> void:
 					text += "\nЛКМ — добыча; без кирки камень не выпадает"
 			elif col.has_meta("terrain_chunk"):
 				text = "Добыча\nУдерживай ЛКМ: кирка или пустая рука. Камень рукой — без дропа."
-		if text == "" and GameState.tutorial_enabled:
-			var step := GameState.tutorial_step
-			if GameState.is_dream():
-				GameState.tutorial_step = maxi(2,step)
-				text = "Сон\nЛКМ — строить. Q — заякорить.\nF — проснуться. Незаякоренное исчезнет."
-			elif step < 2:
-				text = "Первые шаги\nСобери реагенты и найди кровать.\nE — уснуть. I — инвентарь."
-			elif GameState.dream_exit_count < 2:
-				text = "Пробуждение\nЗаякоренное перенесено в явь.\nC во сне — крафт верстака и станций."
-			else:
-				GameState.tutorial_step = 3
+		# v0.11: обучение ведёт панель целей (objective_panel.gd); здесь — только контекст под прицелом.
+		if text == "" and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2:
+			text = "Сон\nНезакреплённое исчезнет при пробуждении.\nQ — закрепить, R — тип якоря, F — проснуться."
 	if text == _last:
 		return
 	_last = text

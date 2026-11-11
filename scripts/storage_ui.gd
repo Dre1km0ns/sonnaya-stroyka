@@ -74,35 +74,93 @@ func open(at: Vector3i, is_catcher: bool) -> void:
 	visible = true
 	GameState.storage_open = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not catcher:
+		_set_lid(true)
+		Sfx.play("chest_open", get_tree().root if is_inside_tree() else null)
 	_refresh()
 
 func close() -> void:
 	GameState.modal_closed_frame = Engine.get_process_frames()
+	var was_open := _open
 	_open = false
 	visible = false
 	GameState.storage_open = false
+	if was_open and not catcher:
+		_set_lid(false)
+		Sfx.play("chest_close", get_tree().root if is_inside_tree() else null)
 	if not GameState.paused and not GameState.inventory_open and not GameState.pillow_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func _take(i: int, _button: int, _shift: bool) -> void:
-	GameState.storage_take(cell, i, catcher)
+const Sfx := preload("res://scripts/sfx.gd")
+var lid_open_calls := 0
+
+func _set_lid(on: bool) -> void:
+	## Анимация крышки у визуала сундука текущего мира.
+	if not is_inside_tree():
+		return
+	for vox in get_tree().get_nodes_in_group("voxel_world"):
+		if bool(vox.get("is_dream_layer")) == GameState.is_dream() and vox.has_method("set_chest_open"):
+			if vox.set_chest_open(cell, on):
+				lid_open_calls += 1
+
+func _take(i: int, button: int, shift: bool) -> void:
+	## ЛКМ — весь стак, ПКМ — половина, Shift+ЛКМ — все стаки этого предмета.
+	var slots := GameState.storage_slots(cell, GameState.is_dream(), catcher)
+	var d: Dictionary = slots[i]
+	var id := str(d.get("id", ""))
+	if id == "":
+		return
+	var ok := false
+	if shift and button == MOUSE_BUTTON_LEFT:
+		ok = GameState.storage_take_all(cell, id, catcher) > 0
+	elif button == MOUSE_BUTTON_RIGHT:
+		ok = GameState.storage_take(cell, i, catcher, maxi(1, int(ceil(int(d.get("count", 0)) / 2.0))))
+	else:
+		ok = GameState.storage_take(cell, i, catcher)
+	_flash(_store_views[i], ok)
 	_refresh()
 
-func _deposit(i: int, _button: int, _shift: bool) -> void:
-	GameState.storage_deposit(cell, i, catcher)
+func _deposit(i: int, button: int, shift: bool) -> void:
+	var d := GameState.get_slot(i)
+	var id := str(d.get("id", ""))
+	if id == "":
+		return
+	var moved := 0
+	if shift and button == MOUSE_BUTTON_LEFT:
+		moved = GameState.storage_deposit_all(cell, id, catcher)
+	elif button == MOUSE_BUTTON_RIGHT:
+		moved = GameState.storage_deposit(cell, i, catcher, maxi(1, int(ceil(int(d.get("count", 0)) / 2.0))))
+	else:
+		moved = GameState.storage_deposit(cell, i, catcher)
+	if moved <= 0 and not catcher:
+		GameState.set_hint("Сундук полон.", false)
+	_flash(_inv_views[i], moved > 0)
 	_refresh()
+
+func _flash(v: Control, ok: bool) -> void:
+	if v == null or not is_inside_tree():
+		return
+	v.modulate = Color(1.5, 1.5, 1.0) if ok else Color(1.6, 0.6, 0.6)
+	var tw := v.create_tween()
+	tw.tween_property(v, "modulate", Color(1, 1, 1), 0.25)
 
 func _refresh() -> void:
 	if not _open:
 		return
-	_title.text = "Ловец идей — тумбочка" if catcher else "Сундук"
-	_hint.text = "Верхние ячейки — забрать. Нижние — положить весь стек. Esc / Y — закрыть."
+	var slots := GameState.storage_slots(cell, GameState.is_dream(), catcher)
+	var used := 0
+	for sl in slots:
+		if str(sl.get("id", "")) != "": used += 1
+	_title.text = "Ловец идей — тумбочка" if catcher else ("Сундук %s · занято %d/27" % ["Сна" if GameState.is_dream() else "Яви", used])
+	_hint.text = "Сверху — сундук, снизу — твой инвентарь. ЛКМ — весь стак · ПКМ — половина · Shift+ЛКМ — все такие предметы. Esc / Y — закрыть."
+	if not catcher and GameState.is_dream():
+		_hint.text += "\nСундук Сна: закрепи его якорем — при пробуждении содержимое перенесётся в Явь. Иначе вещи вернутся в инвентарь Сна."
 	if catcher:
-		_hint.text = ("Сон: только забрать блоки в инвентарь сна." if GameState.is_dream() else "Явь: только положить блоки. Ровно 100: бонус один раз на тип.") + " Бонус сна: +%d с" % GameState.dream_bonus_seconds
-	var slots := GameState.storage_slots(cell)
+		_hint.text = ("Сон: только забрать блоки в инвентарь сна." if GameState.is_dream() else "Явь: положи стопку от %d блоков одного типа — Сон станет длиннее навсегда (один раз на тип)." % GameState.IDEA_THRESHOLD) + " Бонус сна: +%d с из %d" % [int(GameState.dream_bonus_seconds), int(GameState.IDEA_BONUS_CAP)]
 	for i in range(27):
 		var d: Dictionary = slots[i]
 		_store_views[i].set_item(str(d.get("id", "")), int(d.get("count", 0)))
+		_store_views[i].set_durability(int(d.get("durability", GameState.tool_max(str(d.get("id", ""))))), GameState.tool_max(str(d.get("id", ""))))
 	for i in range(36):
 		var d := GameState.get_slot(i)
 		_inv_views[i].set_item(str(d.get("id", "")), int(d.get("count", 0)))

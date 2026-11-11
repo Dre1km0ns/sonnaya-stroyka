@@ -20,7 +20,7 @@ const COMMAND_HELP := {
 "hp":"Текущее HP игрока 1..100. Пример: hp 35",
 "world":"Сменить мир штатным переходом. Пример: world dream; world wake",
 "cooldown":"Сбросить кулдаун Матери блоков. Пример: cooldown reset",
-"sword3":"Тест усиления HP: обычные ×3.75 / Мать ×3 (Анаконда без изменений). Пример: sword3 on; sword3 off; sword3 toggle (sword2 — старый alias)",
+"sword3":"Флаг чешуйчатого меча (HP врагов не меняет). Пример: sword3 on; sword3 off; sword3 toggle (sword2 — старый alias)",
 "hardness":"Твёрдость/время добычи/дроп. Пример: hardness stone pickaxe; mining dirt hand",
 "armor":"Комплект надеть/снять/починить/статистика. Пример: armor give scale; armor clear; armor repair; armor stats",
 "sword":"Выдать меч wood|stone|scale. Пример: sword give scale",
@@ -315,7 +315,7 @@ func _execute(a: PackedStringArray) -> String:
 			var mode := a[1] if a.size()>1 else "toggle"
 			if mode not in ["on","off","toggle"]: return "Ошибка: sword3 on|off|toggle"
 			GameState.set_sword3_flag(not GameState.sword2_crafted if mode=="toggle" else mode=="on")
-			return "Флаг чешуйчатого меча: %s · обычные ×3.75, Мать ×3 при включении." % GameState.sword2_crafted
+			return "Флаг чешуйчатого меча: %s (v0.11+: HP врагов от него не зависит, у Матери фиксированные 620)." % GameState.sword2_crafted
 		"hardness","mining":
 			if a.size()<2: return "Ошибка: hardness <block> [hand|pickaxe|pickaxe2]"
 			var tool := a[2] if a.size()>2 and a[2]!="hand" else ""

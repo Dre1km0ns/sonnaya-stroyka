@@ -25,7 +25,7 @@ var _unstable_cd: float = 18.0
 var _enemy_script: GDScript
 var _ghost_respawn_at: Dictionary = {}
 var _ghost_present: Dictionary = {}
-const GHOST_RESPAWN_DELAY := 25.0
+const GHOST_RESPAWN_DELAY := 60.0 # v0.11: было 25 с — бесконечный фарм осыпи
 const MAX_GHOSTS_PER_SPOT := 3
 var _ghost_script: GDScript
 const MODE_CHASE := 0
@@ -167,8 +167,24 @@ func _tick_anaconda() -> Node:
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
 		if not bool(cm.get("is_dream_layer")) and not bool(cm.get("panorama_mode")):
 			chunks = cm
+	_warn_nests(chunks)
 	var script: GDScript = load("res://scripts/boss_anaconda.gd")
 	return script.try_spawn(wake_root, player, chunks)
+
+
+var _nest_warned: Dictionary = {}
+
+
+func _warn_nests(chunks: Node) -> void:
+	## v0.11: гнездо видно заранее — предупреждение за 20 м, до того как Анаконда сможет прийти.
+	if chunks == null or player == null or GameState.is_dream() or not chunks.has_method("nests_near"):
+		return
+	for n in chunks.nests_near(player.global_position, 20.0):
+		if bool(n["taken"]) or _nest_warned.has(str(n["id"])):
+			continue
+		_nest_warned[str(n["id"])] = true
+		GameState.nest_found = true
+		GameState.chat("Гнездо Анаконды рядом. Ночью она выйдет к тому, кто подойдёт к яйцу ближе 12 м. Меч бесполезен — её жгут только ПОСТАВЛЕННЫЕ факелы, лучше 2–3 с разных сторон. Её тело ломает факелы — бери запас.", Color(1.0, 0.7, 0.35))
 
 
 func _cull_to_cap() -> int:
@@ -227,6 +243,8 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 		return
 	if GameState.beacon_protects(Vector3i(floori(pos.x), floori(pos.y), floori(pos.z))):
 		return
+	if try_spawn_blockolith(pos) != null:
+		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos
 	if elite and e.has_method("configure_elite"):
@@ -235,6 +253,24 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 		e.set("elite", true)
 	wake_root.add_child(e)
 	load("res://scripts/seam_effect.gd").spawn(wake_root, pos)
+
+
+var blockoliths_spawned := 0
+
+
+func try_spawn_blockolith(pos: Vector3, roll: float = -1.0) -> Node:
+	## v0.11.1: после первой победы над Матерью обычный спавн с шансом 1/120 заменяется нейтральным Блоколитом
+	## (не больше одного одновременно). Его убийство вызывает Мать блоков.
+	if wake_root == null or get_tree().get_nodes_in_group("blockolith").size() > 0:
+		return null
+	if not GameState.blockolith_roll(roll):
+		return null
+	var b: CharacterBody3D = load("res://scripts/blockling.gd").new()
+	b.configure("blockolith")
+	b.position = pos
+	wake_root.add_child(b)
+	blockoliths_spawned += 1
+	return b
 
 
 func _pulse_unstable_seam() -> void:

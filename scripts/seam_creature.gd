@@ -59,7 +59,7 @@ func _ready() -> void:
 	if GameState.has_signal("night_changed") and not GameState.night_changed.is_connected(_on_night_look):
 		GameState.night_changed.connect(_on_night_look)
 	_on_night_look(GameState.is_night() if GameState.has_method("is_night") else false)
-	GameState.apply_enemy_scaling(self,50)
+	GameState.apply_enemy_scaling(self,90 if elite else 50) # v0.11: элита = отдельная роль, а не множитель оружия
 	_Vis.update_hp_bar(self, hp, max_hp)
 
 

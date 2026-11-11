@@ -3,7 +3,7 @@
 config_version=5
 
 [application]
-config/name="Сонная стройка v0.10"
+config/name="Сонная стройка v0.11"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="sonnaya_stroyka"
 config/description="Dual-world sandbox: build in Dream, anchor what survives into Wake."

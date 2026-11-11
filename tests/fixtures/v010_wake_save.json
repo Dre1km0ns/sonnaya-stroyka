@@ -1,0 +1,838 @@
+{
+	"active_bed": "",
+	"anchors3": 0,
+	"armor": [
+		{
+			"count": 1,
+			"durability": 120,
+			"id": "wood_helmet"
+		},
+		{},
+		{},
+		{}
+	],
+	"awake_time": 0.386584936507936,
+	"beacons": 0,
+	"block_stash": {},
+	"boss_next_mine": false,
+	"clarity": 100.0,
+	"collected_eggs": [],
+	"collected_reagent_ids": [],
+	"creation_spawn": [
+		0.0,
+		2.0,
+		6.0
+	],
+	"day_time": 120.386584936508,
+	"dev_mode": false,
+	"dream_blocks": {},
+	"dream_bonus_seconds": 6.0,
+	"dream_exit_count": 3,
+	"dust": 320,
+	"flowing_water": {},
+	"graves": [],
+	"heal_cd": 0.0,
+	"idea_eaten": {
+		"stone": true
+	},
+	"inv_dream": [
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		}
+	],
+	"item_slots": [
+		{
+			"count": 1,
+			"durability": 500,
+			"id": "sword2",
+			"name": "Каменный меч"
+		},
+		{
+			"count": 1,
+			"durability": 100,
+			"id": "pickaxe",
+			"name": "Кирка"
+		},
+		{
+			"count": 3,
+			"id": "heal1",
+			"name": "хилка1"
+		},
+		{
+			"count": 2,
+			"id": "heal2",
+			"name": "Хилка2"
+		},
+		{
+			"count": 37,
+			"id": "planks",
+			"name": "Доски"
+		},
+		{
+			"count": 9,
+			"id": "torch",
+			"name": "Факел"
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		}
+	],
+	"moon_energy": 0.56,
+	"moon_revision": 1,
+	"mother_cooldown": 300.0,
+	"mother_defeated": true,
+	"nails": 3,
+	"peaceful": false,
+	"pending_anchors": [],
+	"pillow": [
+		{
+			"count": 4,
+			"id": "heal1",
+			"name": "хилка1"
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		},
+		{
+			"count": 0,
+			"id": "",
+			"name": ""
+		}
+	],
+	"player_hp": 63,
+	"player_pos": [
+		0.0,
+		1.18333292007446,
+		6.0
+	],
+	"progression_revision": 10,
+	"reagent_counts": [
+		40,
+		25,
+		12
+	],
+	"reason": "fixture-wake",
+	"refunded_overflow": [
+		0,
+		0,
+		0
+	],
+	"removed_dream_terrain": {},
+	"removed_terrain": {},
+	"seed_text": "старый сейв",
+	"selected_anchor": 0,
+	"selected_slot": 0,
+	"spatial_mapping": "parallel",
+	"spawn_point": [
+		0.0,
+		2.0,
+		6.0
+	],
+	"sword2_crafted": false,
+	"sword3_crafted": false,
+	"threat": {
+		"awake_time": 0.386584936507936,
+		"enemy_count": 0,
+		"ghost_count": 0,
+		"ghost_mode": 1,
+		"ghost_present": {},
+		"ghost_respawn_at": {},
+		"mode_timer": 7.0,
+		"next_spawn_at": 45.0,
+		"spawn_budget": 3,
+		"unstable_cd": 17.6134150634921
+	},
+	"tutorial_enabled": true,
+	"tutorial_step": 0,
+	"version": 9,
+	"wake_blocks": {
+		"10,0,10": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"10,0,11": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"10,0,12": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"10,0,13": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"11,0,10": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"11,0,11": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"11,0,12": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"11,0,13": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"11,1,12": {
+			"kind": "bed",
+			"mutant": false
+		},
+		"11,1,13": {
+			"kind": "bed_foot",
+			"root": "11,1,12"
+		},
+		"12,0,10": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"12,0,11": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"12,0,12": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"12,0,13": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"12,1,11": {
+			"kind": "chest",
+			"mutant": false
+		},
+		"13,0,10": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"13,0,11": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"13,0,12": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"13,0,13": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"13,1,11": {
+			"kind": "workbench",
+			"mutant": false
+		},
+		"14,0,10": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"14,0,11": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"14,0,12": {
+			"kind": "planks",
+			"mutant": false
+		},
+		"14,0,13": {
+			"kind": "planks",
+			"mutant": false
+		}
+	},
+	"wedges": 1,
+	"world": "wake",
+	"world_name": "Старый мир v010",
+	"world_seed": "2771304061",
+	"world_seed_dream": "125661716648449",
+	"world_seed_wake": "2771304061",
+	"world_storage": {
+		"12,1,11": [
+			{
+				"count": 64,
+				"id": "stone",
+				"name": "Камень"
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 2,
+				"id": "heal1",
+				"name": "хилка1"
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 1,
+				"durability": 321,
+				"id": "pickaxe2",
+				"name": "Кирка2"
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			},
+			{
+				"count": 0,
+				"id": "",
+				"name": ""
+			}
+		]
+	}
+}
