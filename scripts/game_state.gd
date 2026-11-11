@@ -878,7 +878,6 @@ func recipe_defs() -> Array:
 		{"id":"sword3","name":"Чешуйчатый меч (24 урона)","where":"lathe","items":{"sword2":1,"anaconda_scale":5},"item":"sword3", "tier": 4},
 		{"id": "sword2", "name": "Каменный меч (14 урона)", "where": "lathe", "items": {"sword": 1, "stone": 6}, "reagent2": 2, "item": "sword2", "item_name": "Меч2", "tier": 2},
 		{"id": "pickaxe2", "name": "Кирка2 (каменная, ×2 скорость)", "where": "lathe", "items": {"pickaxe": 1, "stone": 6}, "reagent2": 1, "item": "pickaxe2", "tier": 2},
-		{"id":"lantern","name":"Фонарь глубин (свет в руке)","where":"lathe","items":{"anaconda_scale":3,"torch":1},"reagent3":2,"item":"lantern", "tier": 4},
 		{"id": "sawmill", "name": "Лесопилка", "where": "dream", "reagent1": 4, "reagent2": 3, "reagent3": 2, "item": "sawmill", "tier": 1},
 		{"id": "door", "name": "Дверь", "where": "sawmill", "items": {"planks": 6}, "item": "door", "tier": 1},
 		{"id": "chest", "name": "Сундук (27 ячеек)", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
@@ -1639,7 +1638,7 @@ func on_anaconda_killed() -> void:
 	var first := not anaconda_defeated
 	anaconda_defeated = true
 	if first:
-		var t := "Открыто: Чешуйчатый меч, чешуйчатая броня и Фонарь глубин на станке."
+		var t := "Открыто: Чешуйчатый меч и чешуйчатая броня на станке."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -2287,6 +2286,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	_snapshot_indices.clear()
 	if fmt < 10:
 		_migrate_v010(data)
+	migrate_lanterns() # v0.11.1: «Фонарь глубин» удалён — в любых сейвах превращается в факелы.
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
@@ -3079,3 +3079,26 @@ func blueprint_ghost_cells() -> Array:
 		var c := key_cell(str(k))
 		if not dream_blocks.has(c): out.append(c)
 	return out
+
+
+# --- v0.11.1: удаление «Фонаря глубин» ---
+const LANTERN_TORCH_REFUND := 4
+
+func _lanterns_to_torches(arr: Array) -> int:
+	var n := 0
+	for i in range(arr.size()):
+		var sl: Variant = arr[i]
+		if typeof(sl) == TYPE_DICTIONARY and str(sl.get("id", "")) == "lantern":
+			var c := maxi(1, int(sl.get("count", 1)))
+			arr[i] = {"id": "torch", "name": ItemDB.display_name("torch"), "count": c * LANTERN_TORCH_REFUND}
+			n += c
+	return n
+
+
+func migrate_lanterns() -> int:
+	## Каждый фонарь (в инвентарях, под подушкой, в тайнике сна и сундуках) → 4 факела в той же ячейке.
+	var n := _lanterns_to_torches(inv_wake) + _lanterns_to_torches(inv_dream) + _lanterns_to_torches(pillow) + _lanterns_to_torches(dream_stash)
+	for k in world_storage.keys():
+		if typeof(world_storage[k]) == TYPE_ARRAY:
+			n += _lanterns_to_torches(world_storage[k])
+	return n

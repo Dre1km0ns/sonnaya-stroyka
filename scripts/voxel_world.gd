@@ -186,7 +186,9 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 			tex_kind = "mouth"
 	elif mutant:
 		tex_kind = "mouth"
-	if kind == "bed":
+	if kind == "torch":
+		mi.mesh = BlockTex.torch_mesh()
+	elif kind == "bed":
 		mi.mesh = BlockTex.bed_mesh(1.0 if data.get("legacy_compact",false) else 2.0)
 	elif kind in ["lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door"]:
 		mi.mesh = BlockTex.station_mesh(kind)
@@ -209,18 +211,11 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		lid.mesh = BlockTex.chest_lid_mesh()
 		pivot.add_child(lid)
 	if kind == "torch":
+		# v0.11.1: общий меш пламени (кешируется в BlockTex) вместо сферы.
 		var flame := MeshInstance3D.new()
-		var fs := SphereMesh.new()
-		fs.radius = 0.14
-		fs.height = 0.28
-		flame.mesh = fs
-		var fmat := StandardMaterial3D.new()
-		fmat.albedo_color = Color(1.0, 0.62, 0.2)
-		fmat.emission_enabled = true
-		fmat.emission = Color(1.0, 0.45, 0.1)
-		fmat.emission_energy_multiplier = 1.4
-		flame.material_override = fmat
-		flame.position = Vector3(0, 0.42, 0)
+		flame.name = "Flame"
+		flame.mesh = BlockTex.torch_flame_mesh()
+		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.add_child(flame)
 		var light := OmniLight3D.new()
 		light.name = "TorchLight"

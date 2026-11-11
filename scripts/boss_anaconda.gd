@@ -246,10 +246,8 @@ func light_zones() -> Array:
 	for t in _torches:
 		out.append({"pos": t, "r": TORCH_RADIUS, "held": false})
 	var p := _player()
-	if p and (GameState.selected_is("torch") or GameState.selected_is("lantern")) and not GameState.is_dream():
-		# v0.11: Фонарь глубин светит в 1.6 раза дальше факела.
-		var held_r := HELD_TORCH_RADIUS * (1.6 if GameState.selected_is("lantern") else 1.0)
-		out.append({"pos": p.global_position + Vector3(0, 1.2, 0), "r": held_r, "held": true})
+	if p and GameState.selected_is("torch") and not GameState.is_dream():
+		out.append({"pos": p.global_position + Vector3(0, 1.2, 0), "r": HELD_TORCH_RADIUS, "held": true})
 	return out
 
 

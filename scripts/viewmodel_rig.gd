@@ -18,12 +18,10 @@ const TOOL_CONFIG := {
 		"swing_time": 0.26, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.0},
 	"sword2":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
 		"swing_time": 0.26, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.0},
-	"sword3":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.38, "grip": Vector3(0.0, -0.08, 0.0),
+	"sword3":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
 		"swing_time": 0.24, "wind": Vector3(18, -18, -14), "swing": Vector3(-64, 36, 32), "speed": 1.1},
 	"torch":    {"pos": Vector3(0.30, -0.36, -0.48), "rot": Vector3(-14, 0, 10), "scale": 0.55, "grip": Vector3(0.0, -0.16, 0.0),
 		"swing_time": 0.22, "wind": Vector3(10, 0, 0), "swing": Vector3(-30, 0, 6), "speed": 1.0},
-	"lantern":  {"pos": Vector3(0.29, -0.27, -0.50), "rot": Vector3(-6, -10, 4), "scale": 0.50, "grip": Vector3(0.0, -0.32, 0.0),
-		"swing_time": 0.22, "wind": Vector3(8, 0, 0), "swing": Vector3(-24, 0, 4), "speed": 1.0},
 }
 const WALL_PROBE := 0.85
 const BOB_AMOUNT := 0.012
@@ -84,8 +82,8 @@ func set_tool(id: String) -> void:
 	hand_root.visible = current != ""
 	var arm := swing_pivot.get_node_or_null("Arm") as Node3D
 	if arm: arm.visible = current != ""
-	_light.visible = current in ["torch", "lantern"]
-	_light.omni_range = 11.0 if current == "lantern" else 7.0
+	_light.visible = current == "torch"
+	_light.omni_range = 7.0
 	if current == "":
 		return
 	var c: Dictionary = TOOL_CONFIG[current]
@@ -153,20 +151,16 @@ func _build_model(id: String) -> Node3D:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	match id:
 		"torch":
-			mi.mesh = BlockTex.cube_mesh("log", Vector3(0.07, 0.55, 0.07))
-			mi.position = Vector3(0, 0.0, 0)
+			# v0.11.1: тот же факел, что и в мире: рукоять, обмотка, обугленный верх и язык пламени.
+			mi.mesh = BlockTex.torch_mesh()
+			mi.position = Vector3(0, -0.04, 0)
 			root.add_child(mi)
-			root.add_child(_flame(Vector3(0, 0.30, 0), 0.07))
-		"lantern":
-			mi.mesh = _lantern_mesh()
-			root.add_child(mi)
-			root.add_child(_flame(Vector3(0, 0.02, 0), 0.06))
-		"sword3":
-			# Чешуйчатый меч: пиксельный спрайт выдавлен в объём (BlockTex.scale_sword_mesh) и повёрнут клинком вверх.
-			mi.mesh = BlockTex.tool_mesh("sword3")
-			mi.rotation_degrees = Vector3(0, 0, 45)
-			mi.position = Vector3(0.0, 0.0, 0)
-			root.add_child(mi)
+			var fl := MeshInstance3D.new()
+			fl.name = "Flame"
+			fl.mesh = BlockTex.torch_flame_mesh()
+			fl.position = mi.position
+			fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			root.add_child(fl)
 		_:
 			mi.mesh = BlockTex.tool_mesh(id)
 			root.add_child(mi)
@@ -188,26 +182,6 @@ func _flame(at: Vector3, r: float) -> MeshInstance3D:
 	f.position = at
 	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return f
-
-
-func _lantern_mesh() -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var parts := [
-		["anaconda_scale", Vector3(-0.11, -0.12, -0.11), Vector3(0.22, 0.03, 0.22)],
-		["anaconda_scale", Vector3(-0.11, 0.12, -0.11), Vector3(0.22, 0.03, 0.22)],
-		["log", Vector3(-0.11, -0.10, -0.11), Vector3(0.03, 0.22, 0.03)],
-		["log", Vector3(0.08, -0.10, -0.11), Vector3(0.03, 0.22, 0.03)],
-		["log", Vector3(-0.11, -0.10, 0.08), Vector3(0.03, 0.22, 0.03)],
-		["log", Vector3(0.08, -0.10, 0.08), Vector3(0.03, 0.22, 0.03)],
-		["log", Vector3(-0.02, 0.15, -0.02), Vector3(0.04, 0.10, 0.04)],
-		["log", Vector3(-0.02, -0.40, -0.02), Vector3(0.04, 0.28, 0.04)],
-	]
-	for p in parts:
-		var mesh: Mesh = BlockTex.cube_mesh(str(p[0]) if str(p[0]) != "anaconda_scale" else "scale", p[2])
-		st.append_from(mesh, 0, Transform3D(Basis.IDENTITY, Vector3(p[1]) + Vector3(p[2]) * 0.5))
-	st.set_material(BlockTex.material())
-	return st.commit()
 
 
 func _build_arm() -> Node3D:

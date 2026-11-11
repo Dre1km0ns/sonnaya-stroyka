@@ -4,7 +4,7 @@ extends Node3D
 
 const Rig := preload("res://scripts/viewmodel_rig.gd")
 const BlockTex := preload("res://scripts/block_tex.gd")
-const ORDER := ["pickaxe", "pickaxe2", "sword", "sword2", "sword3", "torch", "lantern"]
+const ORDER := ["pickaxe", "pickaxe2", "sword", "sword2", "sword3", "torch"]
 
 var cam: Camera3D
 var rig: Node3D

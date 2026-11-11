@@ -111,8 +111,7 @@ func _build() -> void:
 		sv.slot_clicked.connect(_on_special_clicked)
 		special_row.add_child(sv)
 		_specials.append([sv, str(sp["id"])])
-	# v0.11: отдельной ячейки быстрого лечения нет — H выбирает зелье сам.
-	var heal_help:=Label.new();heal_help.name="HealHelp";heal_help.text="Лечение: H — само выберет хилку1 (+20) или хилку2 (+40) из всего инвентаря Яви.\nЗелья из Сна лежат под подушкой кровати (Y у кровати).";heal_help.add_theme_font_size_override("font_size",12);heal_help.add_theme_color_override("font_color",Color(1,0.85,0.88));left.add_child(heal_help)
+	# v0.11.1: никаких текстовых подсказок в инвентаре (по просьбе игрока).
 	# Броня и кошель.
 	var right := VBoxContainer.new()
 	right.name = "ArmorAndPouch"
@@ -160,11 +159,6 @@ func _build() -> void:
 		pv.mouse_filter = Control.MOUSE_FILTER_PASS
 		pgrid.add_child(pv)
 		_pouch.append([pv, pid])
-	var help := Label.new()
-	help.text = "ЛКМ — взять/положить   ПКМ — половина   Shift+ЛКМ — перенос/надеть   I / Tab / Esc — закрыть"
-	help.add_theme_font_size_override("font_size", 12)
-	help.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
-	box.add_child(help)
 	_held_view = SlotView.new()
 	_held_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_held_view.visible = false
@@ -306,7 +300,7 @@ func _refresh() -> void:
 	if _armor_caption: _armor_caption.text = "Броня • %d защиты" % GameState.armor_points()
 	if not visible:
 		return
-	_title.text = ("Инвентарь сна" if GameState.is_dream() else "Инвентарь яви") + ("   [DEV-сид: всё бесконечно]" if GameState.dev_mode else "")
+	_title.text = ("Инвентарь сна" if GameState.is_dream() else "Инвентарь яви") 
 	for i in range(4):
 		var d: Dictionary = GameState.armor[i]
 		var id: String = d.get("id","")

@@ -1115,7 +1115,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.reset_state()
 	var lathe_ids: Array = G.get_visible_recipes({"at_lathe": true}).map(func(r): return str(r["id"]))
 	var bench_ids: Array = G.get_visible_recipes({"at_workbench": true}).map(func(r): return str(r["id"]))
-	_a(lathe_ids == ["sword3", "sword2", "pickaxe2", "lantern","scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
+	_a(lathe_ids == ["sword3", "sword2", "pickaxe2", "scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
 	_a(not ("lathe" in bench_ids) and not ("sword2" in bench_ids), 1077)
 	for rid in bench_ids:
 		_a(not (rid in lathe_ids), 1079)
@@ -1148,7 +1148,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	root.add_child(cmenu)
 	await process_frame
 	cmenu.open_lathe()
-	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2", "lantern","scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
+	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2", "scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
 	cmenu.close()
 	cmenu.queue_free()
 	_a(G.is_placeable_block("bed") and G.is_placeable_block("lathe"), 1109)
@@ -2173,7 +2173,7 @@ func _v010_gameplay_checks() -> void:
 	_a(G.use_heal("heal1") and G.player_hp==70 and G.get_slot(9).count==2,10016)
 	var ui: Node=get_first_node_in_group("inventory_ui")
 	ui._on_slot_clicked(4,MOUSE_BUTTON_LEFT,false);ui._on_slot_clicked(4,MOUSE_BUTTON_LEFT,false);ui.close()
-	_a(not ui.has_method("_on_quick_heal_clicked") and ui.find_child("HealHelp",true,false)!=null,10116)
+	_a(not ui.has_method("_on_quick_heal_clicked") and ui.find_child("HealHelp",true,false)==null and ui.find_children("*","Label",true,false).all(func(l): return not str(l.text).contains("ЛКМ")),10116)
 	_a(G.count_item("heal2")==1 and G.count_item("heal1")==2,10017)
 	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
 	G.add_item_count("sword2",1);G.add_item_count("anaconda_scale",5);G.set_sword3_flag(false)

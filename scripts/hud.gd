@@ -257,91 +257,37 @@ func _tick_chat(delta: float) -> void:
 # --- v0.6: HP игрока сердечками над хотбаром ---
 
 func _build_hearts() -> void:
+	## v0.11.1: вместо 10 сердечек — одна «батарейка» с числом HP внутри.
 	var root: Control = $Root
-	_hp_wrap = HBoxContainer.new()
-	_hp_wrap.name = "Hearts"
+	var w := 9 * 52 + 8 * 4
+	_hp_wrap = load("res://scripts/health_battery.gd").new()
 	_hp_wrap.anchor_left = 0.5
 	_hp_wrap.anchor_right = 0.5
 	_hp_wrap.anchor_top = 1.0
 	_hp_wrap.anchor_bottom = 1.0
-	var w := 9 * 52 + 8 * 4
 	_hp_wrap.offset_left = -w / 2.0
-	_hp_wrap.offset_right = -w / 2.0 + 240
-	_hp_wrap.offset_top = -92.0
+	_hp_wrap.offset_right = -w / 2.0 + 132
+	_hp_wrap.offset_top = -96.0
 	_hp_wrap.offset_bottom = -70.0
-	_hp_wrap.add_theme_constant_override("separation", 1)
-	_hp_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_hp_wrap)
-	for i in range(10):
-		var t := TextureRect.new()
-		t.custom_minimum_size = Vector2(22, 20)
-		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_hp_wrap.add_child(t)
-		_hearts.append(t)
 
 
 func _build_heal_indicator() -> void:
-	## v0.7: «HP 74/100» + ячейка хилки1 (кол-во, клавиша, затемнение-кулдаун 15 с).
-	var root: Control = $Root
-	var w := 9 * 52 + 8 * 4
-	_hp_text = Label.new()
-	_hp_text.name = "HPText"
-	_hp_text.anchor_left = 0.5
-	_hp_text.anchor_right = 0.5
-	_hp_text.anchor_top = 1.0
-	_hp_text.anchor_bottom = 1.0
-	_hp_text.offset_left = -w / 2.0 + 262
-	_hp_text.offset_right = -w / 2.0 + 440
-	_hp_text.grow_horizontal = Control.GROW_DIRECTION_END
-	_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_hp_text.offset_top = -94.0
-	_hp_text.offset_bottom = -70.0
-	_hp_text.add_theme_font_size_override("font_size", 15)
-	_hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_hp_text.add_theme_constant_override("outline_size", 5)
-	root.add_child(_hp_text)
-	# v0.11: отдельной ячейки зелья больше нет — H сам выбирает зелье из инвентаря.
-	_heal_text = Label.new()
-	_heal_text.name = "HealText"
-	_heal_text.anchor_left = 0.5
-	_heal_text.anchor_right = 0.5
-	_heal_text.anchor_top = 1.0
-	_heal_text.anchor_bottom = 1.0
-	# В одной строке с «HP n/100», правее — не пересекается с названием предмета над хотбаром.
-	_heal_text.offset_left = -w / 2.0 + 404
-	_heal_text.offset_right = w / 2.0 + 260
-	_heal_text.offset_top = -93.0
-	_heal_text.offset_bottom = -71.0
-	_heal_text.add_theme_font_size_override("font_size", 13)
-	_heal_text.add_theme_color_override("font_color", Color(1.0, 0.82, 0.86))
-	_heal_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_heal_text.add_theme_constant_override("outline_size", 5)
-	_heal_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_heal_text)
+	## v0.11.1: подписи «HP n/100» и «H ▸ хилка…» убраны; число HP — внутри батарейки.
+	_hp_text = _hp_wrap.label if _hp_wrap else null
+	_heal_text = null
 
 
 func _update_heal_indicator() -> void:
-	if _heal_text == null:
+	if _hp_wrap == null:
 		return
-	var dream := GameState.is_dream()
-	_heal_text.visible = not dream
-	_heal_text.text = GameState.heal_status_text().replace("H ▸", _key("use_heal", "H") + " ▸")
-	var regen: float = GameState.regen_delay_left()
-	var hp: int = GameState.player_hp
-	var tail := ""
-	if hp < GameState.PLAYER_MAX_HP and hp > 0:
-		tail = "  реген %ds" % int(ceil(regen)) if regen > 0.0 else "  +1/с"
-	_hp_text.text = "HP %d/%d%s" % [hp, GameState.PLAYER_MAX_HP, tail]
-	_hp_text.add_theme_color_override("font_color", Color(1.0, 0.5, 0.45) if hp <= 30 else Color(1, 1, 1))
+	_hp_wrap.set_hp(GameState.player_hp, GameState.PLAYER_MAX_HP)
 
 
 func heal_indicator_state() -> Dictionary:
-	return {"visible": _heal_text != null and _heal_text.visible, "slot": find_child("HealSlot", true, false) != null,
-		"cd_text": _heal_text.text if _heal_text and GameState.heal_cd > 0.0 else "", "hp_text": _hp_text.text if _hp_text else "",
-		"heal_text": _heal_text.text if _heal_text else ""}
+	return {"visible": false, "slot": find_child("HealSlot", true, false) != null, "cd_text": "",
+		"hp_text": _hp_text.text if _hp_text else "", "heal_text": "", "battery": _hp_wrap != null and _hp_wrap.name == "HealthBattery",
+		"hearts": find_child("Hearts", true, false) != null}
 
 
 func _build_bed_prompt() -> void:
@@ -397,19 +343,7 @@ func bed_prompt_visible() -> bool:
 
 
 func _on_hp(hp: int, max_hp: int) -> void:
-	var full: Texture2D = load("res://assets/icons/ui_heart_full.png")
-	var half: Texture2D = load("res://assets/icons/ui_heart_half.png")
-	var empty: Texture2D = load("res://assets/icons/ui_heart_empty.png")
-	var per := float(max_hp) / float(_hearts.size())
-	for i in range(_hearts.size()):
-		var v := float(hp) - float(i) * per
-		var t: TextureRect = _hearts[i]
-		if v >= per * 0.75:
-			t.texture = full
-		elif v >= per * 0.25:
-			t.texture = half
-		else:
-			t.texture = empty
+	if _hp_wrap: _hp_wrap.set_hp(hp, max_hp)
 
 
 # --- v0.6: фаза суток и часы ---
