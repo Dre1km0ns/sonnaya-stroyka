@@ -1,0 +1,95 @@
+Сонная стройка — сторонние ассеты
+=================================
+
+Модели врагов и босса (assets/models/*.glb)
+------------------------------------------
+Источник: Quaternius — Ultimate Monsters (октябрь 2022)
+https://quaternius.com/packs/ultimatemonsters.html
+Лицензия: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+- demon.glb          — Шовник
+- ghost.glb          — враг1
+- pinkblob.glb       — враг2
+- bluedemon.glb      — враг3
+- ghost_skull.glb    — враг4
+- greenblob.glb      — босс «Мать блоков»
+
+Модели реагентов
+----------------
+- reagent_crystal.glb — Crystal 1, Quaternius Ultimate RPG Items (август 2019), CC0
+- reagent_herb.glb    — Mushroom 1, Quaternius Nature Crops Pack (январь 2020), CC0
+- reagent_ore.glb     — Mineral, Quaternius Ultimate RPG Items (август 2019), CC0
+
+Модели инструментов (кирка и меч)
+---------------------------------
+- pickaxe.glb — «Pickaxe Wood» by Quaternius, via Poly Pizza
+  https://poly.pizza/m/Ip2iXOq381
+  https://quaternius.com
+  Лицензия: CC0 1.0 Universal
+- sword.glb — «Sword» from Medieval Weapons Pack by Quaternius
+  https://quaternius.com/packs/medievalweapons.html
+  https://gamedev.trebeljahr.com/quaternius/medieval-weapons-pack-by-quaternius/sword
+  Лицензия: CC0 1.0 Universal
+
+Автор разрешает любое использование, в том числе коммерческое;
+указание авторства необязательно, но желательно: «Quaternius».
+
+Музыка (assets/audio/)
+----------------------
+Все три трека предоставлены пользователем проекта:
+- music.mp3      — Явь (существующий трек)
+- dream_ost.mp3  — Сон («lofi Good Niiight», reflektpro8)
+- boss_ost.mp3   — босс «Мать блоков» (новый саундтрек)
+- anaconda_ost.mp3 — босс «Анаконда» (v0.7, трек предоставлен пользователем проекта;
+  сконвертирован из WAV в MP3 192 kbps, зациклен в игре)
+
+Звуки боссов v0.7 (assets/audio/*.ogg)
+--------------------------------------
+Источник: «Monster Sound Effects Pack» by Ogrebane, OpenGameArt.org
+  https://opengameart.org/content/monster-sound-effects-pack
+  Лицензия: CC0 1.0 Universal
+Обработка (ffmpeg: понижение тона, эхо, фильтры):
+- mother_roar.ogg     ← monster-6.wav
+- mother_growl.ogg    ← monster-8.wav
+- anaconda_roar.ogg   ← monster-1.wav + monster-10.wav
+- anaconda_rumble.ogg ← monster-6.wav
+
+Модель хилки (assets/models/potion_heal.glb)
+--------------------------------------------
+- «Potion» — Pixor library, CC0 1.0 (public domain). «Made with Pixor».
+
+v0.8 SFX: Kenney, Impact Sounds (CC0 1.0)
+Source: https://kenney.nl/assets/impact-sounds
+Download mirror: https://cc0-sounds.exi.software/collection/kenney_impactsounds/
+sfx_step ← footstep_grass_000; sfx_break_dirt ← impactSoft_medium_000;
+sfx_break_stone ← impactMining_000; sfx_break_wood ← impactWood_medium_000;
+sfx_break_leaves ← footstep_grass_002; sfx_seam ← impactMetal_medium_000.
+Procedural v0.8 UI/tool icons and meshes: generated for this project, CC0.
+
+Дополнение v0.8: sfx_drink.ogg — qubodup, Liquid Bottle Drink Set, swallow-03.flac, CC0 1.0, перекодирование mono/44.1kHz/Vorbis. Источник: https://opengameart.org/content/liquid-bottle-drink-set (архив qubodup-bottle-and-drink-sounds.7z).
+sfx_door.ogg — Kenney RPG Audio, Audio/doorOpen_1.ogg, CC0 1.0. https://kenney.nl/assets/rpg-audio ; зеркало https://cc0-sounds.exi.software/collection/kenney_rpgaudio/ .
+
+Original v0.9 assets (tools/make_v09_art.py): ten crack overlays, wooden/stone pickaxe tiles and icons, wooden/scales armour and scale icons; procedural tool geometry (scripts/block_tex.gd). Created for this project, CC0 1.0. No additional external assets used.
+
+Kenney — Pickaxe (Survival Kit), 100 triangles, original GLB geometry.
+License: Creative Commons CC0 1.0 Universal (public domain).
+https://creativecommons.org/publicdomain/zero/1.0/
+Author: Kenney — https://kenney.nl/
+Official asset pack: https://kenney.nl/assets/survival-kit
+Download and explicit CC0 listing: https://poly.pizza/m/UHZH2OoWCS
+Original binary: https://static.poly.pizza/e54e2797-c7b2-424a-bfbc-fb9d1e97fd79.glb
+Local original: assets/models/kenney/pickaxe.glb (unchanged).
+Adaptations: game scale/grip transform, UV reprojection and original 16x16 wood/stone textures.
+Icons and crack masks are original artwork, released CC0; no Minecraft texture files copied.
+
+## Дверь — Kenney Wooden Door, Building Kit
+Source: https://poly.pizza/m/P09FqyST04
+Author: Kenney — https://kenney.nl/
+License: CC0 1.0 Universal / public domain — https://creativecommons.org/publicdomain/zero/1.0/
+Original download: https://static.poly.pizza/16c02d69-21ae-49c2-bed1-6325570e356a.glb
+Original local file: assets/models/kenney/wooden_door.glb (unchanged; 240 triangles).
+Adaptation: coordinate/scale fit to one block wide and two blocks tall, 0.16-thick leaf; original beveled panels, both faces, hinges, handle and palette UV retained. Nearest filtering and brightness adaptation. Inventory icon rendered from this same model. No stretched plank atlas on the door.
+
+V0.10: lightweight door texture (16x32, 16 pixels/block), door inventory icon and scale sword icon/texture: original project art, CC0 1.0. Door geometry simplified to 12 triangles (one shared surface/material), no external model at runtime. Original Kenney source remains archived with its CC0 credits above.
+V0.10 audio: PCM WAV transcodes of the same credited CC0 Ogg effects above (ffmpeg pcm_s16le, original sample rate/channels); original source recordings preserved. This avoids Ogg playback references surviving rapid scene teardown in Godot 4.7.

@@ -1,0 +1,58 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/world_wake.tscn" id="3_wake"]
+[ext_resource type="PackedScene" path="res://scenes/world_dream.tscn" id="4_dream"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="5_hud"]
+[ext_resource type="Script" path="res://scripts/build_controller.gd" id="6_build"]
+[ext_resource type="Script" path="res://scripts/anchor_system.gd" id="7_anchor"]
+[ext_resource type="Script" path="res://scripts/world_switcher.gd" id="8_switch"]
+[ext_resource type="Script" path="res://scripts/threat_director.gd" id="9_threat"]
+[ext_resource type="Script" path="res://scripts/save_system.gd" id="10_save"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.55, 0.62, 0.7, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.68, 0.62, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.25
+fog_enabled = true
+fog_light_color = Color(0.7, 0.65, 0.55, 1)
+fog_density = 0.002
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="WakeWorld" parent="." instance=ExtResource("3_wake")]
+
+[node name="DreamWorld" parent="." instance=ExtResource("4_dream")]
+visible = false
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 6)
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="BuildController" type="Node" parent="Systems"]
+script = ExtResource("6_build")
+
+[node name="AnchorSystem" type="Node" parent="Systems"]
+script = ExtResource("7_anchor")
+
+[node name="WorldSwitcher" type="Node" parent="Systems"]
+script = ExtResource("8_switch")
+
+[node name="ThreatDirector" type="Node" parent="Systems"]
+script = ExtResource("9_threat")
+
+[node name="SaveSystem" type="Node" parent="Systems"]
+script = ExtResource("10_save")
+
+[node name="HUD" parent="." instance=ExtResource("5_hud")]

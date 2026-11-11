@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-10 Europe/Moscow",
+  "godot": "4.7.2",
+  "cpu_streaming": {
+    "legacy": {
+      "frame_max_ms": 16.833,
+      "frame_p95_ms": 16.704,
+      "frames": 32,
+      "frames_over_33ms": 0,
+      "loaded": 49,
+      "startup_ms": 74.782,
+      "total_ms": 573.929,
+      "work_max_ms": 14.785,
+      "work_p95_ms": 12.198
+    },
+    "threaded": {
+      "frame_max_ms": 16.792,
+      "frame_p95_ms": 16.75,
+      "frames": 44,
+      "frames_over_33ms": 0,
+      "loaded": 49,
+      "startup_ms": 84.157,
+      "total_ms": 772.602,
+      "work_max_ms": 1.364,
+      "work_p95_ms": 1.312
+    }
+  },
+  "notes": [
+    "Same 49 chunks, seed 6767676767, player 100/3/100, 60 FPS cap.",
+    "Not a native-GPU benchmark; renderer probe separately uses Xvfb / Mesa llvmpipe.",
+    "Worker generation never accesses Node or SceneTree; only main-thread insertion.",
+    "Startup/explicit priority requests wait for completed worker data; dynamic water simulation remains main-thread."
+  ],
+  "render_fixed_path": {
+    "renderer": "Mesa llvmpipe, Xvfb OpenGL3 1280x720",
+    "path": "(0,10,6) + (12,0,6) metres per second for 10 seconds; physics disabled, fixed look direction",
+    "legacy": {
+      "idle": {
+        "p95_ms": 41.667,
+        "p99_ms": 42.338,
+        "max_ms": 45.162,
+        "over33": 131.0,
+        "total": 131.0
+      },
+      "walking": {
+        "p95_ms": 50.0,
+        "p99_ms": 55.891,
+        "max_ms": 62.462,
+        "over33": 213.0,
+        "total": 262.0
+      },
+      "raw_report": [
+        "PERF autoload GameState=true",
+        "PERF legacy idle frames=131 avg_ms=38.46 fps=26.0 max_ms=45.2 nodes=1241 objects_in_frame=270 draw_calls=167 prims=54260 proc_ms=45.24 phys_ms=0.06",
+        "PERF legacy idle enemies=0 bodies=0",
+        "PERF legacy walking frames=262 avg_ms=38.21 fps=26.2 max_ms=62.5 nodes=1415 objects_in_frame=275 draw_calls=172 prims=74926 proc_ms=60.45 phys_ms=0.06",
+        "PERF legacy walking enemies=0 bodies=0",
+        "PERF legacy max_frame_ms_while_walking=62.5"
+      ]
+    },
+    "threaded": {
+      "idle": {
+        "p95_ms": 35.417,
+        "p99_ms": 35.897,
+        "max_ms": 37.232,
+        "over33": 143.0,
+        "total": 143.0
+      },
+      "walking": {
+        "p95_ms": 40.993,
+        "p99_ms": 46.331,
+        "max_ms": 65.987,
+        "over33": 184.0,
+        "total": 282.0
+      },
+      "raw_report": [
+        "PERF autoload GameState=true",
+        "PERF threaded idle frames=143 avg_ms=35.16 fps=28.4 max_ms=37.2 nodes=1241 objects_in_frame=270 draw_calls=167 prims=54260 proc_ms=41.26 phys_ms=0.03",
+        "PERF threaded idle enemies=0 bodies=0",
+        "PERF threaded walking frames=282 avg_ms=35.47 fps=28.2 max_ms=66.0 nodes=1397 objects_in_frame=278 draw_calls=175 prims=71330 proc_ms=48.62 phys_ms=0.06",
+        "PERF threaded walking enemies=0 bodies=1",
+        "PERF threaded max_frame_ms_while_walking=66.0"
+      ]
+    }
+  }
+}
