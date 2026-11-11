@@ -509,13 +509,13 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	_a(boss.is_in_group("block_mother"), 507)
-	_a(boss.hp == 560, 508) # v0.11: Мать 560 HP
-	_a(boss.max_hp == 560, 509)
+	_a(boss.hp == 620, 508) # v0.11.1: Мать 620 HP (фиксировано)
+	_a(boss.max_hp == 620, 509)
 	boss.take_damage(10)           # SPAWN — неуязвима
-	_a(boss.hp == 560, 511)
+	_a(boss.hp == 620, 511)
 	boss._enter(boss.S.IDLE)
-	boss.take_damage(10)
-	_a(boss.hp == 550, 514)
+	boss.take_damage(10)           # v0.11.1: броня закрыта → меч отскакивает
+	_a(boss.hp == 620 and boss.plate_log.bounces >= 1, 514)
 	_a(boss.get_tree() != null, 515)
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
@@ -902,16 +902,18 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.mother_cooldown = 0.0
 	G.peaceful = false
 	G.deep_threat = 0.0
-	_a(not G.on_block_mined_at(Vector3i(3, -2, 3), "stone") and G.deep_threat == 0.0, 875)
+	_a(not G.on_block_mined_at(Vector3i(3, -2, 3), "stone", 0.5) and G.deep_threat == 0.0, 875)
 	_a(G.deep_threat_gain(Vector3i(0, -8, 0), "stone") == 1.0 and G.deep_threat_gain(Vector3i(0, -20, 0), "deep_stone") == 3.0 and G.deep_threat_gain(Vector3i(0, -8, 0), "ruin") == 3.0, 876)
+	# v0.11.1: 1% на КАЖДЫЙ блок (угроза глубин — только атмосфера, не вызывает Мать).
 	var spawned_at := -1
 	for i in range(120):
-		if G.on_block_mined_at(Vector3i(i, -8, 0), "stone"):
+		if G.on_block_mined_at(Vector3i(i, -8, 0), "stone", 0.5):
 			spawned_at = i
 			break
-	_a(spawned_at == 99, 877)            # 100 блоков на y −8 → Мать
-	_a(chats.any(func(t): return "40%" in str(t)) and chats.any(func(t): return G.BOSS_OMEN_TEXT in str(t)), 878)
-	_a(G.deep_threat == 0.0, 879)
+	_a(spawned_at == -1 and G.deep_threat < 100.0, 877)   # 120 блоков без удачного броска → Матери нет (шкала сбрасывается на 100)
+	_a(not G.on_block_mined_at(Vector3i(0, -2, 0), "stone", 0.009) and G.boss_next_mine and chats.any(func(t): return G.BOSS_OMEN_TEXT in str(t)), 878)
+	_a(G.on_block_mined_at(Vector3i(1, -2, 0), "stone", 0.99) and not G.boss_next_mine, 879)   # предвестие → Мать на следующем блоке
+	_a(not G.on_block_mined_at(Vector3i(2, -2, 0), "stone", 0.0101), 8790)
 	_a(G.BOSS_OMEN_TEXT == "Вы слышите разъярённые крики убитой горем матери", 880)
 	G.deep_threat = 55.0
 	var b2: Dictionary = G.to_save_dict()
@@ -921,10 +923,10 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(is_equal_approx(g3.deep_threat, 55.0), 885)
 	G.set_boss_alive(true)               # пока жив другой босс — Мать не приходит
 	G.deep_threat = 99.5
-	_a(not G.on_block_mined_at(Vector3i(0, -8, 0), "stone"), 886)
+	_a(not G.on_block_mined_at(Vector3i(0, -8, 0), "stone", 0.0) and not G.boss_next_mine, 886)
 	G.set_boss_alive(false)
 	G.peaceful = true
-	_a(not G.on_block_mined_at(Vector3i(0, -8, 0), "stone"), 887)
+	_a(not G.on_block_mined_at(Vector3i(0, -8, 0), "stone", 0.0), 887)
 	G.peaceful = false
 	G.deep_threat = 0.0
 	G.chat_message.disconnect(cb)
@@ -968,21 +970,22 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var boss: CharacterBody3D = bs.new()
 	host.add_child(boss)
 	await process_frame
-	_a(boss.hp == 560 and boss.phase == 1, 929)
-	boss._enter(boss.S.IDLE)
+	_a(boss.hp == 620 and boss.phase == 1, 929)
+	# v0.11.1: урон мечом только по открытому ядру (CORE ×1.25) → пороги фаз не проскакиваются.
+	boss._enter(boss.S.CORE)
 	boss.take_damage(450)                 # не проваливается сквозь порог фазы
 	_a(boss.hp == boss.P2_AT, 932)
 	_a(boss.phase == 2 and boss.state == boss.S.TRANSITION, 933)
 	boss.take_damage(50)                  # переход неуязвим
 	_a(boss.hp == boss.P2_AT, 935)
-	boss._enter(boss.S.STAGGER)
-	boss._stagger_len = 2.0
+	boss._enter(boss.S.CORE)
 	_a(boss.is_vulnerable(), 938)
-	boss.take_damage(10)                  # ×1.5 в окне уязвимости
-	_a(boss.hp == boss.P2_AT - 15, 940)
+	boss.receive_weapon_hit(8, "sword")   # ×1.25 по ядру → 10
+	_a(boss.hp == boss.P2_AT - 10, 940)
+	boss._enter(boss.S.CORE)
 	boss.take_damage(400)
 	_a(boss.hp == boss.P3_AT and boss.phase == 3, 942)
-	boss._enter(boss.S.STAGGER)
+	boss._enter(boss.S.CORE_LONG)
 	boss.take_damage(400)
 	_a(boss.hp <= 0 or boss.state == boss.S.DEAD, 945)
 	# Пити-таймер блоклингов и жёсткий кап
@@ -995,7 +998,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 			got += 1
 	_a(got == 1, 954)                       # 3 неудачи подряд → гарантия
 	_a(not b3.minion_roll(0.0) and not b3.minion_roll(0.0), 955)   # локаут 2 приземления
-	_a(b3.MINION_HARD_CAP == 6, 956)
+	_a(b3.MINION_HARD_CAP == 4, 956)
 	for cap in b3.MINION_CAP:
 		_a(int(cap) <= b3.MINION_HARD_CAP, 958)
 	# Телеграфы ≥0.4 с, урон одного удара ≤40% HP
@@ -1196,10 +1199,10 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(Sfx.count(Sfx.MOTHER_ROAR) > roars0, 1151)
 	_a(ResourceLoader.exists(Sfx.MOTHER_ROAR) and ResourceLoader.exists(Sfx.ANACONDA_ROAR), 1152)
 	boss.hp = 400
-	_a(boss.heal_from_blocks(3) == 15 and boss.hp == 415, 1154)
+	_a(boss.heal_from_blocks(3) == 0 and boss.hp == 400, 1154)   # v0.11.1: скрытый хил от деревьев убран
 	boss.hp = boss.max_hp-1
 	boss.heal_from_blocks(4)
-	_a(boss.hp == boss.max_hp, 1157)
+	_a(boss.hp == boss.max_hp-1, 1157)
 	boss.queue_free()
 	await process_frame
 	G.reset_state()
@@ -1332,7 +1335,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
 	var ana: Node3D = AS.spawn_at(host2, Vector3(40, 0, 40), "test")
 	await process_frame
-	_a(ana != null and ana.hp == ana.MAX_HP and ana.MAX_HP == 2100, 1290)
+	_a(ana != null and ana.hp == ana.MAX_HP and ana.MAX_HP == 1250, 1290)
 	_a(G.boss_alive, 1291)
 	_a(Sfx.count(Sfx.ANACONDA_ROAR) > 0, 1292)
 	# OST Анаконды: зациклен, приоритет над темой Матери, кроссфейд обратно после ухода.
@@ -1349,41 +1352,47 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(mus.current_key() == "anaconda", 1304)
 	ana.take_damage(200)
 	_a(ana.hp == ana.MAX_HP and ana.weapon_hits_ignored == 1, 1306)
+	_a(ana.receive_weapon_hit(24, "sword3").dealt == 0 and ana.hp == ana.MAX_HP, 13060)   # v0.11.1: меч = 0
 	_a(ana.is_invulnerable(), 1307)                 # SPAWN — в земле
-	# Вынырнула и лежит (REST): без света урона нет.
-	ana.torch_break_cd = 999.0 # light-DPS fixture, torch destruction tested separately
+	# v0.11.1: урон наносят ТОЛЬКО поставленные факелы, перекрёстный огонь 1/2/3.
 	ana._emerge = Vector3(40, 0, 40)
 	ana._enter(ana.S.REST)
-	for i in range(5):
-		ana.tick(0.05)
 	_a(ana.light_dps() == 0.0 and ana.hp == ana.MAX_HP, 1313)
-	# Факел рядом с головой → урон.
-	var hpos: Vector3 = ana.hit_center()
-	G.wake_blocks[Vector3i(floori(hpos.x), floori(hpos.y), floori(hpos.z))] = {"kind": "torch", "mutant": false}
-	ana._torch_scan = 0.0
-	ana.tick(0.05)
-	_a(ana.light_dps() >= ana.HEAD_LIGHT_DPS, 1319)
-	ana._enter(ana.S.REST)
-	var hp_before: int = ana.hp
-	for i in range(20):
-		ana._t = 0.0
-		ana.tick(0.1)
-	print("SMOKE: anaconda light dps=%.1f hp %d→%d" % [ana.light_dps(), hp_before, ana.hp])
-	_a(ana.hp < hp_before, 1326)
-	# Ослеплена (STUNNED) — ×2 урон.
-	ana._enter(ana.S.STUNNED)
-	ana._stun_len = 5.0
-	_a(ana.is_vulnerable(), 1330)
-	var d_stun: float = ana.light_dps()
-	ana._enter(ana.S.REST)
-	_a(is_equal_approx(d_stun, ana.light_dps() * 2.0), 1333)
-	# Ни одного неизбежного урона: телеграф ≥0.6 с, удар ≤40%, кап комбо 70.
+	ana._head.global_position = Vector3(40.5, 0.6, 40.5)
+	for sg in ana._segs:
+		sg.global_position = Vector3(40.5, 0.6, 52.5)       # тело «далеко» для изоляции теста света
+	var hc := Vector3i(40, 0, 40)
+	G.wake_blocks[hc + Vector3i(2, 0, 0)] = {"kind": "torch", "mutant": false}
+	_a(ana.crossfire_level() == 1 and ana.light_dps() == 0.0, 1319)        # 1 источник — только обнаружение
+	G.wake_blocks[hc + Vector3i(0, 0, 2)] = {"kind": "torch", "mutant": false}
+	_a(ana.crossfire_level() == 2 and is_equal_approx(ana.light_dps(), ana.BURN_DPS), 1326)   # 2 — ожог
+	G.wake_blocks[hc + Vector3i(-2, 0, 0)] = {"kind": "torch", "mutant": false}
+	_a(ana.crossfire_level() >= 3 and is_equal_approx(ana.light_dps(), ana.BURN_DPS * ana.BOOST_MULT), 1330)   # 3 — усиление
+	print("SMOKE: anaconda crossfire dps=%.1f" % ana.light_dps())
+	_a(ana.apply_light_damage(10.0, "crossfire3") == 10 and ana.hp == ana.MAX_HP - 10, 1333)
+	_a(not ("STUNNED" in ana.STATE_NAMES) and not ("stun" in ana.debug_snapshot()), 13330)   # оглушения факелом нет
+	# Факел в руке: в light_zones не входит.
+	for z in ana.light_zones():
+		_a(not bool(z["held"]), 13331)
+	# Касание любой секцией тела ломает факел (без шанса и КД).
+	ana._segs[ana._segs.size() - 1].global_position = Vector3(46.5, 0.6, 40.5)
+	var tail_c := Vector3i(46, 0, 40)
+	G.wake_blocks.clear()
+	G.wake_blocks[tail_c] = {"kind": "torch", "mutant": false}
+	var broke_n: int = ana.check_body_torch_contacts()
+	_a(broke_n == 1 and not G.wake_blocks.has(tail_c) and ana.torches_broken_by_body == 1, 13332)   # хвост
+	G.wake_blocks[hc] = {"kind": "torch", "mutant": false}
+	_a(ana.check_body_torch_contacts() >= 1 and not G.wake_blocks.has(hc), 13333)   # голова
+	G.wake_blocks[hc] = {"kind": "torch", "mutant": false}
+	_a(ana.check_body_torch_contacts() >= 1, 13334)                                  # повторно сразу — без КД
+	G.wake_blocks.clear()
+	# Ни одного неизбежного урона: телеграф ≥0.6 с, удар ≤35%, кап комбо 70.
 	for tt in ana.TELEGRAPH:
 		_a(float(tt) >= 0.6, 1336)
 	for dmg in [ana.BURST_DAMAGE, ana.ROCK_DAMAGE, ana.CONSTRICT_DAMAGE, ana.CONTACT_DAMAGE, ana.COIL_CONTACT]:
-		_a(int(dmg) <= 40, 1338)
+		_a(int(dmg) <= 35, 1338)
 	_a(G.COMBO_CAP <= 70, 1339)
-	_a(ana.MINION_PITY == 3 and ana.MINION_CAP <= 4, 1340)
+	_a(ana.MINION_CAP <= 3 and ana.cavein_zone_count() >= 3 and ana.cavein_zone_count() <= 4, 1340)
 	# Рассвет — уходит.
 	G.day_time = 1440.0 + 400.0
 	_a(not G.is_night(), 1343)
@@ -1642,11 +1651,11 @@ func _v08_checks() -> void:
 	G.wake_blocks[c] = {"kind":"torch"}
 	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"torch"}
 	var ana: Node3D = AS.spawn_at(host,Vector3(50,0,50),"smoke08")
-	_a(not ana.try_break_torch(c,0.34),8065)
-	_a(ana.try_break_torch(c,0.0) and ana.torch_break_cd==5,8066)
-	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8067)
-	ana.torch_break_cd = 0
-	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)
+	# v0.11.1: касание ломает ВСЕГДА — без шанса и без КД (try_break_torch — совместимый враппер).
+	_a(ana.try_break_torch(c,0.99),8065)
+	_a(not G.wake_blocks.has(c),8066)
+	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.99),8067)
+	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)   # уже сломан
 	host.queue_free()
 	# Falling drops only; placed unsupported blocks retain their grid position.
 	var drop: CharacterBody3D = load("res://scripts/block_pickup.gd").new()
@@ -1877,7 +1886,7 @@ func _v09_checks() -> void:
 	_a(G.mother_cooldown==0,9030)
 	for mob in ["seam","elite","enemy1","enemy2","enemy3","enemy4","ghost","minion","mother","anaconda"]:
 		_a(not console.execute("spawn "+mob).begins_with("Ошибка"),9031)
-	_a(console._mobs("all").size()==10,9032)
+	_a(console._mobs("all").size()==9 and console._mobs("anaconda").is_empty(),9032)   # v0.11.1: два босса одновременно — никогда
 	console.execute("mob damage 19 all")
 	console.execute("mob speed 2.7 all")
 	console.execute("mob hp 111 nearest")
@@ -1888,17 +1897,20 @@ func _v09_checks() -> void:
 	# Persistent crafting flag and live HP rebalance; new spawns use same base values.
 	console.execute("sword2 on")
 	# v0.11: крафт оружия больше НЕ раздувает HP врагов.
-	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==560 and console._mobs("anaconda")[0].max_hp==2100,9035)
+	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==620,9035)
 	var flag_save: Dictionary = G.to_save_dict()
 	_a(flag_save.sword2_crafted,9036)
 	console.execute("sword2 off")
-	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==560,9037)
+	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==620,9037)
 	# Anaconda deterministic probability boundaries and real scale reward.
+	for mm in console._mobs("mother"):
+		mm.free()
+	_a(not console.execute("spawn anaconda").begins_with("Ошибка") and console._mobs("anaconda").size()==1,90380)
 	var ana: Node = console._mobs("anaconda")[0]
 	var torch_cell := Vector3i(10,0,10)
 	G.wake_blocks[torch_cell] = {"kind":"torch"}
-	_a(not ana.try_break_torch(torch_cell,0.334) and ana.try_break_torch(torch_cell,0.333),9038)
-	_a(ana.torch_break_cd==5 and not ana.try_break_torch(torch_cell,0.0),9039)
+	_a(ana.max_hp==1250 and ana.try_break_torch(torch_cell,0.99),9038)
+	_a(not G.wake_blocks.has(torch_cell),9039)
 	ana._die()
 	_a(int(ana.get_meta("last_scale_drop"))>=6 and int(ana.get_meta("last_scale_drop"))<=22,9040)
 	console.execute("kill all")
@@ -2486,10 +2498,12 @@ func _v011_checks() -> void:
 	_a(not gs.mother_can_come() and not gs.on_block_mined_at(Vector3i(0,-20,0), "stone") and gs.deep_threat == 0.0, 11050)
 	gs.milestones["first_transfer"] = true
 	_a(gs.mother_can_come() and not gs.on_block_mined_at(Vector3i(0,-3,0), "stone") and gs.deep_threat == 0.0, 11051)  # у поверхности тихо
+	# v0.11.1: угроза глубин — только атмосфера; Мать — 1% на каждый блок (предвестие → следующий блок).
 	var spawned := false; var n := 0
 	while not spawned and n < 200:
-		spawned = gs.on_block_mined_at(Vector3i(0,-20,0), "stone"); n += 1
-	_a(spawned and n == 50 and gs.deep_threat == 0.0 and gs._deep_warned == 0, 11052)  # 50 блоков на y<-15 → Мать, шкала сброшена
+		spawned = gs.on_block_mined_at(Vector3i(0,-20,0), "stone", 0.5); n += 1
+	_a(not spawned and n == 200, 11052)
+	_a(not gs.on_block_mined_at(Vector3i(0,-20,0), "stone", 0.0) and gs.on_block_mined_at(Vector3i(0,-20,0), "stone", 0.5), 110520)
 	_a(gs.milestones.has("mother_signs") and not gs.milestones.has("mother"), 11053)
 	gs.boss_alive = true
 	_a(not gs.mother_can_come(), 11054)
@@ -2498,10 +2512,10 @@ func _v011_checks() -> void:
 	_a(gs.mother_defeated and gs.deep_threat == 0.0 and not gs.mother_can_come(), 11056)  # кулдаун после победы
 	gs._objectives_eval(true)
 	_a(gs.milestones.has("mother") and gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}) and gs.recipe_available(_rec(gs, "idea_catcher"), {"is_dream": true}), 11057)
-	_a(load("res://scripts/block_mother.gd").MAX_HP == 560, 11058)
+	_a(load("res://scripts/block_mother.gd").MAX_HP == 620, 11058)
 	# --- 16.8 Анаконда: гнёзда спят до Матери, только свет ---
 	var AN: GDScript = load("res://scripts/boss_anaconda.gd")
-	_a(AN.MAX_HP == 2100, 11060)
+	_a(AN.MAX_HP == 1250, 11060)
 	var G: Node = root.get_node("GameState")
 	G.reset_state(); G.mother_defeated = false
 	var host := Node3D.new(); root.add_child(host)

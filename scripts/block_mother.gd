@@ -143,6 +143,9 @@ static func spawn_near(host: Node3D, cell: Vector3i) -> Node:
 		return null
 	if host.get_tree().get_nodes_in_group("block_mother").size() > 0:
 		return null
+	for an in host.get_tree().get_nodes_in_group("anaconda"):
+		if is_instance_valid(an) and an.has_method("is_fight_active") and an.is_fight_active():
+			return null  # v0.11.1: никогда два босса одновременно
 	var pos := Vector3(float(cell.x) + 4.5, 0.15, float(cell.z) + 2.0)
 	for cm in host.get_tree().get_nodes_in_group("chunk_manager"):
 		if cm.has_method("walk_height_at") and not bool(cm.get("is_dream_layer")) and not bool(cm.get("panorama_mode")):
