@@ -1,4 +1,4 @@
-# Сонная стройка (Dream Building) — v0.9
+# Сонная стройка (Dream Building) — v0.12
 
 Dual-world песочница на **Godot 4.7.2**: строишь во сне, в явь забираешь только заякоренное. Хардкор: бесконечные чанки, Шовники и «призраки», три типа реагентов, инвентарь, сейв на диск.
 
@@ -29,13 +29,19 @@ Dual-world песочница на **Godot 4.7.2**: строишь во сне, 
 ## Запуск
 
 ```bash
-/home/box/godot/godot --path /workspace/sonnaya-stroyka
+/home/box/godot/godot --path /workspace/sonnaya-stroyka-v011
 ```
+
+v0.11: геймдизайн и прогрессия — `GAMEPLAY_DESIGN_V0.11.md`, отчёт — `REPORT_V0.11.md`.
+v0.12: боевая машина, архитектурный фикс стана Анаконды, HUD, фазы — `GAMEPLAY_REDESIGN_V0.12.md`, `BOSS_BALANCE_V0.12.md`, `COMBAT_STATE_MACHINE_V0.12.md`, `HUD_CHANGES_V0.12.md`, `CHANGELOG_V0.12.md`, `BENCHMARK_V0.12.json`.
+
+v0.11.1: правки + редизайн боссов — `REPORT_V0.11.1.md`, `docs/boss_redesign_v0.11.md`, `docs/boss_anaconda.md`, `docs/boss_mother_of_blocks.md`.
+Отладка рук/инструментов: открыть `scenes/debug_viewmodel.tscn` (←/→, Space, W/S).
 
 Smoke:
 
 ```bash
-/home/box/godot/godot --headless --path /workspace/sonnaya-stroyka -s res://scripts/smoke_test.gd
+/home/box/godot/godot --headless --path /workspace/sonnaya-stroyka-v011 -s res://scripts/smoke_test.gd
 ```
 
 Windows: распакуй zip → Godot 4.7.x → `project.godot`.

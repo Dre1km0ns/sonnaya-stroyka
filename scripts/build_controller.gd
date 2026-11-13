@@ -8,17 +8,18 @@ var _place_cooldown := 0.0
 var _hand_root: Node3D = null
 var _pickaxe_view: Node3D = null
 var _sword_view: Node3D = null
-const SWORD_DAMAGE := 7
+const SWORD_DAMAGE := 8
 const SWORD_COOLDOWN := 0.45
 const SWORD_REACH := 2.6
 ## v0.7: Меч2 — 25 урона, дальность ×1.25.
-const SWORD2_DAMAGE := 13
-const SWORD3_DAMAGE := 23
+const SWORD2_DAMAGE := 14
+const SWORD3_DAMAGE := 24
 const SWORD2_REACH := SWORD_REACH * 1.25
 const MIN_PLACE_Y := -30
 var _pickaxe2_view: Node3D = null
 var _sword2_view: Node3D = null
 var _sword3_view: Node3D = null
+var viewmodel: Node3D = null
 var last_sword_damage := 0
 var last_sword_hits := 0
 var _mine_cell := Vector3i(99999,99999,99999)
@@ -76,8 +77,9 @@ func _process(delta: float) -> void:
 		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
 			return
 		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
+			# v0.11: зелья пьются только клавишей H (автовыбор), ЛКМ по зелью ничего не делает.
 			if GameState.selected_is("heal1") or GameState.selected_is("heal2"):
-				GameState.use_heal(str(GameState.get_selected_item().id))
+				GameState.set_hint("Зелья пьются клавишей %s — она сама выберет подходящее." % _heal_key(), false)
 			elif GameState.selected_is("sword") or GameState.selected_is("sword2") or GameState.selected_is("sword3"):
 				_try_sword()
 				_place_cooldown = SWORD_COOLDOWN
@@ -123,25 +125,20 @@ func _update_ghost() -> void:
 	var place_pos := hit_pos + normal * 0.51
 	var cell: Vector3i = dream_voxels.world_to_cell(place_pos)
 	ghost.global_position = dream_voxels.cell_to_world(cell)
-	ghost.visible = true
+	ghost.visible = placement_supported(cell, GameState.is_dream()) # v0.11.1: без опоры — ни призрака, ни блока
 
 
 func _try_place() -> void:
+	## v0.11.1: как в Minecraft — блок ставится только на грань соседнего блока (в воздух нельзя).
 	var aim := _aim()
 	if not aim.get("hit", false):
-		# Размещение в воздухе перед игроком
-		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
-		var forward := -cam.global_transform.basis.z
-		var place_pos := cam.global_position + forward * 4.0
-		var cell: Vector3i = dream_voxels.world_to_cell(place_pos)
-		if cell.y < 0:
-			cell.y = 0
-		_place_at(cell)
 		return
 	var normal: Vector3 = aim["normal"]
 	var hit_pos: Vector3 = aim["position"]
 	var place_pos2 := hit_pos + normal * 0.51
 	var cell2: Vector3i = dream_voxels.world_to_cell(place_pos2)
+	if not placement_supported(cell2, true):
+		return
 	_place_at(cell2)
 
 
@@ -157,7 +154,10 @@ func _place_at(cell: Vector3i) -> void:
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
 	if GameState.place_dream_block(cell, kind, facing):
-		dream_voxels.sync_cells([cell])
+		var placed_cells: Array = [cell]
+		if kind == "drift" and GameState.heart_structure and Input.is_action_pressed("sprint"):
+			placed_cells.append_array(mass_place_row(cell, facing))
+		dream_voxels.sync_cells(placed_cells)
 		if kind != "drift":
 			GameState.set_hint("%s [%d,%d,%d]. Заякорь гвоздём, чтобы унести в явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])
 		else:
@@ -166,8 +166,23 @@ func _place_at(cell: Vector3i) -> void:
 		GameState.add_item_count(kind, 1)
 
 
+func mass_place_row(cell: Vector3i, facing: int) -> Array:
+	## v0.12 (Сердце структуры): Shift+ЛКМ дрейф-блоком — ряд из 5 поперёк взгляда. Каждый следующий опирается на предыдущий.
+	var right := Vector3i(1, 0, 0) if facing % 2 == 0 else Vector3i(0, 0, 1)
+	var out: Array = []
+	for dir in [right, -right]:
+		var c: Vector3i = cell
+		for _i in range(2):
+			c = c + dir
+			if not GameState.dream_blocks.has(c) and placement_supported(c, true) and GameState.place_dream_block(c, "drift", facing):
+				out.append(c)
+			else:
+				break
+	return out
+
+
 ## Предметы, которые во сне ставятся как блоки (иначе ставится бесплатный дрейф-блок).
-const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand"]
+const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand", "lumen", "lumen_cold", "lamp", "strut"]
 
 
 func _try_remove() -> void:
@@ -244,7 +259,7 @@ func _try_place_beacon() -> void:
 	if not aim.get("hit", false):
 		return
 	var cell: Vector3i = vox.world_to_cell(aim["position"] + aim["normal"] * 0.51)
-	if not _wake_cell_free(cell):
+	if not _wake_cell_free(cell) or not placement_supported(cell, false):
 		return
 	if not GameState.consume_item("beacon", 1):
 		GameState.set_hint("Нет маяков. Крафт во сне: %d осыпи + 1 реагент3." % GameState.BEACON_CRAFT_DUST)
@@ -279,9 +294,10 @@ func _finish_mine(cell: Vector3i, kind: String) -> void:
 		_spawn_block_pickup(cell,kind)
 	var host := _wake_world()
 	# v0.6: решение о боссе брошено на прошлом блоке (и объявлено в чате) — спавним сейчас.
-	if GameState.on_block_mined() and host:
+	if GameState.on_block_mined_at(cell, kind) and host:
 		var boss_script: GDScript = load("res://scripts/block_mother.gd")
-		boss_script.spawn_near(host, cell)
+		if boss_script.spawn_near(host, cell) != null:
+			GameState.chat("Мать блоков вырвалась на поверхность над твоей шахтой! Поднимайся — бой на открытой арене.", Color(1.0, 0.35, 0.35))
 
 
 func _wake_voxels() -> Node3D:
@@ -308,10 +324,8 @@ func _try_place_torch() -> void:
 		var normal: Vector3 = aim["normal"]
 		cell = vox.world_to_cell(hit_pos + normal * 0.51)
 	else:
-		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
-		var forward := -cam.global_transform.basis.z
-		cell = vox.world_to_cell(cam.global_position + forward * 3.0)
-	if not _wake_cell_free(cell):
+		return # v0.11.1: в воздух ставить нельзя
+	if not _wake_cell_free(cell) or not placement_supported(cell, false):
 		return
 	if not GameState.consume_item("torch", 1):
 		return
@@ -319,6 +333,34 @@ func _try_place_torch() -> void:
 		vox.sync_cells([cell])
 	else:
 		GameState.add_item("torch", "Факел", 1)
+
+const _NEIGHBOURS6 := [Vector3i(1,0,0), Vector3i(-1,0,0), Vector3i(0,1,0), Vector3i(0,-1,0), Vector3i(0,0,1), Vector3i(0,0,-1)]
+
+func _layer_chunks(dream: bool) -> Node:
+	for cm in get_tree().get_nodes_in_group("chunk_manager"):
+		if bool(cm.get("is_dream_layer")) == dream and not bool(cm.get("panorama_mode")):
+			return cm
+	return null
+
+
+func placement_supported(cell: Vector3i, dream: bool) -> bool:
+	## v0.11.1: опора как в Minecraft — хотя бы один из 6 соседей твёрдый (рельеф или поставленный блок
+	## этого мира; факел и открытая дверь опорой не считаются). Генерация лагеря/платформ идёт мимо этой проверки.
+	var cm := _layer_chunks(dream)
+	for d in _NEIGHBOURS6:
+		var n: Vector3i = cell + d
+		if dream:
+			if GameState.dream_blocks.has(n):
+				return true
+			if cm and cm.has_method("is_cell_solid") and not GameState.wake_blocks.has(n) and bool(cm.is_cell_solid(n)):
+				return true
+		else:
+			if GameState.wake_solid(n):
+				return true
+			if cm and cm.has_method("is_cell_solid") and bool(cm.is_cell_solid(n)):
+				return true
+	return false
+
 
 func _wake_cell_free(cell: Vector3i) -> bool:
 	## v0.7: ставить можно и под землёй (до y=-30), но не внутрь твёрдой клетки и не в игрока.
@@ -368,10 +410,8 @@ func _try_place_wake_item() -> void:
 		var normal: Vector3 = aim["normal"]
 		cell = vox.world_to_cell(hit_pos + normal * 0.51)
 	else:
-		var cam: Camera3D = player.get_node("CameraPivot/Camera3D")
-		var forward := -cam.global_transform.basis.z
-		cell = vox.world_to_cell(cam.global_position + forward * 3.0)
-	if not _wake_cell_free(cell) or (GameState.shape_part(id) != "" and not _wake_cell_free(cell + GameState.part_offset(id))):
+		return # v0.11.1: в воздух ставить нельзя
+	if not _wake_cell_free(cell) or not placement_supported(cell, false) or (GameState.shape_part(id) != "" and not _wake_cell_free(cell + GameState.part_offset(id))):
 		return
 	if not GameState.consume_placeable(id):
 		return
@@ -417,8 +457,15 @@ func _try_sword() -> void:
 		var dir := flat.normalized() if flat.length() > 0.05 else forward
 		if dir.dot(forward) < 0.15:
 			continue
-		if n.has_method("take_damage"):
+		if n.has_method("receive_weapon_hit"):
+			# v0.12: боссы различают оружие; feedback по результату (без ложных попаданий и без shake).
+			var res: Dictionary = n.receive_weapon_hit(dmg, str(GameState.get_selected_item().get("id", "sword")))
+			_combat_feedback(res, n)
+			if int(res.get("dealt", 0)) > 0 or bool(res.get("bounce", false)):
+				hit += 1
+		elif n.has_method("take_damage"):
 			n.take_damage(dmg)
+			_combat_feedback({"dealt": dmg, "bounce": false}, n)
 			hit += 1
 	last_sword_hits = hit
 	if hit > 0:
@@ -430,39 +477,21 @@ func _play_sword_swing() -> void:
 
 
 func _ensure_hand_tools() -> void:
+	## v0.11: инструменты в руке — единый ViewModelRig (scripts/viewmodel_rig.gd), без хардкода трансформов здесь.
 	if player == null or not player.has_node("CameraPivot/Camera3D"):
 		return
-	if _hand_root != null and is_instance_valid(_hand_root):
+	if viewmodel != null and is_instance_valid(viewmodel):
 		return
 	var cam: Node3D = player.get_node("CameraPivot/Camera3D")
-	_hand_root = Node3D.new()
-	_hand_root.name = "HandRoot"
-	_hand_root.position = Vector3(0.32, -0.26, -0.48)
-	_hand_root.rotation_degrees = Vector3(8, 0, -6)
-	cam.add_child(_hand_root)
-	var bt: GDScript = load("res://scripts/block_tex.gd")
-	for id in ["pickaxe", "pickaxe2", "sword", "sword2", "sword3"]:
-		var tool := MeshInstance3D.new()
-		tool.name = id.capitalize() + "View"
-		tool.mesh = bt.tool_mesh(id)
-		tool.position = Vector3(0.02, -0.1, 0.02)
-		if id.begins_with("sword"):
-			tool.position = Vector3(0.02,0.04,-0.12)
-		tool.rotation_degrees = Vector3(-20, 20, -28)
-		tool.scale = Vector3.ONE * 0.6
-		if id.begins_with("pickaxe"):
-			tool.position = Vector3(0.08,-0.16,-0.08)
-			tool.rotation_degrees = Vector3(-12,-24,25)
-			tool.scale = Vector3.ONE*0.58
-		if id=="sword3":
-			tool.scale=Vector3.ONE*0.38;tool.rotation_degrees=Vector3(-12,-10,20);tool.position=Vector3(0.02,-0.04,-0.19)
-		_hand_root.add_child(tool)
-		match id:
-			"pickaxe": _pickaxe_view = tool
-			"pickaxe2": _pickaxe2_view = tool
-			"sword": _sword_view = tool
-			"sword2": _sword2_view = tool
-			"sword3": _sword3_view = tool
+	viewmodel = load("res://scripts/viewmodel_rig.gd").new()
+	viewmodel.player = player
+	cam.add_child(viewmodel)
+	_hand_root = viewmodel.hand_root
+	_pickaxe_view = viewmodel.models.get("pickaxe")
+	_pickaxe2_view = viewmodel.models.get("pickaxe2")
+	_sword_view = viewmodel.models.get("sword")
+	_sword2_view = viewmodel.models.get("sword2")
+	_sword3_view = viewmodel.models.get("sword3")
 	_update_hand_tools()
 
 
@@ -484,32 +513,36 @@ func _instance_tool(path: String, node_name: String) -> Node3D:
 
 func _update_hand_tools() -> void:
 	_ensure_hand_tools()
-	if _hand_root == null:
+	if viewmodel == null:
 		return
-	var show_pick := GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2")
-	var show_sword := GameState.selected_is("sword")
-	var show_s2 := GameState.selected_is("sword2")
-	if _pickaxe_view:
-		_pickaxe_view.visible = GameState.selected_is("pickaxe")
-	if _pickaxe2_view:
-		_pickaxe2_view.visible = GameState.selected_is("pickaxe2")
-	if _sword_view:
-		_sword_view.visible = show_sword
-	if _sword2_view:
-		_sword2_view.visible = show_s2
-	if _sword3_view: _sword3_view.visible = GameState.selected_is("sword3")
-	_hand_root.visible = (show_pick or show_sword or show_s2 or GameState.selected_is("sword3")) and not GameState.ui_blocked()
+	var id := str(GameState.get_selected_item().get("id", ""))
+	if GameState.ui_blocked() or GameState.transfer_ui_open:
+		id = ""
+	viewmodel.set_tool(id)
 
 
 func _play_tool_swing() -> void:
 	_ensure_hand_tools()
-	if _hand_root == null or player == null:
+	if viewmodel == null or player == null:
 		return
 	_update_hand_tools()
-	_hand_root.rotation_degrees = Vector3(62, 6, -22)
-	var tw := player.create_tween()
-	tw.tween_property(_hand_root, "rotation_degrees", Vector3(-48, 18, 14), 0.14)
-	tw.tween_property(_hand_root, "rotation_degrees", Vector3(12, 0, -8), 0.12)
+	viewmodel.play_swing()
+
+
+func _combat_feedback(res: Dictionary, target: Node) -> void:
+	## Подтверждение попадания или отскока. Камеру не трясём.
+	var bounce := bool(res.get("bounce", false))
+	var dealt := int(res.get("dealt", 0))
+	if dealt <= 0 and not bounce:
+		return
+	if viewmodel and viewmodel.has_method("play_recoil"):
+		viewmodel.play_recoil(not bounce)
+	if bounce:
+		Sfx.play("break_stone", get_tree().root if is_inside_tree() else null)
+	else:
+		Sfx.play("break_wood", get_tree().root if is_inside_tree() else null)
+	if target and target.has_method("on_hit_feedback"):
+		target.on_hit_feedback(res)
 
 
 const Mining := preload("res://scripts/mining_rules.gd")
@@ -533,8 +566,15 @@ func _tick_mining(delta: float) -> void:
 	var tool := str(GameState.get_selected_item().get("id", ""))
 	if collider.is_in_group("enemy") or collider.get_parent().is_in_group("enemy"):
 		var target = collider if collider.is_in_group("enemy") else collider.get_parent()
-		if target.has_method("take_damage"):
+		if target.has_method("receive_weapon_hit"):
+			var res: Dictionary = target.receive_weapon_hit(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1), tool if tool != "" else "hand")
+			_combat_feedback(res, target)
+			GameState.wear_tool(2)
+			_play_tool_swing()
+			_place_cooldown = 0.5
+		elif target.has_method("take_damage"):
 			target.take_damage(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1))
+			_combat_feedback({"dealt": 1, "bounce": false}, target)
 			GameState.wear_tool(2)
 			_play_tool_swing()
 			_place_cooldown = 0.5
@@ -570,3 +610,10 @@ func _tick_mining(delta: float) -> void:
 		_try_mine_wake()
 		_mine_elapsed = 0.0
 		_place_cooldown = 0.1
+
+
+func _heal_key() -> String:
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets and gsets.has_method("key_label"):
+		return str(gsets.key_label("use_heal"))
+	return "H"

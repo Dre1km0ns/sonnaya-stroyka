@@ -1,5 +1,5 @@
 extends CanvasLayer
-## HUD v0.5: хотбар 9 слотов с иконками (количество — справа сверху), вертикальная полоса
+## HUD v0.12: хотбар 9 слотов, полоса HP слева снизу
 ## якорей/маяков справа, инвентарь 9+27 (I / Tab), всплывашки, дев-бейдж, F3 — отладка.
 
 const SlotView := preload("res://scripts/slot_view.gd")
@@ -41,9 +41,8 @@ var _last_chat_time := -100.0
 var _time := 0.0
 ## v0.7
 var _hp_text: Label
-var _heal_slot: Panel
-var _heal_cd_label: Label
-var _heal_cd_shade: ColorRect
+var _heal_text: Label
+var objective_panel: Control
 var _bed_prompt: PanelContainer
 var _bed_prompt_label: Label
 var pillow_ui: Control
@@ -78,12 +77,16 @@ func _ready() -> void:
 	$Root.add_child(storage)
 	var context: Control = load("res://scripts/context_hints.gd").new()
 	$Root.add_child(context)
+	objective_panel = load("res://scripts/objective_panel.gd").new()
+	$Root.add_child(objective_panel)
+	GameState.unlock_announced.connect(func(t: String) -> void: show_toast(t, 5.0))
 	var death_script: GDScript = load("res://scripts/death_menu.gd")
 	death_menu = death_script.new()
 	$Root.add_child(death_menu)
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
 	GameState.clarity_changed.connect(_on_clarity)
+	GameState.anchor_selected.connect(func(_t: int) -> void: _on_clarity(GameState.clarity, GameState.dream_clarity_max()))
 	GameState.hint_changed.connect(_on_hint)
 	GameState.toast.connect(show_toast)
 	_on_world(GameState.is_dream())
@@ -254,107 +257,38 @@ func _tick_chat(delta: float) -> void:
 # --- v0.6: HP игрока сердечками над хотбаром ---
 
 func _build_hearts() -> void:
+	## v0.12: горизонтальная полоса слева снизу, «текущее / максимум», след урона.
 	var root: Control = $Root
-	_hp_wrap = HBoxContainer.new()
-	_hp_wrap.name = "Hearts"
-	_hp_wrap.anchor_left = 0.5
-	_hp_wrap.anchor_right = 0.5
+	_hp_wrap = load("res://scripts/health_battery.gd").new()
+	_hp_wrap.anchor_left = 0.0
+	_hp_wrap.anchor_right = 0.0
 	_hp_wrap.anchor_top = 1.0
 	_hp_wrap.anchor_bottom = 1.0
-	var w := 9 * 52 + 8 * 4
-	_hp_wrap.offset_left = -w / 2.0
-	_hp_wrap.offset_right = -w / 2.0 + 240
-	_hp_wrap.offset_top = -92.0
-	_hp_wrap.offset_bottom = -70.0
-	_hp_wrap.add_theme_constant_override("separation", 1)
-	_hp_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hp_wrap.offset_left = 16.0
+	_hp_wrap.offset_right = 16.0 + 240.0
+	_hp_wrap.offset_top = -52.0
+	_hp_wrap.offset_bottom = -18.0
 	root.add_child(_hp_wrap)
-	for i in range(10):
-		var t := TextureRect.new()
-		t.custom_minimum_size = Vector2(22, 20)
-		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_hp_wrap.add_child(t)
-		_hearts.append(t)
 
 
 func _build_heal_indicator() -> void:
-	## v0.7: «HP 74/100» + ячейка хилки1 (кол-во, клавиша, затемнение-кулдаун 15 с).
-	var root: Control = $Root
-	var w := 9 * 52 + 8 * 4
-	_hp_text = Label.new()
-	_hp_text.name = "HPText"
-	_hp_text.anchor_left = 0.5
-	_hp_text.anchor_right = 0.5
-	_hp_text.anchor_top = 1.0
-	_hp_text.anchor_bottom = 1.0
-	_hp_text.offset_left = -w / 2.0 + 262
-	_hp_text.offset_right = -w / 2.0 + 440
-	_hp_text.grow_horizontal = Control.GROW_DIRECTION_END
-	_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_hp_text.offset_top = -94.0
-	_hp_text.offset_bottom = -70.0
-	_hp_text.add_theme_font_size_override("font_size", 15)
-	_hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_hp_text.add_theme_constant_override("outline_size", 5)
-	root.add_child(_hp_text)
-	_heal_slot = SlotView.new()
-	_heal_slot.name = "HealSlot"
-	_heal_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_heal_slot.anchor_left = 0.5
-	_heal_slot.anchor_right = 0.5
-	_heal_slot.anchor_top = 1.0
-	_heal_slot.anchor_bottom = 1.0
-	_heal_slot.offset_left = w / 2.0 + 14
-	_heal_slot.offset_right = w / 2.0 + 66
-	_heal_slot.offset_top = -62.0
-	_heal_slot.offset_bottom = -10.0
-	root.add_child(_heal_slot)
-	_heal_cd_shade = ColorRect.new()
-	_heal_cd_shade.color = Color(0, 0, 0, 0.6)
-	_heal_cd_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_heal_cd_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_heal_slot.add_child(_heal_cd_shade)
-	_heal_cd_label = Label.new()
-	_heal_cd_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_heal_cd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_heal_cd_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_heal_cd_label.add_theme_font_size_override("font_size", 18)
-	_heal_cd_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_heal_cd_label.add_theme_constant_override("outline_size", 6)
-	_heal_cd_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_heal_slot.add_child(_heal_cd_label)
+	## v0.11.1: подписи «HP n/100» и «H ▸ хилка…» убраны; число HP — внутри батарейки.
+	_hp_text = _hp_wrap.label if _hp_wrap else null
+	_heal_text = null
 
 
 func _update_heal_indicator() -> void:
-	if _heal_slot == null:
+	if _hp_wrap == null:
 		return
-	var dream := GameState.is_dream()
-	_heal_slot.visible = not dream
-	var slot: int = GameState.first_heal_slot()
-	var id: String = GameState.get_slot(slot).get("id","heal1") if slot>=0 else "heal1"
-	var n: int = GameState.count_item(id)
-	_heal_slot.set_item(id, n, false, n >= GameState.INF_COUNT, true)
-	_heal_slot.set_key_hint(_key("use_heal", "H"))
-	var cd: float = float(GameState.heal_cd)
-	_heal_cd_shade.visible = cd > 0.0
-	_heal_cd_shade.anchor_top = 1.0 - clampf(cd / float(GameState.HEAL_COOLDOWN), 0.0, 1.0)
-	_heal_cd_shade.offset_top = 0
-	_heal_cd_label.text = ("%d" % int(ceil(cd))) if cd > 0.0 else ""
-	var regen: float = GameState.regen_delay_left()
-	var hp: int = GameState.player_hp
-	var tail := ""
-	if hp < GameState.PLAYER_MAX_HP and hp > 0:
-		tail = "  реген %ds" % int(ceil(regen)) if regen > 0.0 else "  +1/с"
-	_hp_text.text = "HP %d/%d%s" % [hp, GameState.PLAYER_MAX_HP, tail]
-	_hp_text.add_theme_color_override("font_color", Color(1.0, 0.5, 0.45) if hp <= 30 else Color(1, 1, 1))
+	_hp_wrap.set_hp(GameState.player_hp, GameState.PLAYER_MAX_HP)
 
 
 func heal_indicator_state() -> Dictionary:
-	return {"visible": _heal_slot != null and _heal_slot.visible, "cd_text": _heal_cd_label.text if _heal_cd_label else "",
-		"hp_text": _hp_text.text if _hp_text else ""}
+	return {"visible": _hp_wrap != null and _hp_wrap.visible, "slot": find_child("HealSlot", true, false) != null, "cd_text": "",
+		"hp_text": _hp_text.text if _hp_text else "", "heal_text": "", "battery": _hp_wrap != null and _hp_wrap.name == "HealthBattery",
+		"hearts": find_child("Hearts", true, false) != null,
+		"current": GameState.player_hp, "max": GameState.PLAYER_MAX_HP,
+		"bottom_left": _hp_wrap != null and is_equal_approx(_hp_wrap.anchor_left, 0.0)}
 
 
 func _build_bed_prompt() -> void:
@@ -410,19 +344,7 @@ func bed_prompt_visible() -> bool:
 
 
 func _on_hp(hp: int, max_hp: int) -> void:
-	var full: Texture2D = load("res://assets/icons/ui_heart_full.png")
-	var half: Texture2D = load("res://assets/icons/ui_heart_half.png")
-	var empty: Texture2D = load("res://assets/icons/ui_heart_empty.png")
-	var per := float(max_hp) / float(_hearts.size())
-	for i in range(_hearts.size()):
-		var v := float(hp) - float(i) * per
-		var t: TextureRect = _hearts[i]
-		if v >= per * 0.75:
-			t.texture = full
-		elif v >= per * 0.25:
-			t.texture = half
-		else:
-			t.texture = empty
+	if _hp_wrap: _hp_wrap.set_hp(hp, max_hp)
 
 
 # --- v0.6: фаза суток и часы ---
@@ -501,9 +423,9 @@ func _mk_center_label(top: float, size: int) -> Label:
 	return l
 
 
-func show_toast(text: String) -> void:
+func show_toast(text: String, seconds: float = 2.4) -> void:
 	_toast_label.text = text
-	_toast_t = 2.4
+	_toast_t = seconds
 
 
 func _tick_fades(delta: float) -> void:
@@ -561,6 +483,14 @@ func _on_world(is_dream: bool) -> void:
 func _on_clarity(value: float, max_value: float) -> void:
 	clarity_bar.max_value = max_value
 	clarity_bar.value = value
+	# v0.11: ясность — это время. Показываем остаток и цену выбранного якоря в секундах.
+	var cap := get_node_or_null("Root/ClarityCaption") as Label
+	if cap:
+		var secs := int(value / GameState.CLARITY_DRAIN_PER_SEC)
+		var cost: Dictionary = GameState.anchor_cost(int(GameState.selected_anchor))
+		var cs := float(cost.clarity) / GameState.CLARITY_DRAIN_PER_SEC
+		cap.text = "Ясность ≈ %d:%02d  ·  %s −%d (≈%d с)" % [secs / 60, secs % 60, ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), int(cs)]
+		cap.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if secs <= 20 else Color(0.85, 0.85, 1.0))
 
 
 func _refresh_inv() -> void:

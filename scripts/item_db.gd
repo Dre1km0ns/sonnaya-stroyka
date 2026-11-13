@@ -49,6 +49,10 @@ const ITEMS := {
 	"sword2": {"name": "Каменный меч", "stack": 1},
 	"heal1": {"name": "хилка1", "stack": 100},
 	"anaconda_egg": {"name": "Яйцо Анаконды", "stack": 100},
+	"lumen": {"name": "Светоблок тёплый", "stack": 100},
+	"lumen_cold": {"name": "Светоблок холодный", "stack": 100},
+	"lamp": {"name": "Светильник", "stack": 100},
+	"strut": {"name": "Подпорка", "stack": 100},
 }
 
 ## Особые предметы: только вертикальная полоса справа. key -> поле GameState.

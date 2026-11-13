@@ -4,7 +4,9 @@ extends Node3D
 @export var is_dream_layer := false
 @export var block_size := 1.0
 const BlockTex := preload("res://scripts/block_tex.gd")
-const SPECIAL := ["torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
+const MAX_LUMEN_LIGHTS := 24
+var _lumen_lights := 0
+const SPECIAL := ["lumen","lumen_cold","lamp","strut","torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
 const PARTS := ["bed_foot","door_top","catcher_top"]
 var _meshes: Dictionary = {}
 var _bodies: Dictionary = {}
@@ -186,7 +188,9 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 			tex_kind = "mouth"
 	elif mutant:
 		tex_kind = "mouth"
-	if kind == "bed":
+	if kind == "torch":
+		mi.mesh = BlockTex.torch_mesh()
+	elif kind == "bed":
 		mi.mesh = BlockTex.bed_mesh(1.0 if data.get("legacy_compact",false) else 2.0)
 	elif kind in ["lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door"]:
 		mi.mesh = BlockTex.station_mesh(kind)
@@ -198,19 +202,22 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "door": mi.transform=door_transform(cell,data)
 	add_child(mi)
 	_meshes[cell] = mi
+	if kind == "chest":
+		# v0.11: крышка на шарнире — анимируется при открытии сундука (set_chest_open).
+		var pivot := Node3D.new()
+		pivot.name = "LidPivot"
+		pivot.position = BlockTex.CHEST_HINGE
+		mi.add_child(pivot)
+		var lid := MeshInstance3D.new()
+		lid.name = "Lid"
+		lid.mesh = BlockTex.chest_lid_mesh()
+		pivot.add_child(lid)
 	if kind == "torch":
+		# v0.11.1: общий меш пламени (кешируется в BlockTex) вместо сферы.
 		var flame := MeshInstance3D.new()
-		var fs := SphereMesh.new()
-		fs.radius = 0.14
-		fs.height = 0.28
-		flame.mesh = fs
-		var fmat := StandardMaterial3D.new()
-		fmat.albedo_color = Color(1.0, 0.62, 0.2)
-		fmat.emission_enabled = true
-		fmat.emission = Color(1.0, 0.45, 0.1)
-		fmat.emission_energy_multiplier = 1.4
-		flame.material_override = fmat
-		flame.position = Vector3(0, 0.42, 0)
+		flame.name = "Flame"
+		flame.mesh = BlockTex.torch_flame_mesh()
+		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.add_child(flame)
 		var light := OmniLight3D.new()
 		light.name = "TorchLight"
@@ -221,6 +228,17 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		light.shadow_enabled = false
 		light.position = Vector3(0, 0.45, 0)
 		mi.add_child(light)
+	if kind in ["lumen", "lumen_cold", "lamp"] and _lumen_lights < MAX_LUMEN_LIGHTS:
+		# v0.12: светоархитектура — lumen 6 м, светильник 10 м. Анаконду жгут только факелы.
+		var ll := OmniLight3D.new()
+		ll.name = "LumenLight"
+		ll.light_color = Color(1.0, 0.78, 0.45) if kind in ["lumen", "lamp"] else Color(0.55, 0.85, 1.0)
+		ll.light_energy = 1.45 if kind == "lamp" else 1.2
+		ll.omni_range = 10.0 if kind == "lamp" else 6.0
+		ll.shadow_enabled = false
+		mi.add_child(ll)
+		_lumen_lights += 1
+		ll.tree_exiting.connect(func() -> void: _lumen_lights = maxi(0, _lumen_lights - 1))
 	if kind == "beacon":
 		mi.position = cell_to_world(cell) + Vector3(0, -0.25, 0)
 		var core := MeshInstance3D.new()
@@ -318,3 +336,31 @@ static func door_transform(cell: Vector3i,data: Dictionary) -> Transform3D:
 		basis=Basis(Vector3.UP,facing-side*PI/2.0)
 		center=hinge-basis*Vector3(side*0.5,0,0)
 	return Transform3D(basis,center)
+
+
+const CHEST_OPEN_DEG := -72.0
+const CHEST_ANIM_SEC := 0.22
+
+
+func chest_lid(cell: Vector3i) -> Node3D:
+	var mi: Node = _meshes.get(cell)
+	if mi == null or not is_instance_valid(mi):
+		return null
+	return mi.get_node_or_null("LidPivot") as Node3D
+
+
+func set_chest_open(cell: Vector3i, open: bool, animate: bool = true) -> bool:
+	var pivot := chest_lid(cell)
+	if pivot == null:
+		return false
+	var target := deg_to_rad(CHEST_OPEN_DEG) if open else 0.0
+	if pivot.has_meta("tween"):
+		var old: Tween = pivot.get_meta("tween")
+		if old and old.is_valid(): old.kill()
+	if not animate or not is_inside_tree():
+		pivot.rotation.x = target
+		return true
+	var tw := pivot.create_tween()
+	tw.tween_property(pivot, "rotation:x", target, CHEST_ANIM_SEC).set_trans(Tween.TRANS_BACK if open else Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	pivot.set_meta("tween", tw)
+	return true
