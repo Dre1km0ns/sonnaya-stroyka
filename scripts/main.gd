@@ -98,7 +98,7 @@ func _ready() -> void:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
 	_camp_label()
-	print("Сонная стройка v0.11 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.12 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func _on_player_died() -> void:
@@ -808,8 +808,7 @@ func _capture_v07() -> void:
 		var ep := Vector3(nc.x + 2.2, nc.y + 2.0, nc.z + 0.5)
 		var emerge := Vector3(ep.x, wake_chunks.floor_y_below(ep, 8), ep.z)
 		ana._emerge = emerge
-		ana._enter(ana.S.STUNNED)
-		ana._stun_len = 99.0
+		ana._enter(ana.S.REST)
 		for k in range(90):
 			ana._t = 0.0
 			ana.tick(1.0 / 30.0)

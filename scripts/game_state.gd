@@ -892,6 +892,8 @@ func recipe_defs() -> Array:
 		{"id": "heal2", "name": "Хилка2 (+40 HP)", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
 		{"id": "lumen", "name": "Светоблок тёплый ×4", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 10, "item": "lumen", "count": 4, "tier": 4},
 		{"id": "lumen_cold", "name": "Светоблок холодный ×4", "where": "dream", "unlock": "heart_light", "reagent2": 1, "dust": 10, "item": "lumen_cold", "count": 4, "tier": 4},
+		{"id": "lamp", "name": "Светильник ×2", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 16, "item": "lamp", "count": 2, "tier": 4},
+		{"id": "strut", "name": "Подпорка ×4", "where": "dream", "unlock": "heart_structure", "reagent3": 1, "dust": 8, "item": "strut", "count": 4, "tier": 4},
 		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 150, "item": "idea_catcher", "tier": 3},
 	]
 	for tier in ["wood","scale"]:
@@ -915,6 +917,8 @@ func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
 	if rec.get("unlock", "") == "mother" and not mother_defeated and not dev_mode:
 		return false
 	if rec.get("unlock", "") == "heart_light" and not heart_light and not dev_mode:
+		return false
+	if rec.get("unlock", "") == "heart_structure" and not heart_structure and not dev_mode:
 		return false
 	var where := str(rec.get("where", "anywhere"))
 	var dreaming := bool(ctx.get("is_dream", is_dream()))
@@ -1712,7 +1716,7 @@ func on_mother_killed() -> void:
 	_deep_warned = 0
 	heart_structure = true
 	if first:
-		var t := "Сердце структуры: во Сне — массовая постановка (Shift+ЛКМ — ряд из 3), якоря шире на 2, перенос без мутаций. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов (B/N во Сне). Блоколиты теперь иногда бродят по Яви."
+		var t := "Сердце структуры: во Сне — массовая постановка (Shift+ЛКМ — ряд из 5), якоря шире на 2, перенос без мутаций, подпорки (C). Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов (B/N во Сне). Блоколиты иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1722,7 +1726,7 @@ func on_anaconda_killed() -> void:
 	anaconda_defeated = true
 	heart_light = true
 	if first:
-		var t := "Сердце света: во Сне открыты светоблоки (C → Светоблок). Открыто: Чешуйчатый меч и чешуйчатая броня на станке."
+		var t := "Сердце света: во Сне открыты светоблоки, светильники (C → Светоблок / Светильник) и чешуйчатое оружие на станке."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1733,6 +1737,10 @@ func block_display_name(kind: String) -> String:
 			return "Верстак"
 		"torch":
 			return "Факел"
+		"lamp":
+			return "Светильник"
+		"strut":
+			return "Подпорка"
 		"mouth":
 			return "Рот"
 		"sword":
@@ -1779,7 +1787,7 @@ func block_display_name(kind: String) -> String:
 
 func is_placeable_block(id: String) -> bool:
 	return id in ["bedrock", "drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
-		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "lumen", "lumen_cold"]
+		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "lumen", "lumen_cold", "lamp", "strut"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:

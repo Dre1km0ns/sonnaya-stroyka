@@ -1,0 +1,78 @@
+{
+  "version": "Сонная стройка v0.12",
+  "date_msk": "2026-11-13",
+  "engine": "Godot 4.7.2 official, headless, tools/v012_bench.gd",
+  "notes": "Стоимость тика зависит от состояния AI (UNDER/REST/BURST) и нагрузки машины. Все цифры — реальные прогоны, не оценка. Кадр 16.67 мс; даже 66 мкс — менее 0.4% кадра.",
+  "before_v0.11.1": {
+    "source": "Тот же скрипт, путь /workspace/sonnaya-stroyka-v011",
+    "early_session_us": {
+      "anaconda_tick_us": 21.82,
+      "mother_tick_us": 4.98,
+      "torch_20000_cache_us": 0.24,
+      "torch_20000_scan_us": 7468.0,
+      "note": "первый прогон сессии; точное состояние AI в логе не сохранилось"
+    },
+    "remeasured_same_day": {
+      "anaconda_tick_us": 35.8994444444444,
+      "anaconda_state": "REST",
+      "mother_tick_us": 5.38333333333333,
+      "mother_state": "AIR",
+      "torch_cache": [
+        {
+          "blocks": 2000,
+          "torches": 8,
+          "cache_us": 0.305,
+          "scan_us": 740.99
+        },
+        {
+          "blocks": 20000,
+          "torches": 80,
+          "cache_us": 0.29,
+          "scan_us": 8135.96
+        }
+      ],
+      "version_string": "Сонная стройка v0.11"
+    }
+  },
+  "after_v0.12": {
+    "intermediate_after_sm": {
+      "anaconda_tick_us": 65.5288888888889,
+      "anaconda_state": "UNDER",
+      "mother_tick_us": 5.38444444444444,
+      "note": "до кеша light_zones на тик и до сегментного crossfire"
+    },
+    "after_light_zones_cache": {
+      "anaconda_tick_us": 42.88,
+      "note": "промежуточный замер после кеша зон, до сегментного max()"
+    },
+    "final": {
+      "anaconda_tick_us": 50.9655555555556,
+      "anaconda_state": "BURST",
+      "anaconda_hp_after_1800_ticks": 1031,
+      "mother_tick_us": 5.47166666666667,
+      "mother_state": "PLATE_OPEN",
+      "torch_cache": [
+        {
+          "blocks": 2000,
+          "torches": 8,
+          "cache_us": 0.275,
+          "scan_us": 692.83
+        },
+        {
+          "blocks": 20000,
+          "torches": 80,
+          "cache_us": 0.235,
+          "scan_us": 7403.69
+        }
+      ],
+      "version_string": "Сонная стройка v0.12"
+    }
+  },
+  "delta_final_vs_remeasured_v0111": {
+    "anaconda_tick_us": 15.07,
+    "anaconda_ratio": 1.42,
+    "mother_tick_us": 0.09,
+    "mother_ratio": 1.02,
+    "comment": "Рост тика Анаконды связан с SM, обходом сегментов в crossfire_level и адаптивным AI. Полного скана мира и перестройки всех чанков при постановке факела нет. Кеш факелов того же порядка (≈0.25 мкс против тысяч мкс скана)."
+  }
+}

@@ -167,18 +167,22 @@ func _place_at(cell: Vector3i) -> void:
 
 
 func mass_place_row(cell: Vector3i, facing: int) -> Array:
-	## v0.11.1 (Сердце структуры): Shift+ЛКМ дрейф-блоком — ряд из 3 поперёк взгляда. Каждый следующий опирается на предыдущий.
+	## v0.12 (Сердце структуры): Shift+ЛКМ дрейф-блоком — ряд из 5 поперёк взгляда. Каждый следующий опирается на предыдущий.
 	var right := Vector3i(1, 0, 0) if facing % 2 == 0 else Vector3i(0, 0, 1)
 	var out: Array = []
-	for side in [right, -right]:
-		var c: Vector3i = cell + side
-		if not GameState.dream_blocks.has(c) and placement_supported(c, true) and GameState.place_dream_block(c, "drift", facing):
-			out.append(c)
+	for dir in [right, -right]:
+		var c: Vector3i = cell
+		for _i in range(2):
+			c = c + dir
+			if not GameState.dream_blocks.has(c) and placement_supported(c, true) and GameState.place_dream_block(c, "drift", facing):
+				out.append(c)
+			else:
+				break
 	return out
 
 
 ## Предметы, которые во сне ставятся как блоки (иначе ставится бесплатный дрейф-блок).
-const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand", "lumen", "lumen_cold"]
+const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand", "lumen", "lumen_cold", "lamp", "strut"]
 
 
 func _try_remove() -> void:
@@ -454,11 +458,14 @@ func _try_sword() -> void:
 		if dir.dot(forward) < 0.15:
 			continue
 		if n.has_method("receive_weapon_hit"):
-			# v0.11.1: боссы различают оружие (броня Матери, чешуя Анаконды).
-			n.receive_weapon_hit(dmg, str(GameState.get_selected_item().get("id", "sword")))
-			hit += 1
+			# v0.12: боссы различают оружие; feedback по результату (без ложных попаданий и без shake).
+			var res: Dictionary = n.receive_weapon_hit(dmg, str(GameState.get_selected_item().get("id", "sword")))
+			_combat_feedback(res, n)
+			if int(res.get("dealt", 0)) > 0 or bool(res.get("bounce", false)):
+				hit += 1
 		elif n.has_method("take_damage"):
 			n.take_damage(dmg)
+			_combat_feedback({"dealt": dmg, "bounce": false}, n)
 			hit += 1
 	last_sword_hits = hit
 	if hit > 0:
@@ -522,6 +529,22 @@ func _play_tool_swing() -> void:
 	viewmodel.play_swing()
 
 
+func _combat_feedback(res: Dictionary, target: Node) -> void:
+	## Подтверждение попадания или отскока. Камеру не трясём.
+	var bounce := bool(res.get("bounce", false))
+	var dealt := int(res.get("dealt", 0))
+	if dealt <= 0 and not bounce:
+		return
+	if viewmodel and viewmodel.has_method("play_recoil"):
+		viewmodel.play_recoil(not bounce)
+	if bounce:
+		Sfx.play("break_stone", get_tree().root if is_inside_tree() else null)
+	else:
+		Sfx.play("break_wood", get_tree().root if is_inside_tree() else null)
+	if target and target.has_method("on_hit_feedback"):
+		target.on_hit_feedback(res)
+
+
 const Mining := preload("res://scripts/mining_rules.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 
@@ -544,12 +567,14 @@ func _tick_mining(delta: float) -> void:
 	if collider.is_in_group("enemy") or collider.get_parent().is_in_group("enemy"):
 		var target = collider if collider.is_in_group("enemy") else collider.get_parent()
 		if target.has_method("receive_weapon_hit"):
-			target.receive_weapon_hit(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1), tool if tool != "" else "hand")
+			var res: Dictionary = target.receive_weapon_hit(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1), tool if tool != "" else "hand")
+			_combat_feedback(res, target)
 			GameState.wear_tool(2)
 			_play_tool_swing()
 			_place_cooldown = 0.5
 		elif target.has_method("take_damage"):
 			target.take_damage(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1))
+			_combat_feedback({"dealt": 1, "bounce": false}, target)
 			GameState.wear_tool(2)
 			_play_tool_swing()
 			_place_cooldown = 0.5

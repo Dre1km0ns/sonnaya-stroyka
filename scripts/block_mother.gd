@@ -1,5 +1,5 @@
 extends CharacterBody3D
-## «Мать блоков» v0.11.1 (BOSS REDESIGN). Дизайн-док: docs/boss_mother_of_blocks.md, docs/boss_redesign_v0.11.md.
+## «Мать блоков» v0.12 (BOSS REDESIGN). Дизайн-док: docs/boss_mother_of_blocks.md, docs/boss_redesign_v0.11.md.
 ## Броня: 3 пластины по 6 прочности. Кирка снимает 2, Кирка2 — 6; мечи броню не берут (отскок, 0 урона).
 ## Цикл: SPAWN → IDLE ⇄ WINDUP → AIR → (LAND) → PLATE_OPEN (одна пластина светится 3.5 с) →
 ##   пластина разбита → CORE (оранжевое ядро открыто, Мать оглушена, меч ×1.25, 3 с) → IDLE
@@ -14,8 +14,10 @@ const BlockTex := preload("res://scripts/block_tex.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 var healed_from_blocks: int = 0   # v0.11.1: лечение деревьями удалено, всегда 0 (поле для старых отчётов)
 
-enum S { SPAWN, IDLE, WINDUP, AIR, STAGGER, TRANSITION, SCATTER, MARKER, RAIN_WINDUP, RAIN, DEAD, LEAVING, PLATE_OPEN, CORE, CORE_LONG }
-const STATE_NAMES := ["SPAWN", "IDLE", "WINDUP", "AIR", "STAGGER", "TRANSITION", "SCATTER", "MARKER", "RAIN_WINDUP", "RAIN", "DEAD", "LEAVING", "PLATE_OPEN", "CORE", "CORE_LONG"]
+const SM := preload("res://scripts/boss_combat_sm.gd")
+
+enum S { SPAWN, IDLE, WINDUP, AIR, STAGGER, TRANSITION, SCATTER, MARKER, RAIN_WINDUP, RAIN, DEAD, LEAVING, PLATE_OPEN, CORE, CORE_LONG, MELEE, GUARD, COMBO, COLLAPSE }
+const STATE_NAMES := ["SPAWN", "IDLE", "WINDUP", "AIR", "STAGGER", "TRANSITION", "SCATTER", "MARKER", "RAIN_WINDUP", "RAIN", "DEAD", "LEAVING", "PLATE_OPEN", "CORE", "CORE_LONG", "MELEE", "GUARD", "COMBO", "COLLAPSE"]
 
 # --- числовая база (см. дизайн-док, раздел 3) ---
 const MAX_HP := 620          # v0.11.1: фиксировано, без масштабирования от Меча3
@@ -28,6 +30,15 @@ const PICK_PLATE_DAMAGE := {"pickaxe": 2, "pickaxe2": 6}
 const PLATE_OPEN_TIME := 3.5         # пластина светится и ждёт кирку
 const CORE_TIME := 2.6               # оглушение + усиленное окно меча
 const CORE_LONG_TIME := 4.5          # фаза III: долгое открытие ядра после кирпичного дождя
+const MELEE_WINDUP := 0.45
+const MELEE_DAMAGE := 18
+const MELEE_RANGE := 2.4
+const GUARD_TIME := 1.6
+const HEART_OPEN_CD := 11.0          # фаза III: периодическое открытие сердца
+const COLLAPSE_WINDUP := 1.6
+const COLLAPSE_DAMAGE := 28
+const COLLAPSE_RADIUS := 5.5
+const COLLAPSE_CORE := 5.0
 const CORE_MULT := 1.25
 const NAKED_MULT := 1.0              # все пластины разбиты: меч бьёт в окна STAGGER ×1
 const CARRIER_MAX := 2
@@ -90,6 +101,12 @@ var open_plate := -1
 var plate_log := {"opened": 0, "broken": 0, "closed": 0, "restored": 0, "carriers": 0, "carriers_killed": 0, "bounces": 0, "cover": 0, "reassemble_telegraph": 0}
 var damage_by_weapon := {}
 var _carrier_cd := 2.0
+var combat = SM.new()
+var _combo_left := 0
+var _heart_cd := 6.0
+var _collapse_done := false
+var _melee_dir := Vector3(1, 0, 0)
+var _collapse_disc: MeshInstance3D = null
 var _covers: Array = []
 var hp: int = MAX_HP
 var max_hp: int = MAX_HP
@@ -98,7 +115,8 @@ var phase: int = 1
 var state: int = S.SPAWN
 var frozen: bool = false
 var attack_log: Dictionary = {"slam": 0, "slam_hit": 0, "shockwave": 0, "wave_hit": 0, "teleport": 0, "reassemble_hit": 0,
-	"brick_rain": 0, "brick": 0, "brick_hit": 0, "minion_spawn": 0, "minions": 0, "transition": 0, "contact": 0}
+	"brick_rain": 0, "brick": 0, "brick_hit": 0, "minion_spawn": 0, "minions": 0, "transition": 0, "contact": 0,
+	"melee": 0, "melee_hit": 0, "guard": 0, "combo": 0, "collapse": 0, "collapse_hit": 0, "heart_open": 0}
 var state_log: Array = []
 var damage_dealt: int = 0
 
@@ -454,16 +472,25 @@ func _close_plate() -> void:
 	_refresh_plates()
 
 
+func has_damaged_plate() -> bool:
+	## Повреждённая, но не уничтоженная пластина. Уничтоженные (broken) в v0.12 не чинятся.
+	for pl in plates:
+		if not bool(pl["broken"]) and int(pl["dur"]) < PLATE_DURABILITY:
+			return true
+	return false
+
+
 func restore_plate() -> bool:
 	if phase >= 3:
 		return false   # в фазе III броня не восстанавливается
 	for i in range(plates.size()):
 		if bool(plates[i]["broken"]):
-			plates[i]["broken"] = false
+			continue   # уничтоженные пластины не восстанавливаются
+		if int(plates[i]["dur"]) < PLATE_DURABILITY:
 			plates[i]["dur"] = PLATE_DURABILITY
 			plate_log["restored"] += 1
 			_refresh_plates()
-			GameState.chat("Носильщик донёс осколок — Мать блоков нарастила пластину!", Color(1.0, 0.6, 0.4))
+			GameState.chat("Носильщик донёс осколок — повреждённая пластина восстановлена!", Color(1.0, 0.6, 0.4))
 			return true
 	return false
 
@@ -481,8 +508,8 @@ func alive_carriers() -> int:
 
 
 func _tick_carriers(delta: float) -> void:
-	## Фаза II: пока есть разбитые пластины — до 2 носильщиков бегут за осколками.
-	if phase != 2 or intact_plates() >= PLATE_COUNT:
+	## Фаза II: носильщики чинят только ПОВРЕЖДЁННЫЕ (не уничтоженные) пластины.
+	if phase != 2 or not has_damaged_plate():
 		return
 	_carrier_cd -= delta
 	if _carrier_cd > 0.0 or alive_carriers() >= CARRIER_MAX:
@@ -526,6 +553,23 @@ func _enter(s: int) -> void:
 	state_log.append([STATE_NAMES[s], phase, hp])
 	if state_log.size() > 400:
 		state_log.remove_at(0)
+	if combat:
+		var ph := SM.Phase.CUSTOM
+		var mx := 8.0
+		match s:
+			S.SPAWN, S.IDLE:
+				ph = SM.Phase.IDLE; mx = 6.0
+			S.WINDUP, S.RAIN_WINDUP, S.MARKER, S.GUARD:
+				ph = SM.Phase.TELEGRAPH; mx = 3.0
+			S.AIR, S.MELEE, S.COMBO, S.RAIN, S.SCATTER, S.COLLAPSE:
+				ph = SM.Phase.ATTACK; mx = 6.0
+			S.STAGGER:
+				ph = SM.Phase.RECOVERY; mx = 3.0
+			S.PLATE_OPEN, S.CORE, S.CORE_LONG:
+				ph = SM.Phase.VULNERABILITY; mx = 6.5
+			S.TRANSITION:
+				ph = SM.Phase.TRANSITION; mx = 3.0
+		combat.enter(STATE_NAMES[s], ph, mx)
 
 
 func _player() -> CharacterBody3D:
@@ -535,11 +579,21 @@ func _player() -> CharacterBody3D:
 func _physics_process(delta: float) -> void:
 	if frozen or state == S.DEAD or state == S.LEAVING:
 		return
+	combat.tick(delta)
 	_t += delta
 	_contact_cd = maxf(0.0, _contact_cd - delta)
 	_tp_cd = maxf(0.0, _tp_cd - delta)
 	_rain_cd = maxf(0.0, _rain_cd - delta)
+	_heart_cd = maxf(0.0, _heart_cd - delta)
 	var player := _player()
+	if combat.timed_out() and state not in [S.DEAD, S.LEAVING, S.AIR]:
+		if state == S.COLLAPSE:
+			_resolve_collapse(player)
+		elif state in [S.MELEE, S.GUARD, S.COMBO, S.WINDUP, S.RAIN_WINDUP]:
+			_enter(S.IDLE)
+		elif state in [S.CORE, S.CORE_LONG, S.PLATE_OPEN, S.STAGGER]:
+			_enter(S.IDLE)
+			_refresh_plates()
 	_tick_bricks(delta, player)
 	_tick_waves(delta, player)
 	_tick_carriers(delta)
@@ -602,9 +656,18 @@ func _physics_process(delta: float) -> void:
 				_refresh_plates()
 		S.CORE_LONG:
 			_ground_move(delta)
-			if _t >= CORE_LONG_TIME:
+			if _t >= (COLLAPSE_CORE if _collapse_done and hp <= P3_AT else CORE_LONG_TIME):
 				_set_crack_glow(false)
 				_enter(S.IDLE)
+		S.MELEE:
+			_ground_move(delta)
+			_tick_melee(delta, player, flat)
+		S.GUARD:
+			_ground_move(delta)
+			_tick_guard(delta, player, flat)
+		S.COLLAPSE:
+			_ground_move(delta)
+			_tick_collapse(delta, player)
 		S.TRANSITION:
 			_ground_move(delta)
 			if _t >= TRANSITION_TIME:
@@ -632,7 +695,7 @@ func _physics_process(delta: float) -> void:
 				_enter(S.CORE_LONG)
 				GameState.set_hint("Ядро открыто надолго — руби!", false)
 	# Касание: только когда она стоит (не в полёте и не рассыпана).
-	if state in [S.IDLE, S.WINDUP, S.STAGGER, S.RAIN, S.RAIN_WINDUP, S.PLATE_OPEN] and _contact_cd <= 0.0:
+	if state in [S.IDLE, S.WINDUP, S.STAGGER, S.RAIN, S.RAIN_WINDUP, S.PLATE_OPEN, S.GUARD] and _contact_cd <= 0.0:
 		if flat.length() <= HIT_RADIUS + 0.55 and absf(to_p.y) < BODY_HEIGHT:
 			_hurt(player, CONTACT_DAMAGE, "касание", 7.0)
 			attack_log["contact"] += 1
@@ -657,16 +720,24 @@ func _face(flat: Vector3, delta: float) -> void:
 
 
 func _decide(player: CharacterBody3D, flat: Vector3) -> void:
-	## Приоритеты мувмент-ИИ (док, раздел 6):
-	## 1) отложенный переход фазы; 2) пересборка рядом с игроком, если далеко/высоко/застряла;
-	## 3) фаза 3: кирпичный дождь по КД; 4) иначе — прыжок-слэм.
+	## Приоритеты: переход фазы; финальный обвал; пересборка; фаза III дождь/сердце; ближний бой/защита; слэм (с комбо во II).
 	if _pending_transition > 0:
 		_start_transition()
+		return
+	if phase >= 3 and not _collapse_done and hp <= int(MAX_HP * 0.15):
+		_start_collapse(player)
 		return
 	var dy := player.global_position.y - global_position.y
 	var far := flat.length() > TP_RANGE or absf(dy) > TP_HEIGHT or _no_progress >= 3
 	if far and _tp_cd <= 0.0:
 		_start_scatter()
+		return
+	if phase >= 3 and _heart_cd <= 0.0 and state == S.IDLE:
+		_heart_cd = HEART_OPEN_CD
+		_set_crack_glow(true)
+		_enter(S.CORE)
+		attack_log["heart_open"] += 1
+		GameState.set_hint("Сердце открылось само — бей!", false)
 		return
 	if phase >= 3 and _rain_cd <= 0.0 and flat.length() < TP_RANGE:
 		_rain_cd = RAIN_CD
@@ -675,6 +746,18 @@ func _decide(player: CharacterBody3D, flat: Vector3) -> void:
 		_Vis.play_state(self, "attack", true)
 		_squash(Vector3(1.0, 1.25, 1.0), RAIN_WINDUP)
 		return
+	# Фаза I/II: ближняя атака или защитная стойка, иначе слэм.
+	var roll := _rng.randf()
+	if flat.length() <= MELEE_RANGE + 0.6 and roll < (0.35 if phase == 1 else 0.28):
+		_start_melee(player, flat)
+		return
+	if phase == 1 and roll > 0.82:
+		_start_guard()
+		return
+	if phase >= 2:
+		_combo_left = 1 if roll < 0.55 else 0
+		if _combo_left > 0:
+			attack_log["combo"] += 1
 	_enter(S.WINDUP)
 	_Vis.play_state(self, "idle", true)
 	_squash(Vector3(1.22, 0.7, 1.22), float(WINDUP[phase - 1]))
@@ -785,7 +868,12 @@ func _land(player: CharacterBody3D) -> void:
 	if _pending_transition > 0:
 		_start_transition()
 		return
-	# v0.11.1: после слэма — одна пластина светится (окно кирки); без брони — обычный STAGGER (меч ×1).
+	# v0.12: во II фазе после слэма возможна вторая атака (ближний удар), затем окно пластины.
+	if _combo_left > 0:
+		_combo_left -= 1
+		_start_melee(player, flat)
+		return
+	# После слэма — одна пластина светится (окно кирки); без брони — обычный STAGGER (меч ×1).
 	if not _open_plate():
 		_stagger_len = float(STAGGER[phase - 1])
 		_set_crack_glow(true)
@@ -1128,7 +1216,7 @@ func _start_transition() -> void:
 			_unsquash(0.3)
 			roar(true)
 			_roar_push())
-	var what := "Ударная волна и носильщики брони!" if phase == 2 else "Кирпичный дождь: тени, интервалы и навес-укрытие. Броня больше не чинится."
+	var what := "Комбо из двух атак и носильщики чинят только повреждённые пластины!" if phase == 2 else "Обвалы, укрытия и периодически открытое сердце. Уничтоженные пластины не восстают. В конце — обвал каркаса."
 	GameState.chat("Мать блоков в ярости — фаза %d. %s" % [phase, what], Color(1.0, 0.5, 0.35))
 
 
@@ -1244,6 +1332,8 @@ func _cleanup_fx() -> void:
 	for c in _covers:
 		_free_node(c["node"])
 	_covers.clear()
+	_free_node(_collapse_disc)
+	_collapse_disc = null
 
 
 func _exit_tree() -> void:
@@ -1343,5 +1433,100 @@ func _free_node(n: Variant) -> void:
 		(n as Node).queue_free()
 
 
+func _start_melee(player: CharacterBody3D, flat: Vector3) -> void:
+	if combat and not combat.begin_attack("melee", 1.8):
+		if not _open_plate():
+			_enter(S.IDLE)
+		return
+	attack_log["melee"] += 1
+	_melee_dir = flat.normalized() if flat.length() > 0.1 else Vector3(1, 0, 0)
+	_enter(S.MELEE)
+	_Vis.play_state(self, "attack", true)
+	_squash(Vector3(1.18, 0.82, 1.18), MELEE_WINDUP)
+
+
+func _tick_melee(delta: float, player: CharacterBody3D, flat: Vector3) -> void:
+	_face(flat, delta)
+	if _t >= MELEE_WINDUP and combat.can_hit("melee_%d" % attack_log["melee"]):
+		var d := player.global_position - global_position
+		var sideways := Vector3(d.x, 0, d.z)
+		if sideways.length() <= MELEE_RANGE and sideways.normalized().dot(_melee_dir) > 0.15 and d.y < BODY_HEIGHT:
+			if _hurt(player, MELEE_DAMAGE, "удар лапой", 8.0) > 0:
+				attack_log["melee_hit"] += 1
+		_unsquash(0.15)
+	if _t >= MELEE_WINDUP + 0.35:
+		if not _open_plate():
+			_stagger_len = 0.7
+			_enter(S.STAGGER)
+
+
+func _start_guard() -> void:
+	if combat and not combat.begin_attack("guard", 4.0):
+		_enter(S.WINDUP)
+		return
+	attack_log["guard"] += 1
+	_enter(S.GUARD)
+	_squash(Vector3(1.28, 0.78, 1.28), 0.2)
+	GameState.set_hint("Мать блоков в стойке — пластины закрыты.", false)
+
+
+func _tick_guard(_delta: float, _player: CharacterBody3D, flat: Vector3) -> void:
+	_face(flat, _delta)
+	if _t >= GUARD_TIME:
+		_unsquash(0.15)
+		# Контратака: слэм сразу после стойки.
+		_enter(S.WINDUP)
+		_Vis.play_state(self, "idle", true)
+		_squash(Vector3(1.22, 0.7, 1.22), float(WINDUP[phase - 1]))
+
+
+func _start_collapse(player: CharacterBody3D) -> void:
+	if _collapse_done:
+		return
+	_collapse_done = true
+	attack_log["collapse"] += 1
+	_enter(S.COLLAPSE)
+	roar(true)
+	_free_node(_collapse_disc)
+	_collapse_disc = _disc(COLLAPSE_RADIUS, Color(0.7, 0.15, 0.1, 0.55))
+	_collapse_disc.global_position = global_position + Vector3(0, 0.06, 0)
+	GameState.set_hint("Каркас рушится! Прячься под навес!", false)
+	# Навес, если его ещё нет — шанс укрыться.
+	if _covers.is_empty() and player:
+		_spawn_cover(player.global_position + Vector3(2.2, 0, 1.4))
+
+
+func _tick_collapse(_delta: float, player: CharacterBody3D) -> void:
+	if _collapse_disc and is_instance_valid(_collapse_disc):
+		var k := 0.7 + 0.3 * sin(_t * 14.0)
+		_collapse_disc.scale = Vector3(k, 1, k)
+	if _t >= COLLAPSE_WINDUP:
+		_resolve_collapse(player)
+
+
+func _resolve_collapse(player: CharacterBody3D) -> void:
+	_debris(global_position + Vector3(0, 1.4, 0), 24, 8.0)
+	_free_node(_collapse_disc)
+	_collapse_disc = null
+	if player:
+		var d := Vector2(player.global_position.x - global_position.x, player.global_position.z - global_position.z).length()
+		if d <= COLLAPSE_RADIUS and not under_cover(player.global_position):
+			if _hurt(player, COLLAPSE_DAMAGE, "обвал каркаса", 10.0) > 0:
+				attack_log["collapse_hit"] += 1
+	_set_crack_glow(true)
+	_enter(S.CORE_LONG)
+	GameState.set_hint("Каркас рухнул — сердце открыто надолго!", false)
+
+
+func on_hit_feedback(res: Dictionary) -> void:
+	if bool(res.get("bounce", false)):
+		_bounce_feedback(str(res.get("weapon", "")))
+	elif int(res.get("dealt", 0)) > 0:
+		_flash()
+
+
 func debug_snapshot() -> Dictionary:
-	return {"state": STATE_NAMES[state], "phase": phase, "hp": hp, "log": attack_log.duplicate(), "plates": intact_plates(), "armor": plate_log.duplicate()}
+	return {"state": STATE_NAMES[state], "phase": phase, "hp": hp, "log": attack_log.duplicate(),
+		"plates": intact_plates(), "armor": plate_log.duplicate(),
+		"combat": combat.snapshot() if combat else {}, "damaged": has_damaged_plate(),
+		"collapse": _collapse_done}

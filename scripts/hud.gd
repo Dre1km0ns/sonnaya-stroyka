@@ -1,5 +1,5 @@
 extends CanvasLayer
-## HUD v0.5: хотбар 9 слотов с иконками (количество — справа сверху), вертикальная полоса
+## HUD v0.12: хотбар 9 слотов, полоса HP слева снизу
 ## якорей/маяков справа, инвентарь 9+27 (I / Tab), всплывашки, дев-бейдж, F3 — отладка.
 
 const SlotView := preload("res://scripts/slot_view.gd")
@@ -257,18 +257,17 @@ func _tick_chat(delta: float) -> void:
 # --- v0.6: HP игрока сердечками над хотбаром ---
 
 func _build_hearts() -> void:
-	## v0.11.1: вместо 10 сердечек — одна «батарейка» с числом HP внутри.
+	## v0.12: горизонтальная полоса слева снизу, «текущее / максимум», след урона.
 	var root: Control = $Root
-	var w := 9 * 52 + 8 * 4
 	_hp_wrap = load("res://scripts/health_battery.gd").new()
-	_hp_wrap.anchor_left = 0.5
-	_hp_wrap.anchor_right = 0.5
+	_hp_wrap.anchor_left = 0.0
+	_hp_wrap.anchor_right = 0.0
 	_hp_wrap.anchor_top = 1.0
 	_hp_wrap.anchor_bottom = 1.0
-	_hp_wrap.offset_left = -w / 2.0
-	_hp_wrap.offset_right = -w / 2.0 + 132
-	_hp_wrap.offset_top = -96.0
-	_hp_wrap.offset_bottom = -70.0
+	_hp_wrap.offset_left = 16.0
+	_hp_wrap.offset_right = 16.0 + 240.0
+	_hp_wrap.offset_top = -52.0
+	_hp_wrap.offset_bottom = -18.0
 	root.add_child(_hp_wrap)
 
 
@@ -285,9 +284,11 @@ func _update_heal_indicator() -> void:
 
 
 func heal_indicator_state() -> Dictionary:
-	return {"visible": false, "slot": find_child("HealSlot", true, false) != null, "cd_text": "",
+	return {"visible": _hp_wrap != null and _hp_wrap.visible, "slot": find_child("HealSlot", true, false) != null, "cd_text": "",
 		"hp_text": _hp_text.text if _hp_text else "", "heal_text": "", "battery": _hp_wrap != null and _hp_wrap.name == "HealthBattery",
-		"hearts": find_child("Hearts", true, false) != null}
+		"hearts": find_child("Hearts", true, false) != null,
+		"current": GameState.player_hp, "max": GameState.PLAYER_MAX_HP,
+		"bottom_left": _hp_wrap != null and is_equal_approx(_hp_wrap.anchor_left, 0.0)}
 
 
 func _build_bed_prompt() -> void:

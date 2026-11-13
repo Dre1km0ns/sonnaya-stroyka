@@ -118,6 +118,9 @@ func _one(bot: String, sd: int) -> Dictionary:
 	boss.set_seed(sd)
 	boss.position = Vector3(0.5, 0.15, 0)
 	host.add_child(boss)
+	boss.set_physics_process(false)
+	player.set_physics_process(false)
+	await process_frame
 	var sword_dmg := 8
 	var pick := "pickaxe"
 	if bot == "upgraded":
@@ -143,11 +146,11 @@ func _one(bot: String, sd: int) -> Dictionary:
 	gs.player_hp_changed.connect(on_hp)
 	var end := "timeout"
 	while true:
-		await physics_frame
 		var delta := 1.0 / 60.0
 		st.t = float(st.t) + delta
 		if is_instance_valid(boss):
 			boss.set_meta("sim_clock", int(float(st.t) * 1000.0))
+			boss._physics_process(delta)
 		if not is_instance_valid(boss) or boss.state == boss.S.DEAD:
 			end = "killed"
 			break

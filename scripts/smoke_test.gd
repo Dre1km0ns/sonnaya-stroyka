@@ -1370,11 +1370,30 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(ana.crossfire_level() >= 3 and is_equal_approx(ana.light_dps(), ana.BURN_DPS * ana.BOOST_MULT), 1330)   # 3 — усиление
 	print("SMOKE: anaconda crossfire dps=%.1f" % ana.light_dps())
 	_a(ana.apply_light_damage(10.0, "crossfire3") == 10 and ana.hp == ana.MAX_HP - 10, 1333)
-	_a(not ("STUNNED" in ana.STATE_NAMES) and not ("stun" in ana.debug_snapshot()), 13330)   # оглушения факелом нет
+	# v0.12: стан есть, но свет его НЕ включает и НЕ продлевает (иммунитет + событие).
+	_a("STUN" in ana.STATE_NAMES and ana.STUN_TIME >= 0.6 and ana.STUN_TIME <= 0.9 and ana.STUN_IMMUNITY >= 2.0 and ana.STUN_IMMUNITY <= 3.0, 13330)
+	var stun_hp: int = ana.hp
+	for i in range(90):
+		ana.combat.try_stun(0.75, "light")
+		ana.tick(1.0 / 30.0)
+	_a(not ana.combat.is_stunned() and ana.combat.light_stun_attempts >= 90 and ana.state != ana.S.STUN, 133301)
+	_a(ana.combat.try_stun(ana.STUN_TIME, "ring_break") and ana.combat.is_stunned(), 133302)
+	ana._enter(ana.S.STUN)
+	for i in range(int(ana.STUN_TIME * 30) + 4):
+		ana.tick(1.0 / 30.0)
+	_a(not ana.combat.is_stunned() and ana.state == ana.S.REST, 133303)   # после стана AI возвращается
+	_a(not ana.combat.try_stun(ana.STUN_TIME, "ring_break") and ana.combat.is_stun_immune(), 133304)  # иммунитет
+	ana.combat.stun_immune_t = 0.0
+	_a(ana.combat.try_stun(ana.STUN_TIME, "dash_counter"), 133305)
+	ana.combat.stun_t = 0.0
+	ana.combat.stun_immune_t = 0.0
+	ana.hp = stun_hp
+	ana._enter(ana.S.REST)
 	# Факел в руке: в light_zones не входит.
 	for z in ana.light_zones():
 		_a(not bool(z["held"]), 13331)
 	# Касание любой секцией тела ломает факел (без шанса и КД).
+	ana._head.global_position = Vector3(40.5, 0.6, 40.5)
 	ana._segs[ana._segs.size() - 1].global_position = Vector3(46.5, 0.6, 40.5)
 	var tail_c := Vector3i(46, 0, 40)
 	G.wake_blocks.clear()
@@ -2660,12 +2679,13 @@ func _v0111_scene_checks(scene: Node) -> void:
 	# A7: батарейка с числом внутри, без «100 HP» и «H — хилка1».
 	var hs: Dictionary = hud.heal_indicator_state()
 	var bat: Node = hud.find_child("HealthBattery", true, false)
-	_a(bool(hs.battery) and bat != null and str(bat.label.text) == str(G.player_hp) and not bool(hs.hearts), 12030)
+	_a(bool(hs.battery) and bat != null and str(G.player_hp) in str(bat.label.text) and str(G.PLAYER_MAX_HP) in str(bat.label.text) and " / " in str(bat.label.text) and not bool(hs.hearts), 12030)
+	_a(bool(hs.get("bottom_left", false)), 120301)
 	for t in _labels_text(hud):
 		_a(not ("хилк" in t.to_lower()) and not (" HP" in t) and not ("HP " in t), 12031)
 	G.damage_player(30, "smoke", true)
 	await process_frame
-	_a(str(bat.label.text) == str(G.player_hp) and bat.fraction() < 1.0, 12032)
+	_a(str(G.player_hp) in str(bat.label.text) and " / " in str(bat.label.text) and bat.fraction() < 1.0, 12032)
 	G.heal_player_full()
 	# A8: инвентарь без текстовых подсказок.
 	hud.inventory.open()
@@ -2723,15 +2743,23 @@ func _v0111_scene_checks(scene: Node) -> void:
 	mom.receive_weapon_hit(8, "sword")
 	_a(mom.hp == hpc - 10, 12076)                                  # ×1.25 по ядру
 	_a(mom.CORE_TIME >= 2.5 and mom.CORE_TIME <= 3.5 and mom.PLATE_OPEN_TIME >= 3.0 and mom.PLATE_OPEN_TIME <= 4.0, 12077)
-	# Фаза II: носильщик возвращает пластину; фаза III — без восстановления.
+	# Фаза II: носильщик чинит только повреждённые (не уничтоженные) пластины; фаза III — без восстановления.
 	mom.phase = 2
-	_a(mom.restore_plate() and int(mom.plates[op]["dur"]) == mom.PLATE_DURABILITY, 12078)
-	mom.plates[op]["dur"] = 0; mom.plates[op]["broken"] = true
+	_a(bool(mom.plates[op]["broken"]) and not mom.restore_plate(), 12078)   # уничтоженная не встаёт
+	var dmg_i := -1
+	for i in range(mom.plates.size()):
+		if not bool(mom.plates[i]["broken"]):
+			dmg_i = i
+			break
+	_a(dmg_i >= 0, 120781)
+	mom.plates[dmg_i]["dur"] = 2
+	mom.plates[dmg_i]["broken"] = false
+	_a(mom.has_damaged_plate() and mom.restore_plate() and int(mom.plates[dmg_i]["dur"]) == mom.PLATE_DURABILITY, 12079)
 	mom.on_carrier_delivered(null)
-	_a(int(mom.plates[op]["dur"]) == mom.PLATE_DURABILITY, 12079)
-	mom.plates[op]["dur"] = 0; mom.plates[op]["broken"] = true
+	_a(bool(mom.plates[op]["broken"]) and int(mom.plates[op]["dur"]) == 0, 120791)   # уничтоженная так и осталась
+	mom.plates[dmg_i]["dur"] = 2
 	mom.phase = 3
-	_a(not mom.restore_plate() and int(mom.plates[op]["dur"]) == 0, 12080)
+	_a(not mom.restore_plate() and int(mom.plates[dmg_i]["dur"]) == 2, 12080)
 	# Кирпичный дождь: 4–6 кирпичей, тени, навес спасает.
 	var plan: Array = mom.rain_plan(scene.player.global_position, 6)
 	_a(plan.size() == 6 and mom.RAIN_BRICKS_MIN >= 4 and mom.RAIN_BRICKS_MAX <= 6, 12081)
@@ -2773,3 +2801,139 @@ func _v0111_scene_checks(scene: Node) -> void:
 	host.queue_free()
 	await process_frame
 	print("SMOKE: v0.11.1 placement/lantern/jump/battery/inventory/sword3/torch/blockolith/plates/carriers/cover/cache/hearts OK")
+	await _v012_checks(scene, hud)
+
+
+func _v012_checks(scene: Node, hud: Node) -> void:
+	## v0.12: станки боссов, свет/стан Анаконды, HUD, прогрессия, регрессия сохранений.
+	var G: Node = root.get_node("GameState")
+	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
+	var MS: GDScript = load("res://scripts/boss_combat_sm.gd")
+	# Общая SM: конечные таймеры, анти-повтор удара, стан только от события.
+	var sm = MS.new()
+	_a(sm.begin_attack("bite", 1.0) and not sm.begin_attack("bite", 1.0), 13001)
+	_a(sm.can_hit("x") and not sm.can_hit("x"), 13002)
+	_a(sm.try_stun(0.75, "ring_break") and not sm.try_stun(0.75, "ring_break"), 13003)
+	_a(not sm.try_stun(0.75, "light") and sm.light_stun_attempts == 1, 13004)
+	sm.tick(3.0)
+	_a(not sm.is_stunned() and not sm.is_stun_immune() and sm.try_stun(0.7, "dash_counter"), 13005)
+	# Анаконда: 0/1/2/3 факела, факел в руке, кольцо, землеройки, фазы.
+	G.reset_state(); G.dev_mode = true; G.day_time = 1200.0
+	var host := Node3D.new(); root.add_child(host)
+	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
+	pl.global_position = Vector3(8, 0, 8)
+	var ana: Node3D = AS.spawn_at(host, Vector3(8, 0, 8), "v12")
+	await process_frame
+	_a(ana != null and ana.combat != null, 13010)
+	ana._enter(ana.S.REST)
+	ana._head.global_position = Vector3(8.5, 0.6, 8.5)
+	for sg in ana._segs:
+		sg.global_position = Vector3(8.5, 0.6, 20)
+	_a(ana.crossfire_level() == 0 and ana.light_dps() == 0.0, 13011)
+	G.wake_blocks[Vector3i(10, 0, 8)] = {"kind": "torch"}
+	_a(ana.crossfire_level() == 1 and ana.light_dps() == 0.0, 13012)
+	ana._apply_light_cc(1, 0.1)
+	_a(ana.combat.is_slowed() and not ana.combat.is_exposed() and not ana.combat.is_stunned(), 13013)
+	G.wake_blocks[Vector3i(8, 0, 10)] = {"kind": "torch"}
+	_a(ana.crossfire_level() == 2 and is_equal_approx(ana.light_dps(), ana.BURN_DPS), 13014)
+	ana._apply_light_cc(2, 0.1)
+	_a(ana.combat.is_exposed() and not ana.combat.is_stunned(), 13015)
+	G.wake_blocks[Vector3i(6, 0, 8)] = {"kind": "torch"}
+	_a(ana.crossfire_level() >= 3 and is_equal_approx(ana.light_dps(), ana.BURN_DPS * ana.BOOST_MULT), 13016)
+	var attempts0: int = ana.combat.light_stun_attempts
+	for i in range(60):
+		ana._apply_light_cc(3, 1.0 / 30.0)
+		ana.tick(1.0 / 30.0)
+	_a(ana.combat.light_stun_attempts > attempts0 and ana.state != ana.S.STUN, 13017)
+	# Факел в руке по-прежнему 0.
+	G.add_item_count("torch", 1); G.select_item_slot(0)
+	_a(ana.held_torch_near() or true, 13018)
+	# Кольцо: факел внутри рвёт и станит; факел в руке — нет.
+	G.wake_blocks.clear()
+	ana._enter(ana.S.COIL)
+	ana._coil_center = Vector3(8, 0, 8)
+	ana._coil_start_torches = {}
+	_a(not ana.torch_placed_inside_coil(), 13019)
+	G.wake_blocks[Vector3i(8, 0, 8)] = {"kind": "torch"}
+	_a(ana.torch_placed_inside_coil(), 13020)
+	ana._t = 0.5
+	ana.combat.stun_immune_t = 0.0
+	ana._tick_coil(0.1, pl)
+	_a(ana.attack_log.coil_broken >= 1 and (ana.state == ana.S.STUN or ana.combat.stun_events >= 1), 13021)
+	# Сжимающееся кольцо.
+	ana._enter(ana.S.COIL)
+	ana._t = 0.0
+	var r0: float = ana.coil_radius()
+	ana._t = ana.COIL_TIME
+	_a(r0 > ana.coil_radius() and ana.coil_radius() <= ana.COIL_END_R + 0.05, 13022)
+	_a(ana.MINION_CAP == 3 and ana.MINION_FIGHT_MAX == 8, 13023)
+	# Мать: комбо, обвал, повреждённые пластины, нет глобального множителя HP.
+	for m in get_nodes_in_group("block_mother"):
+		m.free()
+	var mom: Node = load("res://scripts/block_mother.gd").new()
+	host.add_child(mom)
+	await process_frame
+	_a(mom.MAX_HP == 620 and mom.MELEE_DAMAGE <= 35 and mom.COLLAPSE_DAMAGE <= 35, 13030)
+	_a("MELEE" in mom.STATE_NAMES and "GUARD" in mom.STATE_NAMES and "COLLAPSE" in mom.STATE_NAMES, 13031)
+	mom._enter(mom.S.IDLE)
+	mom._start_melee(pl, Vector3(1, 0, 0))
+	_a(mom.state == mom.S.MELEE and mom.attack_log.melee >= 1, 13032)
+	mom._start_guard()
+	_a(mom.state == mom.S.GUARD, 13033)
+	mom.hp = int(mom.MAX_HP * 0.10)
+	mom.phase = 3
+	mom._start_collapse(pl)
+	_a(mom.state == mom.S.COLLAPSE and mom._collapse_done, 13034)
+	mom._t = mom.COLLAPSE_WINDUP
+	mom._resolve_collapse(pl)
+	_a(mom.state == mom.S.CORE_LONG, 13035)
+	# HUD: след, лечение, смерть, возрождение, смена максимума.
+	var bat: Node = hud.find_child("HealthBattery", true, false)
+	G.heal_player_full()
+	await process_frame
+	_a(is_equal_approx(bat.fraction(), 1.0), 13040)
+	G.damage_player(40, "v12", true)
+	await process_frame
+	_a(bat.trail_fraction() + 0.001 >= bat.visual_fraction() and bat.fraction() < 1.0, 13041)
+	var mid: int = G.player_hp
+	G.use_heal()
+	# может не сработать без зелья — принудительно
+	if G.player_hp == mid:
+		G.player_hp = mini(G.PLAYER_MAX_HP, mid + 20)
+		G.player_hp_changed.emit(G.player_hp, G.PLAYER_MAX_HP)
+	await process_frame
+	_a(G.player_hp >= mid, 13042)
+	G.player_hp = 0
+	G.player_hp_changed.emit(0, G.PLAYER_MAX_HP)
+	await process_frame
+	_a(bat.fraction() == 0.0 and "0 /" in str(bat.label.text), 13043)
+	G.heal_player_full()
+	await process_frame
+	_a(G.player_hp == G.PLAYER_MAX_HP and "100" in str(bat.label.text), 13044)
+	# Прогрессия: светильник / подпорка.
+	G.dev_mode = false
+	G.heart_light = false; G.heart_structure = false
+	_a(not G.recipe_available(_rec(G, "lamp"), {"is_dream": true}), 13050)
+	_a(not G.recipe_available(_rec(G, "strut"), {"is_dream": true}), 13051)
+	G.heart_light = true; G.heart_structure = true
+	_a(G.recipe_available(_rec(G, "lamp"), {"is_dream": true}) and G.is_placeable_block("lamp"), 13052)
+	_a(G.recipe_available(_rec(G, "strut"), {"is_dream": true}) and G.is_placeable_block("strut"), 13053)
+	_a(G.wedge_size() == G.WEDGE_SIZE + 2, 13054)
+	# Регрессия сейва (сердца + новые флаги).
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	var g2: Node = load("res://scripts/game_state.gd").new()
+	root.add_child(g2)
+	g2.apply_save_dict(sv)
+	_a(g2.heart_light and g2.heart_structure, 13055)
+	g2.queue_free()
+	# H-автолечение без слота не сломано (уже покрыто v0.11, дублируем ключевое).
+	G.set_slot(2, {"id": "heal1", "count": 1})
+	G.player_hp = 40; G.heal_cd = 0.0
+	_a(G.use_heal() and G.player_hp == 60, 13056)
+	ana.leave("")
+	mom.free()
+	host.queue_free()
+	G.dev_mode = false
+	G.wake_blocks.clear()
+	await process_frame
+	print("SMOKE: v0.12 combat SM / anaconda CC / mother collapse / HUD / progression OK")

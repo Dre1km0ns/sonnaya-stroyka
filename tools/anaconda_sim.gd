@@ -1,5 +1,5 @@
 extends SceneTree
-## v0.11.1: headless-симуляция боя с Анакондой. Без рендера и чанков: пол y=0. 12 детерминированных сидов.
+## v0.12: headless-симуляция боя с Анакондой. Без рендера и чанков: пол y=0. 12 детерминированных сидов.
 ## Запуск: godot --headless --path . -s res://tools/anaconda_sim.gd -- --bot=<имя>|all [--runs=12] [--csv=путь]
 ## Боты:
 ##   no_light                 — ни одного факела (урон должен быть 0)
@@ -232,7 +232,7 @@ func _one(bot: String, sd: int) -> Dictionary:
 		for w in worms:
 			w.tick(DT)
 		var hunting := false
-		var calm: bool = ana.state in [ana.S.UNDER, ana.S.REST, ana.S.RETREAT, ana.S.DIVE, ana.S.TRANSITION, ana.S.SPAWN] and ana._rocks.is_empty()
+		var calm: bool = ana.state in [ana.S.UNDER, ana.S.IDLE, ana.S.REST, ana.S.RETREAT, ana.S.DIVE, ana.S.TRANSITION, ana.S.SPAWN, ana.S.STUN, ana.S.VULNERABILITY, ana.S.RECOVERY, ana.S.FAKE] and ana._rocks.is_empty()
 		if bot != "no_light" and bot != "held_only" and calm:
 			for w in worms:
 				if not is_instance_valid(w) or w.is_dead():
@@ -289,9 +289,9 @@ func _one(bot: String, sd: int) -> Dictionary:
 		"src": ana.damage_by_source.duplicate(), "log": ana.attack_log.duplicate(), "reason": ana.leave_reason}
 	# урон факелом в руке/оружием обязан быть 0
 	r.src["held"] = 0.0
-	print("ANASIM RUN bot=%s seed=%d killed=%s ttk=%.1f hp_left=%d phase=%d hits=%d taken=%d deaths=%d broken=%d(body %d) repl=%d retreat=%d cavein=%d coil=%d/%d minions=%d held_ignored=%.1fs phases=%s dark_at=%.0f wk=%d src=%s %s" % [
+	print("ANASIM RUN bot=%s seed=%d killed=%s ttk=%.1f hp_left=%d phase=%d hits=%d taken=%d deaths=%d broken=%d(body %d) repl=%d retreat=%d cavein=%d coil=%d/%d minions=%d stuns=%d held_ignored=%.1fs phases=%s dark_at=%.0f wk=%d src=%s %s" % [
 		bot, sd, str(killed), t, ana.hp, ana.phase, hits, taken, died, ana.torches_broken, ana.torches_broken_by_body, replacements,
-		ana.attack_log.retreat, ana.attack_log.cavein, ana.attack_log.coil_broken, ana.attack_log.coil, ana.attack_log.minions, ana.held_light_ignored, str(phase_t), torches_out_t, worm_kills, str(ana.damage_by_source), str(ana.break_states) + " " + str(ana.attack_log)])
+		ana.attack_log.retreat, ana.attack_log.cavein, ana.attack_log.coil_broken, ana.attack_log.coil, ana.attack_log.minions, int(ana.attack_log.get("stun", 0)), ana.held_light_ignored, str(phase_t), torches_out_t, worm_kills, str(ana.damage_by_source), str(ana.break_states) + " " + str(ana.attack_log)])
 	for w in host.get_children():
 		if w.is_in_group("anaconda_minion"):
 			w.free()

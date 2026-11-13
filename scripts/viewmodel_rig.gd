@@ -99,6 +99,23 @@ func set_tool(id: String) -> void:
 	_light.position = Vector3(0, 0.30 if current == "torch" else 0.02, 0)
 
 
+func play_recoil(solid_hit: bool = true) -> void:
+	## Короткая отдача после попадания. Не трясёт камеру.
+	if current == "" or swinging:
+		return
+	if _tween and _tween.is_valid():
+		_tween.kill()
+	swing_pivot.rotation = Vector3.ZERO
+	swing_pivot.position = Vector3.ZERO
+	var back := 0.04 if solid_hit else 0.02
+	var kick := Vector3(-8 if solid_hit else -4, 0, 3 if solid_hit else 1)
+	_tween = create_tween()
+	_tween.tween_property(swing_pivot, "position", Vector3(0, -0.01, back), 0.05).set_trans(Tween.TRANS_QUAD)
+	_tween.parallel().tween_property(swing_pivot, "rotation_degrees", kick, 0.05)
+	_tween.tween_property(swing_pivot, "position", Vector3.ZERO, 0.10).set_trans(Tween.TRANS_SINE)
+	_tween.parallel().tween_property(swing_pivot, "rotation_degrees", Vector3.ZERO, 0.10)
+
+
 func play_swing() -> void:
 	if current == "":
 		return
