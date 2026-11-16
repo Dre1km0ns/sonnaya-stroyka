@@ -40,6 +40,12 @@ const COLLAPSE_DAMAGE := 28
 const COLLAPSE_RADIUS := 5.5
 const COLLAPSE_CORE := 5.0
 const CORE_MULT := 1.25
+## v0.13: ядро выдерживает за одно окно не больше CORE_WINDOW_CAP урона, потом трещины сходятся и оно захлопывается
+## (видимо: вспышка + подсказка). Стартовое оружие в лимит почти не упирается, Меч3 — упирается. HP не меняется.
+const CORE_WINDOW_CAP := 90
+const BODY_GLOW_VULN := 0.12        # v0.13: тело при открытом ядре лишь тлеет; ярко горят только разломы
+const CORE_GLOW_VULN := 5.5
+const CORE_GLOW_IDLE := 2.0
 const NAKED_MULT := 1.0              # все пластины разбиты: меч бьёт в окна STAGGER ×1
 const CARRIER_MAX := 2
 const CARRIER_CD := 9.0
@@ -113,6 +119,8 @@ var max_hp: int = MAX_HP
 var hit_radius: float = HIT_RADIUS
 var phase: int = 1
 var state: int = S.SPAWN
+var _window_dealt := 0
+var window_seals := 0
 var frozen: bool = false
 var attack_log: Dictionary = {"slam": 0, "slam_hit": 0, "shockwave": 0, "wave_hit": 0, "teleport": 0, "reassemble_hit": 0,
 	"brick_rain": 0, "brick": 0, "brick_hit": 0, "minion_spawn": 0, "minions": 0, "transition": 0, "contact": 0,
@@ -309,6 +317,10 @@ func receive_weapon_hit(amount: int, weapon_id: String = "") -> Dictionary:
 
 
 func _apply_core_damage(dmg: int, weapon_id: String) -> int:
+	var room := CORE_WINDOW_CAP - _window_dealt
+	if room <= 0:
+		return 0
+	dmg = mini(dmg, room)
 	var floor_hp := 0
 	if phase == 1:
 		floor_hp = P2_AT
@@ -329,9 +341,22 @@ func _apply_core_damage(dmg: int, weapon_id: String) -> int:
 	if hp <= 0:
 		_die()
 		return dealt
+	_window_dealt += dealt
 	if _pending_transition > 0 and state in [S.IDLE, S.STAGGER, S.WINDUP, S.RAIN_WINDUP, S.CORE, S.CORE_LONG, S.PLATE_OPEN]:
 		_start_transition()
+	elif _window_dealt >= CORE_WINDOW_CAP and state in [S.CORE, S.CORE_LONG, S.STAGGER]:
+		_seal_core()
 	return dealt
+
+
+func _seal_core() -> void:
+	## v0.13: трещины сошлись — окно закрыто раньше таймера (защита от «лопнул за 3 окна» с Мечом3).
+	window_seals += 1
+	GameState.set_hint("Трещины сошлись — ядро захлопнулось. Жди следующую пластину.", false)
+	_flash()
+	_set_crack_glow(false)
+	_enter(S.IDLE)
+	_refresh_plates()
 
 
 func _bounce_feedback(weapon_id: String) -> void:
@@ -403,7 +428,7 @@ func _build_plates() -> void:
 		cmat.albedo_color = Color(1.0, 0.5, 0.1)
 		cmat.emission_enabled = true
 		cmat.emission = Color(1.0, 0.42, 0.08)
-		cmat.emission_energy_multiplier = 3.0
+		cmat.emission_energy_multiplier = CORE_GLOW_IDLE
 		core.material_override = cmat
 		core.position = Vector3(0, 0, -0.06)
 		core.visible = false
@@ -548,6 +573,8 @@ func _flash() -> void:
 # ---------------------------------------------------------------- машина состояний
 
 func _enter(s: int) -> void:
+	if s in [S.CORE, S.CORE_LONG, S.STAGGER] and s != state:
+		_window_dealt = 0
 	state = s
 	_t = 0.0
 	state_log.append([STATE_NAMES[s], phase, hp])
@@ -1413,7 +1440,8 @@ func _debris(at: Vector3, count: int, speed: float) -> void:
 
 
 func _set_crack_glow(on: bool) -> void:
-	## Окно уязвимости: модель светится жёлтым («трещины»), HUD пишет «УЯЗВИМА».
+	## v0.13: раньше светилась вся модель целиком. Теперь тело лишь слегка тлеет,
+	## а ярко горят (и пульсируют масштабом) только разбитые гнёзда пластин — видно, КУДА бить.
 	var model := get_node_or_null("Model")
 	if model == null or bool(get_meta("glow", false)) == on:
 		return
@@ -1424,8 +1452,39 @@ func _set_crack_glow(on: bool) -> void:
 			if mat is BaseMaterial3D:
 				var bm := mat as BaseMaterial3D
 				bm.emission_enabled = on
-				bm.emission = Color(1.0, 0.8, 0.2)
-				bm.emission_energy_multiplier = 0.9 if on else 0.0
+				bm.emission = Color(1.0, 0.55, 0.15)
+				bm.emission_energy_multiplier = BODY_GLOW_VULN if on else 0.0
+	for pl in plates:
+		var holder: Node3D = pl["node"]
+		if holder == null or not is_instance_valid(holder):
+			continue
+		var core := holder.get_node_or_null("Core") as MeshInstance3D
+		if core == null:
+			continue
+		var cm := core.material_override as BaseMaterial3D
+		if cm:
+			cm.emission_energy_multiplier = CORE_GLOW_VULN if on else CORE_GLOW_IDLE
+		core.scale = Vector3(1.18, 1.18, 1.0) if on else Vector3.ONE
+
+
+func glow_snapshot() -> Dictionary:
+	## Для smoke: яркость тела и разломов.
+	var body := 0.0
+	var model := get_node_or_null("Model")
+	if model:
+		for mi in _Vis._meshes_under(model):
+			for i in range(mi.get_surface_override_material_count()):
+				var mat := mi.get_surface_override_material(i)
+				if mat is BaseMaterial3D and (mat as BaseMaterial3D).emission_enabled:
+					body = maxf(body, (mat as BaseMaterial3D).emission_energy_multiplier)
+	var cores: Array = []
+	for pl in plates:
+		var holder: Node3D = pl["node"]
+		if holder and is_instance_valid(holder) and bool(pl["broken"]):
+			var core := holder.get_node_or_null("Core") as MeshInstance3D
+			if core and core.material_override:
+				cores.append((core.material_override as BaseMaterial3D).emission_energy_multiplier)
+	return {"body": body, "cores": cores}
 
 
 func _free_node(n: Variant) -> void:

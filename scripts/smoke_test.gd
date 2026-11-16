@@ -972,8 +972,11 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	await process_frame
 	_a(boss.hp == 620 and boss.phase == 1, 929)
 	# v0.11.1: урон мечом только по открытому ядру (CORE ×1.25) → пороги фаз не проскакиваются.
-	boss._enter(boss.S.CORE)
-	boss.take_damage(450)                 # не проваливается сквозь порог фазы
+	# v0.13: за одно окно ядро принимает ≤ CORE_WINDOW_CAP — большой урон наносим в нескольких окнах.
+	for k in range(4):
+		if boss.state != boss.S.TRANSITION:
+			boss._enter(boss.S.CORE)
+			boss.take_damage(450)             # не проваливается сквозь порог фазы
 	_a(boss.hp == boss.P2_AT, 932)
 	_a(boss.phase == 2 and boss.state == boss.S.TRANSITION, 933)
 	boss.take_damage(50)                  # переход неуязвим
@@ -982,11 +985,15 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(boss.is_vulnerable(), 938)
 	boss.receive_weapon_hit(8, "sword")   # ×1.25 по ядру → 10
 	_a(boss.hp == boss.P2_AT - 10, 940)
-	boss._enter(boss.S.CORE)
-	boss.take_damage(400)
+	for k in range(4):
+		if boss.state != boss.S.TRANSITION:
+			boss._enter(boss.S.CORE)
+			boss.take_damage(400)
 	_a(boss.hp == boss.P3_AT and boss.phase == 3, 942)
-	boss._enter(boss.S.CORE_LONG)
-	boss.take_damage(400)
+	for k in range(4):
+		if boss.state != boss.S.DEAD and boss.hp > 0:
+			boss._enter(boss.S.CORE_LONG)
+			boss.take_damage(400)
 	_a(boss.hp <= 0 or boss.state == boss.S.DEAD, 945)
 	# Пити-таймер блоклингов и жёсткий кап
 	var b3: CharacterBody3D = bs.new()
@@ -2937,3 +2944,81 @@ func _v012_checks(scene: Node, hud: Node) -> void:
 	G.wake_blocks.clear()
 	await process_frame
 	print("SMOKE: v0.12 combat SM / anaconda CC / mother collapse / HUD / progression OK")
+	await _v013_checks()
+
+
+func _v013_checks() -> void:
+	## v0.13: хват всех инструментов (чешуйчатый меч), локальная подсветка ядра, лимит окна ядра,
+	## возврат выбитых факелов, задержка рассвета, снятие факела ПКМ.
+	var G: Node = root.get_node("GameState")
+	var Rig: GDScript = load("res://scripts/viewmodel_rig.gd")
+	var BT: GDScript = load("res://scripts/block_tex.gd")
+	for id in Rig.TOOL_CONFIG.keys():
+		_a(Rig.grip_in_handle(id), 13101)
+		var g: float = Vector3(Rig.TOOL_CONFIG[id].grip).y
+		var mesh: Mesh = BT.torch_mesh() if id == "torch" else BT.tool_mesh(id)
+		var aabb: AABB = mesh.get_aabb()
+		_a(g >= aabb.position.y and g <= aabb.end.y, 13102)        # кулак внутри модели, а не рядом
+	_a(Vector3(Rig.TOOL_CONFIG["sword3"].grip).y > 0.0, 13103)       # регресс v0.11.1: был −0.28 (ниже навершия)
+	# Мать: лимит урона за окно ядра + подсветка только разломов.
+	G.reset_state(); G.dev_mode = false
+	var host := Node3D.new(); root.add_child(host)
+	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
+	pl.global_position = Vector3(0, 0, 4)
+	var mom: Node = load("res://scripts/block_mother.gd").new()
+	host.add_child(mom)
+	await process_frame
+	mom._enter(mom.S.IDLE)
+	mom._open_plate()
+	mom._break_plate(mom.open_plate)
+	_a(mom.state == mom.S.CORE, 13110)
+	var gs: Dictionary = mom.glow_snapshot()
+	_a(float(gs.body) <= mom.BODY_GLOW_VULN + 0.001 and gs.cores.size() == 1 and float(gs.cores[0]) >= mom.CORE_GLOW_VULN - 0.01, 13111)
+	var hp0: int = mom.hp
+	for i in range(10):
+		mom.receive_weapon_hit(24, "sword3")
+	_a(hp0 - mom.hp == mom.CORE_WINDOW_CAP and mom.state == mom.S.IDLE and mom.window_seals == 1, 13112)
+	_a(float(mom.glow_snapshot().body) == 0.0, 13113)
+	_a(mom.receive_weapon_hit(24, "sword3").dealt == 0, 13114)       # окно закрыто — снова броня
+	mom.free()
+	# Анаконда: выбитый факел возвращается (кап), рассвет при низком HP — задержка.
+	G.day_time = 1200.0
+	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
+	var ana: Node3D = AS.spawn_at(host, Vector3(4, 0, 4), "v13")
+	await process_frame
+	var t0: int = G.count_item("torch")
+	for i in range(8):
+		G.wake_blocks[Vector3i(20 + i, 0, 20)] = {"kind": "torch"}
+		G.mark_torches_dirty()
+		ana.break_torch(Vector3i(20 + i, 0, 20), "удар")
+	_a(G.count_item("torch") - t0 == ana.TORCH_REFUND_MAX and ana.torches_refunded == ana.TORCH_REFUND_MAX, 13120)
+	ana._enter(ana.S.REST)
+	ana.hp = int(ana.MAX_HP * 0.2)
+	G.day_time = 1440.0 + 400.0
+	ana.tick(1.0 / 30.0)
+	_a(ana.state != ana.S.LEAVING and ana.dawn_grace_used, 13121)
+	for i in range(int((ana.DAWN_GRACE + 1.0) * 30.0)):
+		ana.tick(1.0 / 30.0)
+		if ana.state == ana.S.LEAVING:
+			break
+	_a(ana.state == ana.S.LEAVING, 13122)
+	# Здоровая Анаконда на рассвете уходит сразу.
+	var ana2: Node3D = AS.spawn_at(host, Vector3(-4, 0, 4), "v13b")
+	if ana2 != null:
+		await process_frame
+		ana2._enter(ana2.S.REST)
+		ana2.tick(1.0 / 30.0)
+		_a(ana2.state == ana2.S.LEAVING and not ana2.dawn_grace_used, 13123)
+	# Снятие факела ПКМ.
+	G.day_time = 1200.0
+	var tc := Vector3i(30, 0, 30)
+	G.wake_blocks[tc] = {"kind": "torch"}
+	G.mark_torches_dirty()
+	var t1: int = G.count_item("torch")
+	_a(G.pick_up_torch(tc) and not G.wake_blocks.has(tc) and G.count_item("torch") == t1 + 1 and not G.torch_cells().has(tc), 13130)
+	_a(not G.pick_up_torch(tc), 13131)
+	host.queue_free()
+	G.dev_mode = false
+	G.wake_blocks.clear()
+	await process_frame
+	print("SMOKE: v0.13 grips(sword3)/core cap+local glow/torch refund/dawn grace/torch pickup OK")

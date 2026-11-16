@@ -254,7 +254,11 @@ func _one(bot: String, sd: int) -> Dictionary:
 		var dv := dodge_to - pl.global_position
 		dv.y = 0.0
 		pl.global_position += dv if dv.length() <= step else dv.normalized() * step
+		var refunded_before: int = ana.torches_refunded
 		ana.tick(DT)
+		# v0.13: выбитые факелы возвращаются в инвентарь (кап за бой) — бот, который ставит свет, их подбирает.
+		if bot != "no_light" and bot != "held_only":
+			spares += int(ana.torches_refunded) - refunded_before
 		# ---- замены сломанных факелов (запас)
 		if spares > 0 and layout.size() > 0:
 			replace_t += DT

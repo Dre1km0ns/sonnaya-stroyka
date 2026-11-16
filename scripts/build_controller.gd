@@ -96,7 +96,9 @@ func _process(delta: float) -> void:
 				_try_place_wake_item()
 				_place_cooldown = 0.16
 		elif _place_cooldown <= 0.0 and Input.is_action_just_pressed("remove_block"):
-			if GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2"):
+			if GameState.selected_is("torch") and _try_pick_up_torch():
+				_place_cooldown = 0.16
+			elif GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2"):
 				_try_mine_wake()
 				_place_cooldown = 0.18
 		return
@@ -311,6 +313,27 @@ func _try_summon_anaconda() -> Node:
 	## v0.7: ЛКМ с Яйцом Анаконды в руке ночью в яви — призыв босса (яйцо тратится, кулдауна нет).
 	var script: GDScript = load("res://scripts/boss_anaconda.gd")
 	return script.summon_with_egg(_wake_world(), player, _wake_chunks())
+
+
+func _try_pick_up_torch() -> bool:
+	## v0.13: снять свой факел ПКМ (с факелом в руке) — без кирки и без потерь.
+	var aim := _aim()
+	if not aim.get("hit", false):
+		return false
+	var collider = aim["collider"]
+	if collider == null or not (collider.has_meta("voxel_cell") or collider.has_meta("placed_chunk")):
+		return false
+	if bool(collider.get_meta("is_dream")):
+		return false
+	var cell: Vector3i = GameState.ray_cell(aim)
+	if not GameState.pick_up_torch(cell):
+		return false
+	var vox := _wake_voxels()
+	if vox:
+		vox.remove_block(cell)
+	Sfx.play("break_wood", get_tree().root)
+	GameState.set_hint("Факел снят — поставь его в другое место.", false)
+	return true
 
 
 func _try_place_torch() -> void:

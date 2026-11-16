@@ -1,0 +1,12 @@
+V012BENCH torch blocks=2000 torches=8 scan=730.0 us cache=0.31 us
+V012BENCH torch blocks=20000 torches=80 scan=7693.1 us cache=0.25 us
+V012BENCH anaconda tick=67.09 us/frame (1800 ticks, hp=1031 state=BURST)
+V012BENCH mother tick=6.50 us/frame (1800 ticks, hp=620 state=PLATE_OPEN)
+V012BENCH torch blocks=2000 torches=8 scan=748.3 us cache=0.30 us
+V012BENCH torch blocks=20000 torches=80 scan=8001.5 us cache=0.28 us
+V012BENCH anaconda tick=67.47 us/frame (1800 ticks, hp=1031 state=BURST)
+V012BENCH mother tick=5.59 us/frame (1800 ticks, hp=620 state=PLATE_OPEN)
+V012BENCH torch blocks=2000 torches=8 scan=740.0 us cache=0.32 us
+V012BENCH torch blocks=20000 torches=80 scan=8079.4 us cache=0.26 us
+V012BENCH anaconda tick=64.36 us/frame (1800 ticks, hp=1031 state=BURST)
+V012BENCH mother tick=5.75 us/frame (1800 ticks, hp=620 state=PLATE_OPEN)

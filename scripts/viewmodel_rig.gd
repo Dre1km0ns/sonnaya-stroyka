@@ -18,10 +18,19 @@ const TOOL_CONFIG := {
 		"swing_time": 0.26, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.0},
 	"sword2":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
 		"swing_time": 0.26, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.0},
-	"sword3":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
+	# v0.13: у объёмной 3D-модели (v0.11.1) рукоять на y 0.04…0.28, а grip был скопирован со спрайтового меча (−0.28):
+	# кулак оказывался на 0.25 ед. модели НИЖЕ навершия, и меч «висел в воздухе». Хват — центр рукояти.
+	"sword3":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, 0.16, 0.0),
 		"swing_time": 0.24, "wind": Vector3(18, -18, -14), "swing": Vector3(-64, 36, 32), "speed": 1.1},
 	"torch":    {"pos": Vector3(0.30, -0.36, -0.48), "rot": Vector3(-14, 0, 10), "scale": 0.55, "grip": Vector3(0.0, -0.16, 0.0),
 		"swing_time": 0.22, "wind": Vector3(10, 0, 0), "swing": Vector3(-30, 0, 6), "speed": 1.0},
+}
+## v0.13: диапазон рукояти по Y в координатах модели (проверяется smoke: grip обязан лежать внутри).
+const HANDLE_Y := {
+	"pickaxe": Vector2(-0.28, 0.35), "pickaxe2": Vector2(-0.28, 0.35),
+	"sword": Vector2(-0.40, -0.17), "sword2": Vector2(-0.40, -0.17),
+	"sword3": Vector2(0.04, 0.28),
+	"torch": Vector2(-0.40, 0.10),
 }
 const WALL_PROBE := 0.85
 const BOB_AMOUNT := 0.012
@@ -67,6 +76,15 @@ func _ready() -> void:
 
 static func is_viewmodel_tool(id: String) -> bool:
 	return TOOL_CONFIG.has(id)
+
+
+static func grip_in_handle(id: String) -> bool:
+	## Кулак (ноль GripPivot) должен попадать в рукоять модели, а не висеть рядом.
+	if not TOOL_CONFIG.has(id) or not HANDLE_Y.has(id):
+		return false
+	var g: float = Vector3(TOOL_CONFIG[id].grip).y
+	var r: Vector2 = HANDLE_Y[id]
+	return g >= r.x and g <= r.y
 
 
 func config(id: String) -> Dictionary:

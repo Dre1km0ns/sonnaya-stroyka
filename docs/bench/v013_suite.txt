@@ -1,0 +1,18 @@
+SUITE {"avg_ms":0.63824,"bodies":3,"case":"build_100","draw_calls":0.0,"max_ms":1.674,"meshes":3,"nodes":13,"p95_ms":1.162,"p99_ms":1.674,"primitives":0.0,"sum_ms":63.824,"tag":"v013"}
+SUITE {"avg_ms":0.62196,"bodies":0,"case":"remove_100","draw_calls":0.0,"max_ms":1.494,"meshes":0,"nodes":5,"p95_ms":1.304,"p99_ms":1.494,"primitives":0.0,"tag":"v013"}
+SUITE {"avg_ms":1.776364,"bodies":3,"case":"build_500","draw_calls":0.0,"max_ms":8.723,"meshes":3,"nodes":13,"p95_ms":3.513,"p99_ms":5.026,"primitives":0.0,"sum_ms":888.182,"tag":"v013"}
+SUITE {"avg_ms":1.845606,"bodies":0,"case":"remove_500","draw_calls":0.0,"max_ms":6.965,"meshes":0,"nodes":4,"p95_ms":3.977,"p99_ms":5.655,"primitives":0.0,"tag":"v013"}
+SUITE {"avg_ms":3.043037,"bodies":3,"case":"build_1000","draw_calls":0.0,"max_ms":12.003,"meshes":3,"nodes":13,"p95_ms":6.116,"p99_ms":9.246,"primitives":0.0,"sum_ms":3043.037,"tag":"v013"}
+SUITE {"avg_ms":3.107601,"bodies":0,"case":"remove_1000","draw_calls":0.0,"max_ms":14.032,"meshes":0,"nodes":4,"p95_ms":6.669,"p99_ms":9.038,"primitives":0.0,"tag":"v013"}
+SUITE {"avg_ms":453.482,"bodies":15,"case":"startup","draw_calls":0.0,"max_ms":453.482,"meshes":39,"nodes":882,"p95_ms":453.482,"p99_ms":453.482,"primitives":0.0,"tag":"v013"}
+SUITE {"avg_ms":51.8490111111111,"bodies":128,"case":"walking_physics","draw_calls":212.0,"max_ms":66.856,"meshes":159,"nodes":1359,"p95_ms":60.063,"p99_ms":66.856,"primitives":49446.0,"tag":"v013"}
+SUITE {"avg_ms":33.858,"bodies":130,"case":"enter_dream","draw_calls":212.0,"max_ms":33.858,"meshes":161,"nodes":1368,"p95_ms":33.858,"p99_ms":33.858,"primitives":49446.0,"tag":"v013"}
+SUITE {"avg_ms":10.361,"bodies":133,"case":"wake","draw_calls":109.0,"max_ms":10.361,"meshes":165,"nodes":1375,"p95_ms":10.361,"p99_ms":10.361,"primitives":12260.0,"tag":"v013"}
+SUITE {"avg_ms":11.872,"bodies":133,"case":"enter_dream","draw_calls":248.0,"max_ms":11.872,"meshes":165,"nodes":1375,"p95_ms":11.872,"p99_ms":11.872,"primitives":50014.0,"tag":"v013"}
+SUITE {"avg_ms":9.521,"bodies":137,"case":"wake","draw_calls":118.0,"max_ms":9.521,"meshes":171,"nodes":1391,"p95_ms":9.521,"p99_ms":9.521,"primitives":13614.0,"tag":"v013"}
+SUITE {"ai_max_work_us":2030,"ai_paths":42,"avg_ms":55.7017333333333,"bodies":142,"case":"seven_enemies","draw_calls":244.0,"max_ms":136.449,"meshes":190,"nodes":1466,"p95_ms":66.089,"p99_ms":136.449,"primitives":52846.0,"tag":"v013"}
+SUITE {"avg_ms":48.8524777777778,"bodies":144,"case":"boss","draw_calls":245.0,"max_ms":90.11,"meshes":204,"nodes":1492,"p95_ms":59.075,"p99_ms":90.11,"primitives":51344.0,"tag":"v013"}
+SUITE {"avg_ms":1.613,"bodies":437,"candidates":128,"case":"mass_pickup","draw_calls":245.0,"max_ms":1.613,"meshes":483,"nodes":2308,"p95_ms":1.613,"p99_ms":1.613,"picked":64,"primitives":51308.0,"tag":"v013"}
+SUITE {"avg_ms":1.734,"bodies":192,"case":"mass_pickup_total","cpu_sum_ms":8.67,"draw_calls":245.0,"max_ms":1.802,"meshes":238,"nodes":1573,"p95_ms":1.802,"p99_ms":1.802,"picked":300,"primitives":51308.0,"tag":"v013","wall_ms":82.717}
+SUITE {"avg_ms":64.1548555555556,"bodies":138,"case":"water_active","draw_calls":225.0,"max_ms":92.193,"mesh_builds":26,"mesh_us":0,"meshes":174,"nodes":1392,"p95_ms":75.711,"p99_ms":92.193,"primitives":58880.0,"tag":"v013","water_cells":27}
+SUITE COMPLETE v013

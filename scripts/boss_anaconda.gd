@@ -22,6 +22,12 @@ const STATE_NAMES := ["SPAWN", "IDLE", "UNDER", "TELEGRAPH", "ATTACK", "RECOVERY
 
 # ---- баланс (см. docs/boss_anaconda.md, раздел 3)
 const MAX_HP := 1250
+## v0.13: выбитый Анакондой факел падает к игроку (+1 в инвентарь), не более TORCH_REFUND_MAX за бой —
+## без запаса бой больше не заходит в тупик, но сеть всё равно надо чинить руками.
+const TORCH_REFUND_MAX := 6
+## v0.13: если к рассвету у неё ≤ DAWN_STAY_FRAC HP, она не уходит ещё DAWN_GRACE секунд (раненый хищник дожимает бой).
+const DAWN_STAY_FRAC := 0.25
+const DAWN_GRACE := 45.0
 const P2_AT := MAX_HP * 66 / 100       # 66%
 const P3_AT := MAX_HP * 33 / 100       # 33%
 const SEGMENTS := 10
@@ -113,6 +119,9 @@ var held_light_ignored: float = 0.0
 var leave_reason: String = ""
 var hit_radius: float = 0.8
 var torches_broken := 0
+var torches_refunded := 0
+var dawn_grace_used := false
+var _dawn_grace_t := -1.0
 var torches_broken_by_body := 0
 var break_states: Dictionary = {}
 
@@ -468,8 +477,15 @@ func tick(delta: float) -> void:
 	_coil_hit_cd = maxf(0.0, _coil_hit_cd - delta)
 	_torchstrike_cd = maxf(0.0, _torchstrike_cd - delta)
 	if not GameState.is_night():
-		leave("Светает — Анаконда уходит в глубину.")
-		return
+		if _dawn_grace_t < 0.0 and not dawn_grace_used and hp <= int(MAX_HP * DAWN_STAY_FRAC):
+			dawn_grace_used = true
+			_dawn_grace_t = DAWN_GRACE
+			GameState.chat("Светает, но раненая Анаконда не уходит — добей её, пока горит свет!", Color(1, 0.6, 0.3))
+		if _dawn_grace_t > 0.0:
+			_dawn_grace_t -= delta
+		else:
+			leave("Светает — Анаконда уходит в глубину.")
+			return
 	var player := _player()
 	if player == null:
 		return
@@ -950,6 +966,9 @@ func break_torch(c: Vector3i, by: String = "тело") -> bool:
 	if not GameState.remove_torch(c):
 		return false
 	torches_broken += 1
+	if torches_refunded < TORCH_REFUND_MAX:
+		torches_refunded += 1
+		GameState.add_item_count("torch", 1)
 	if by == "тело":
 		torches_broken_by_body += 1
 		var bk := "break_in_" + str(STATE_NAMES[state])

@@ -17,7 +17,9 @@ const SPRINT := 10.0
 const JUMP_V := 8.4          # v0.11.1: земной прыжок (как у игрока)
 const GRAVITY := 28.0
 const SIM_LIMIT := 420.0
-const BOTS := ["starter", "upgraded", "sword3", "idle", "kite"]
+const BOTS := ["starter", "upgraded", "sword3", "idle", "kite", "novice", "novice_sword3"]
+## v0.13: novice / novice_sword3 — «живой» новичок: реакция на телеграф 0.45–0.8 с, 25% телеграфов пропускает,
+## перепрыгивает волну в 60% случаев, смена слота 0.7 с, меч 0.6 с и 25% промахов. Остальные боты уклоняются идеально.
 
 var gs: Node
 
@@ -56,6 +58,7 @@ func _setup() -> void:
 		var broken := 0.0
 		var restored := 0.0
 		var bounces := 0.0
+		var seals := 0.0
 		for x in res:
 			if x.end == "killed":
 				kills += 1
@@ -70,12 +73,13 @@ func _setup() -> void:
 			broken += x.broken
 			restored += x.restored
 			bounces += x.bounces
+			seals += x.seals
 		var n := float(res.size())
 		var ok := ms <= 35 and mw <= 70
 		all_ok = all_ok and ok
-		rows.append("BOSSSIM ROW %s | %d/%d | %s | %.1f | %.1f | %d | %d/%d | plates broken %.1f restored %.1f | bounces %.0f | caps %s" % [
+		rows.append("BOSSSIM ROW %s | %d/%d | %s | %.1f | %.1f | %d | %d/%d | plates broken %.1f restored %.1f | bounces %.0f | seals %.1f | caps %s" % [
 			bot, kills, res.size(), ("%.0f/%.0f/%.0f s" % [tsum / kills, tmin, tmax]) if kills > 0 else "—",
-			hits / n, taken / n, deaths, ms, mw, broken / n, restored / n, bounces / n, "OK" if ok else "FAIL"])
+			hits / n, taken / n, deaths, ms, mw, broken / n, restored / n, bounces / n, seals / n, "OK" if ok else "FAIL"])
 	print("BOSSSIM TABLE bot | kills | TTK avg/min/max | hits taken avg | dmg taken avg | deaths | max single/3s | armor | bounces | caps")
 	for r in rows:
 		print(r)
@@ -126,10 +130,12 @@ func _one(bot: String, sd: int) -> Dictionary:
 	if bot == "upgraded":
 		sword_dmg = 14
 		pick = "pickaxe2"
-	elif bot == "sword3":
+	elif bot == "sword3" or bot == "novice_sword3":
 		sword_dmg = 24
 		pick = "pickaxe2"
-	var st := {"t": 0.0, "swing": 0.0, "hits": 0, "taken": 0, "max_single": 0, "max_3s": 0, "deaths": 0, "events": [], "last_hp": 100}
+	var nrng := RandomNumberGenerator.new()
+	nrng.seed = sd * 13 + 5
+	var st := {"rng": nrng, "novice": bot.begins_with("novice"), "seen_state": -1, "react": 0.0, "ignore": false, "t": 0.0, "swing": 0.0, "hits": 0, "taken": 0, "max_single": 0, "max_3s": 0, "deaths": 0, "events": [], "last_hp": 100}
 	var on_hp := func(hp: int, _mx: int) -> void:
 		if hp < int(st.last_hp):
 			var d: int = int(st.last_hp) - hp
@@ -148,6 +154,9 @@ func _one(bot: String, sd: int) -> Dictionary:
 	while true:
 		var delta := 1.0 / 60.0
 		st.t = float(st.t) + delta
+		# v0.13: без тика GameState не истекали стартовые i-frames (1.5 с после heal_player_full) —
+		# игрок был неуязвим весь бой, и все боты показывали 0 полученного урона («идеальное уклонение»).
+		gs._process(delta)
 		if is_instance_valid(boss):
 			boss.set_meta("sim_clock", int(float(st.t) * 1000.0))
 			boss._physics_process(delta)
@@ -166,11 +175,12 @@ func _one(bot: String, sd: int) -> Dictionary:
 		_drive(bot, boss, player, delta, st, sword_dmg, pick)
 	gs.player_hp_changed.disconnect(on_hp)
 	var out := {"bot": bot, "seed": sd, "end": end, "ttk": float(st.t), "hits": st.hits, "taken": st.taken, "max_single": st.max_single,
-		"max_3s": st.max_3s, "deaths": st.deaths, "broken": 0, "restored": 0, "bounces": 0}
+		"max_3s": st.max_3s, "deaths": st.deaths, "broken": 0, "restored": 0, "bounces": 0, "seals": 0}
 	if is_instance_valid(boss):
 		out.broken = boss.plate_log.broken
 		out.restored = boss.plate_log.restored
 		out.bounces = boss.plate_log.bounces
+		out.seals = boss.window_seals
 		print("BOSSSIM RUN bot=%s seed=%d end=%s ttk=%.1f hits=%d taken=%d max=%d/%d deaths=%d armor=%s weapon=%s log=%s" % [bot, sd, end, st.t, st.hits, st.taken, st.max_single, st.max_3s, st.deaths, str(boss.plate_log), str(boss.damage_by_weapon), str(boss.attack_log)])
 	for n in root.get_tree().get_nodes_in_group("blockling") + root.get_tree().get_nodes_in_group("mother_carrier"):
 		n.queue_free()
@@ -200,20 +210,34 @@ func _drive(bot: String, boss: Node, player: CharacterBody3D, delta: float, st: 
 		speed = SPRINT
 	elif bot != "idle":
 		var danger := false
-		if s == boss.S.AIR or s == boss.S.WINDUP:
+		var novice: bool = st.novice
+		var rng: RandomNumberGenerator = st.rng
+		if novice:
+			if s != int(st.seen_state):
+				st.seen_state = s
+				st.react = rng.randf_range(0.45, 0.8)
+				st.ignore = rng.randf() < 0.25
+			st.react = maxf(0.0, float(st.react) - delta)
+		var can_react: bool = (not novice) or (float(st.react) <= 0.0 and not bool(st.ignore))
+		var threat: bool = s in [boss.S.WINDUP, boss.S.AIR, boss.S.MELEE, boss.S.COMBO, boss.S.MARKER, boss.S.SCATTER, boss.S.COLLAPSE, boss.S.RAIN, boss.S.RAIN_WINDUP]
+		if novice and not can_react and threat:
+			danger = true            # замешкался: стоит на месте, пока не среагирует (или пропустил телеграф целиком)
+		if can_react and (s == boss.S.AIR or s == boss.S.WINDUP):
 			var land: Vector3 = boss._target if s == boss.S.AIR else bp
 			var away := _flat(p, land)
 			if away.length() < boss.SLAM_RADIUS + 1.5:
 				want = away.normalized() if away.length() > 0.05 else Vector3(1, 0, 0)
 				speed = SPRINT
 				danger = true
-		if s == boss.S.MARKER or s == boss.S.SCATTER:
+		if can_react and (s == boss.S.MARKER or s == boss.S.SCATTER):
 			var away2 := _flat(p, boss._marker_pos)
 			if away2.length() < boss.REASSEMBLE_RADIUS + 1.5:
 				want = away2.normalized() if away2.length() > 0.05 else Vector3(0, 0, 1)
 				speed = SPRINT
 				danger = true
-		if not boss._bricks.is_empty() and not boss._covers.is_empty():
+		if not can_react:
+			pass
+		elif not boss._bricks.is_empty() and not boss._covers.is_empty():
 			var cv: Vector3 = boss._covers[0]["pos"]
 			var dc := _flat(cv, p)
 			if dc.length() > 0.4:
@@ -232,7 +256,10 @@ func _drive(bot: String, boss: Node, player: CharacterBody3D, delta: float, st: 
 			var r: float = float(w["r"])
 			var dd := _flat(p, c).length()
 			if dd - r < 1.2 and dd - r > -0.2 and player.is_on_floor():
-				jump = true
+				if not w.has("novice_jump"):
+					w["novice_jump"] = (not novice) or rng.randf() < 0.6
+				if bool(w["novice_jump"]):
+					jump = true
 		if not danger:
 			var carrier: Node3D = null
 			for m in root.get_tree().get_nodes_in_group("mother_carrier"):
@@ -255,9 +282,10 @@ func _drive(bot: String, boss: Node, player: CharacterBody3D, delta: float, st: 
 				if tm.length() > 1.4:
 					want = tm.normalized()
 			else:
-				if dist < 4.5:
+				var near_band: float = 2.6 if bool(st.novice) else 4.5   # новичок жмётся к боссу
+				if dist < near_band:
 					want = -to_b.normalized()
-				elif dist > 7.0:
+				elif dist > near_band + 2.5:
 					want = to_b.normalized()
 	else:
 		if dist > 2.5:
@@ -280,7 +308,7 @@ func _drive(bot: String, boss: Node, player: CharacterBody3D, delta: float, st: 
 	if in_reach and s == boss.S.PLATE_OPEN and bot != "idle":
 		if str(st.get("held", "sword")) != "pick":
 			st.held = "pick"
-			st.swing = 0.4   # смена слота на кирку
+			st.swing = 0.7 if bool(st.novice) else 0.4   # смена слота на кирку
 			return
 		st.swing = PICK_CD
 		boss.receive_weapon_hit(2 if pick == "pickaxe" else 6, pick)
@@ -288,9 +316,11 @@ func _drive(bot: String, boss: Node, player: CharacterBody3D, delta: float, st: 
 	if in_reach and (bot == "idle" or boss.is_vulnerable()):
 		if str(st.get("held", "sword")) != "sword":
 			st.held = "sword"
-			st.swing = 0.4   # обратно на меч
+			st.swing = 0.7 if bool(st.novice) else 0.4   # обратно на меч
 			return
-		st.swing = SWORD_CD
+		st.swing = 0.6 if bool(st.novice) else SWORD_CD
+		if bool(st.novice) and (st.rng as RandomNumberGenerator).randf() < 0.25:
+			return   # промах
 		boss.receive_weapon_hit(sword_dmg, "sword" if sword_dmg == 8 else ("sword2" if sword_dmg == 14 else "sword3"))
 		return
 	for grp in ["mother_carrier", "blockling"]:

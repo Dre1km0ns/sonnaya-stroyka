@@ -1681,6 +1681,18 @@ func torch_cells() -> Array[Vector3i]:
 	return _torch_cache
 
 
+func pick_up_torch(c: Vector3i) -> bool:
+	## v0.13: ПКМ с факелом в руке по поставленному факелу — снять его обратно в инвентарь (перестроить световую сеть).
+	if is_dream() or str(wake_blocks.get(c, {}).get("kind", "")) != "torch":
+		return false
+	wake_blocks.erase(c)
+	mark_torches_dirty()
+	add_item_count("torch", 1)
+	terrain_cell_changed.emit(c)
+	notify_inventory()
+	return true
+
+
 func remove_torch(c: Vector3i) -> bool:
 	if str(wake_blocks.get(c, {}).get("kind", "")) != "torch":
 		return false
