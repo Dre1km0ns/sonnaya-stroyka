@@ -124,6 +124,8 @@ func _gui_input(event: InputEvent) -> void:
 var _durability := -1
 var _durability_max := 0
 func set_durability(value: int, maximum: int) -> void:
+	if value == _durability and maximum == _durability_max:
+		return   # v0.14: хотбар обновляется часто — не перерисовываем, если прочность не изменилась
 	_durability = value
 	_durability_max = maximum
 	queue_redraw()

@@ -8,6 +8,10 @@ const MAX_LUMEN_LIGHTS := 24
 var _lumen_lights := 0
 const SPECIAL := ["lumen","lumen_cold","lamp","strut","torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
 const PARTS := ["bed_foot","door_top","catcher_top"]
+## v0.14: множество «не сплошных» видов для маски граней. Раньше в цикле по 6 граням
+## каждый раз собирался новый массив SPECIAL+PARTS и искался линейно.
+const NONSOLID := {"lumen":true,"lumen_cold":true,"lamp":true,"strut":true,"torch":true,"beacon":true,"bed":true,"workbench":true,"lathe":true,"sawmill":true,"alchemy":true,"idea_catcher":true,"chest":true,"door":true,"bed_foot":true,"door_top":true,"catcher_top":true}
+const FACE_OFS: Array[Vector3i] = [Vector3i(1,0,0),Vector3i(-1,0,0),Vector3i(0,1,0),Vector3i(0,-1,0),Vector3i(0,0,1),Vector3i(0,0,-1)]
 var _meshes: Dictionary = {}
 var _bodies: Dictionary = {}
 var _data: Dictionary = {}
@@ -134,6 +138,7 @@ func _build_placed_chunk(ck: Vector2i) -> void:
 	if cells.is_empty(): _ordinary.erase(ck);return
 	var base := Vector3(ck.x*16,0,ck.y*16)
 	var stream := BlockTex.new_stream()
+	var tiles_by_kind := {}   # v0.14: faces_for один раз на вид блока, а не на каждый блок
 	for c in cells:
 		var d: Dictionary = cells[c]
 		var kind: String = d.get("kind","drift")
@@ -141,11 +146,14 @@ func _build_placed_chunk(ck: Vector2i) -> void:
 		if d.get("mutant",false): kind="mouth"
 		var mask := 0
 		for i in range(6):
-			var nb: Vector3i = c+Vector3i(BlockTex.FACES[i][0])
-			var nd: Dictionary = _data.get(nb,{})
-			if not nd.is_empty() and nd.get("kind","") not in SPECIAL+PARTS: mask|=1<<i
+			var nb: Vector3i = c+FACE_OFS[i]
+			if _data.has(nb) and not NONSOLID.has(_data[nb].get("kind","")): mask|=1<<i
 		var tint := Color(0.6,1,0.85) if is_dream_layer and d.get("anchored",false) else Color.WHITE
-		BlockTex.emit_box(stream,Vector3(c)-base,Vector3.ONE,tint,mask,BlockTex.faces_for(kind))
+		if mask==63: continue
+		var tiles: Array = tiles_by_kind.get(kind,[])
+		if tiles.is_empty():
+			tiles=BlockTex.faces_for(kind);tiles_by_kind[kind]=tiles
+		BlockTex.emit_box(stream,Vector3(c)-base,Vector3.ONE,tint,mask,tiles)
 	var root := Node3D.new();root.position=base;root.name="Placed_%d_%d"%[ck.x,ck.y];add_child(root)
 	var mesh := MeshInstance3D.new();mesh.mesh=BlockTex.stream_to_mesh(stream);root.add_child(mesh)
 	var body := StaticBody3D.new();body.collision_layer=4 if _active() else 0;body.collision_mask=0

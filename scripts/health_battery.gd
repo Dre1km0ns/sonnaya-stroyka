@@ -19,6 +19,10 @@ var _trail_delay: float = 0.0
 var _flash := 0.0
 var _flash_heal := 0.0
 var _crit_pulse := 0.0
+var _last_sig := Vector4(-1, -1, -1, -1)   # v0.14: перерисовка только при изменении
+var _last_shown := Vector2i(-1, -1)
+var draw_count := 0                         # для смоука/бенча
+var _label_synced := false
 var _dead_visual := false
 
 
@@ -43,6 +47,9 @@ func set_hp(v: int, m: int) -> void:
 	## Единственный вход: HUD передаёт GameState.player_hp / PLAYER_MAX_HP (или сигнал player_hp_changed).
 	var new_max := maxi(1, m)
 	var new_hp := clampi(v, 0, new_max)
+	if new_hp == _shown_hp and new_max == _shown_max and _label_synced:
+		return   # v0.14: HUD зовёт set_hp каждый кадр (_update_heal_indicator) — без изменений не перерисовываем
+	_label_synced = true
 	if new_max != _shown_max:
 		# Смена максимума: пересчитать доли, след не должен «торчать» выше новой шкалы.
 		var old_frac := float(_shown_hp) / float(maxi(1, _shown_max))
@@ -119,10 +126,17 @@ func _process(delta: float) -> void:
 		_crit_pulse += delta * 3.2
 	else:
 		_crit_pulse = 0.0
-	queue_redraw()
+	# v0.14: раньше queue_redraw() каждый кадр, даже когда полоса стоит. Теперь — только если что-то движется.
+	var sig := Vector4(_fill, _trail, _flash + _flash_heal * 3.0, _crit_pulse)
+	var shown := Vector2i(_shown_hp, _shown_max)
+	if sig != _last_sig or shown != _last_shown:
+		_last_sig = sig
+		_last_shown = shown
+		queue_redraw()
 
 
 func _draw() -> void:
+	draw_count += 1
 	var body := Rect2(Vector2.ZERO, size)
 	var r := 5
 	var bg := StyleBoxFlat.new()

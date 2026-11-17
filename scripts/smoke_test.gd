@@ -3022,3 +3022,118 @@ func _v013_checks() -> void:
 	G.wake_blocks.clear()
 	await process_frame
 	print("SMOKE: v0.13 grips(sword3)/core cap+local glow/torch refund/dawn grace/torch pickup OK")
+	await _v014_checks()
+
+
+func _ref_emit_box(st: Dictionary, mn: Vector3, size: Vector3, col: Color, skip_mask: int, tiles: Array, norm_uv: bool) -> void:
+	## Эталон: emit_box v0.13 как есть (временные массивы на грань).
+	var BT: GDScript = load("res://scripts/block_tex.gd")
+	for fi in range(6):
+		if skip_mask & (1 << fi):
+			continue
+		var f: Array = BT.FACES[fi]
+		var n: Vector3 = f[0]
+		var cs: Array = f[1]
+		var shade := 1.0
+		if n.y < -0.5:
+			shade = 0.55
+		elif absf(n.x) > 0.5:
+			shade = 0.80
+		elif absf(n.z) > 0.5:
+			shade = 0.90
+		var cc := Color(col.r * shade, col.g * shade, col.b * shade, 1.0)
+		var t := Vector2(float(tiles[fi]), 0.0)
+		var p: Array = []
+		var u: Array = []
+		for k in range(4):
+			var lc: Vector3 = (cs[k] as Vector3) * size
+			p.append(mn + lc)
+			var q: Vector3 = (cs[k] as Vector3) if norm_uv else lc
+			var qs: Vector3 = Vector3.ONE if norm_uv else size
+			if absf(n.x) > 0.5:
+				u.append(Vector2(qs.z - q.z if n.x > 0 else q.z, qs.y - q.y))
+			elif absf(n.z) > 0.5:
+				u.append(Vector2(q.x if n.z > 0 else qs.x - q.x, qs.y - q.y))
+			else:
+				u.append(Vector2(q.x, q.z))
+		for k2 in [0, 2, 1, 0, 3, 2]:
+			st["v"].append(p[k2]); st["uv"].append(u[k2]); st["uv2"].append(t); st["n"].append(n); st["c"].append(cc)
+
+
+func _v014_checks() -> void:
+	## v0.14: оптимизации не меняют результат.
+	var G: Node = root.get_node("GameState")
+	var BT: GDScript = load("res://scripts/block_tex.gd")
+	var VW: GDScript = load("res://scripts/voxel_world.gd")
+	# 1) NONSOLID == SPECIAL + PARTS
+	var sp: Array = VW.SPECIAL + VW.PARTS
+	var same: bool = sp.size() == VW.NONSOLID.size()
+	for k in sp:
+		same = same and VW.NONSOLID.has(k)
+	_a(same, 14001)
+	# 2) emit_box == эталон v0.13 для всех масок, двух размеров, norm_uv вкл/выкл
+	var tiles := [3, 5, 7, 9, 11, 13]
+	var ok_box := true
+	for mask in range(64):
+		for sz in [Vector3.ONE, Vector3(0.5, 1.25, 0.75)]:
+			for nu in [false, true]:
+				var a: Dictionary = BT.new_stream()
+				var b: Dictionary = BT.new_stream()
+				BT.emit_box(a, Vector3(1, 2, 3), sz, Color(0.9, 0.8, 0.7), mask, tiles, nu)
+				_ref_emit_box(b, Vector3(1, 2, 3), sz, Color(0.9, 0.8, 0.7), mask, tiles, nu)
+				for key in ["v", "n", "c", "uv", "uv2"]:
+					if a[key] != b[key]:
+						ok_box = false
+	_a(ok_box, 14002)
+	# 3) crossfire_level == полный перебор (r + 0.4) на случайных позах тела и факелах
+	G.reset_state(); G.dev_mode = false; G.day_time = 1200.0
+	var host := Node3D.new(); root.add_child(host)
+	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
+	pl.global_position = Vector3(8, 0, 8)
+	var ana: Node3D = load("res://scripts/boss_anaconda.gd").spawn_at(host, Vector3(8, 0, 8), "v14")
+	await process_frame
+	ana._enter(ana.S.REST)
+	var rng := RandomNumberGenerator.new(); rng.seed = 1414
+	var ok_cf := true
+	for trial in range(120):
+		G.wake_blocks.clear()
+		for k in range(rng.randi_range(0, 6)):
+			G.wake_blocks[Vector3i(rng.randi_range(0, 16), 0, rng.randi_range(0, 16))] = {"kind": "torch"}
+		G.mark_torches_dirty()
+		ana._tick_n += 1
+		var hp := Vector3(rng.randf_range(2, 14), 0.6, rng.randf_range(2, 14))
+		ana._head.global_position = hp
+		var dir := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+		for i in range(ana._segs.size()):
+			ana._segs[i].global_position = hp + dir * ana.SPACING * float(i + 1)
+		var best := 0
+		for pp in ana.segment_positions():
+			var n := 0
+			for z in ana.light_zones():
+				if (z["pos"] as Vector3).distance_to(pp) <= float(z["r"]) + 0.4:
+					n += 1
+			best = maxi(best, n)
+		if ana.crossfire_level() != best:
+			ok_cf = false
+	_a(ok_cf, 14003)
+	ana.leave("")
+	host.queue_free()
+	G.wake_blocks.clear()
+	# 4) HUD: полоса HP в покое не перерисовывается, после удара — перерисовывается, потом снова затихает
+	var bat: Control = load("res://scripts/health_battery.gd").new()
+	bat.size = Vector2(220, 26); root.add_child(bat)
+	bat.set_hp(80, 100)
+	for i in range(90):
+		await process_frame
+	var d0: int = bat.draw_count
+	for i in range(60):
+		bat.set_hp(80, 100)   # HUD зовёт set_hp каждый кадр (_update_heal_indicator)
+		await process_frame
+	_a(bat.draw_count == d0, 14004)
+	bat.set_hp(40, 100)
+	for i in range(20):
+		await process_frame
+	_a(bat.draw_count > d0, 14005)
+	bat.queue_free()
+	await process_frame
+	print("SMOKE: v0.14 nonsolid set / emit_box == v0.13 / crossfire == brute force / HUD idle no redraw OK")

@@ -1,0 +1,8 @@
+BOSSSIM TABLE bot | kills | TTK avg/min/max | hits taken avg | dmg taken avg | deaths | max single/3s | armor | bounces | caps
+BOSSSIM ROW starter | 12/12 | 86/77/96 s | 2.0 | 38.9 | 0 | 28/28 | plates broken 3.0 restored 0.0 | bounces 0 | seals 1.0 | caps OK
+BOSSSIM ROW upgraded | 12/12 | 45/41/49 s | 1.9 | 39.1 | 0 | 28/28 | plates broken 3.0 restored 0.0 | bounces 0 | seals 1.0 | caps OK
+BOSSSIM ROW sword3 | 12/12 | 32/29/36 s | 1.5 | 36.2 | 0 | 28/28 | plates broken 3.0 restored 0.0 | bounces 0 | seals 5.0 | caps OK
+BOSSSIM ROW idle | 0/12 | — | 342.8 | 2849.6 | 337 | 30/45 | plates broken 0.0 restored 0.0 | bounces 897 | seals 0.0 | caps OK
+BOSSSIM ROW kite | 12/12 | 115/109/123 s | 1.7 | 35.7 | 0 | 28/28 | plates broken 3.0 restored 0.0 | bounces 0 | seals 0.8 | caps OK
+BOSSSIM ROW novice | 12/12 | 139/119/155 s | 26.1 | 364.6 | 38 | 30/55 | plates broken 3.0 restored 0.0 | bounces 0 | seals 0.0 | caps OK
+BOSSSIM ROW novice_sword3 | 12/12 | 46/37/54 s | 6.2 | 101.3 | 7 | 30/40 | plates broken 3.0 restored 0.0 | bounces 0 | seals 2.7 | caps OK

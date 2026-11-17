@@ -161,6 +161,8 @@ var _seg_lit: Array = []
 var _zones_cache: Array = []
 var _zones_stamp := -1
 var _zones_torch_rev := -1
+var _zone_pos := PackedVector3Array()   # v0.14: позиции зон тем же кешем, что и _zones_cache (без Dictionary в горячих циклах)
+var _seg_pulse: Array[float] = []       # v0.14: последний выставленный масштаб сегмента (не дёргаем transform зря)
 var _tick_n := 0
 
 
@@ -352,7 +354,25 @@ func light_zones() -> Array:
 	_zones_cache = out
 	_zones_stamp = _tick_n
 	_zones_torch_rev = rev
+	_zone_pos.resize(out.size())
+	for i in range(out.size()):
+		_zone_pos[i] = out[i]["pos"]
 	return out
+
+
+func _near_zone_pos(reach: float) -> PackedVector3Array:
+	## v0.14: зоны, до которых тело вообще может дотянуться (голова + длина тела + радиус).
+	light_zones()
+	if _head == null or _zone_pos.is_empty():
+		return _zone_pos
+	var hp := _head.global_position
+	var lim := SPACING * float(SEGMENTS) + reach + 0.5
+	var lim2 := lim * lim
+	var near := PackedVector3Array()
+	for zp in _zone_pos:
+		if zp.distance_squared_to(hp) <= lim2:
+			near.append(zp)
+	return near
 
 
 func is_point_lit(pt: Vector3) -> bool:
@@ -364,16 +384,28 @@ func is_point_lit(pt: Vector3) -> bool:
 
 func crossfire_level() -> int:
 	## v0.12: максимум пересечений по сегментам. Два источника на ОДНОМ сегменте — уязвимость.
+	## v0.14: та же формула (dist <= r + 0.4), но квадраты расстояний, PackedVector3Array и ранний выход.
 	if _head == null:
 		return 0
+	var reach := TORCH_RADIUS + 0.4
+	var zs := _near_zone_pos(reach)
+	var nz := zs.size()
+	if nz == 0:
+		return 0
+	var r2 := reach * reach
 	var best := 0
-	for p in segment_positions():
+	var p: Vector3 = _head.global_position
+	for i in range(-1, _segs.size()):
+		if i >= 0:
+			p = _segs[i].global_position
 		var n := 0
-		for z in light_zones():
-			if (z["pos"] as Vector3).distance_to(p) <= float(z["r"]) + 0.4:
+		for zp in zs:
+			if zp.distance_squared_to(p) <= r2:
 				n += 1
 		if n > best:
 			best = n
+			if best >= nz:
+				break
 	return best
 
 
@@ -381,7 +413,13 @@ func light_dps() -> float:
 	## 1 источник — 0 (обнаружение), 2 — BURN_DPS, 3+ — BURN_DPS × BOOST_MULT. Факел в руке — всегда 0.
 	if is_invulnerable():
 		return 0.0
-	var n := crossfire_level()
+	return light_dps_for(crossfire_level())
+
+
+func light_dps_for(n: int) -> float:
+	## v0.14: тот же расчёт по уже посчитанному уровню (tick не считает кросс-огонь дважды).
+	if is_invulnerable():
+		return 0.0
 	if n < 2:
 		return 0.0
 	return BURN_DPS * (BOOST_MULT if n >= 3 else 1.0)
@@ -504,7 +542,7 @@ func tick(delta: float) -> void:
 	_detect_flag = lvl == 1
 	# CC от света: только SLOW/EXPOSED. Стан от освещения ЗАПРЕЩЁН — это была первопричина вечного стана.
 	_apply_light_cc(lvl, delta)
-	var dps := light_dps()
+	var dps := light_dps_for(lvl)
 	if dps > 0.0:
 		apply_light_damage(dps * delta, "crossfire3" if lvl >= 3 else "crossfire2")
 		if state == S.DEAD:
@@ -1171,6 +1209,7 @@ func _resolve_constrict(player: CharacterBody3D) -> void:
 
 
 func _flash_body(on: bool) -> void:
+	_seg_pulse.fill(-1.0)   # v0.14: масштаб меняется мимо _update_seg_light — сбросить кеш
 	for s in _segs:
 		var mi := s as MeshInstance3D
 		if mi:
@@ -1326,25 +1365,42 @@ func _free_coil_disc() -> void:
 
 func _update_seg_light() -> void:
 	## Подсветка сегментов, которые видят 2+ факела — читаемый перекрёстный огонь.
+	## v0.14: считаем пересечения только когда она уязвима (иначе n не нужен), квадраты расстояний,
+	## масштаб пишем только при изменении — без лишних уведомлений transform.
 	if _head == null:
 		return
-	var parts: Array = segment_positions()
+	var vuln := is_vulnerable()
+	var stunned := combat.is_stunned()
+	var zs := _near_zone_pos(TORCH_RADIUS) if vuln else PackedVector3Array()
+	var r2 := TORCH_RADIUS * TORCH_RADIUS
+	var pulse_v := 1.06 if int(_t * 8.0) % 2 == 0 else 1.0
+	var pulse_s := 1.05 if int(_t * 14.0) % 2 == 0 else 1.0
+	if _seg_pulse.size() != _segs.size():
+		_seg_pulse.resize(_segs.size())
+		_seg_pulse.fill(-1.0)
 	for i in range(_segs.size()):
-		var n := 0
-		var p: Vector3 = _segs[i].global_position
-		for z in light_zones():
-			if (z["pos"] as Vector3).distance_to(p) <= float(z["r"]):
-				n += 1
 		var mi := _segs[i] as MeshInstance3D
-		if mi:
+		if mi == null:
+			continue
+		var k := 1.0
+		if vuln and zs.size() >= 2:
+			var n := 0
+			var p: Vector3 = mi.global_position
+			for zp in zs:
+				if zp.distance_squared_to(p) <= r2:
+					n += 1
+					if n >= 2:
+						break
+			if n >= 2:
+				k = pulse_v
+			elif stunned:
+				k = pulse_s
+		elif stunned:
+			k = pulse_s
+		if _seg_pulse[i] != k:
+			_seg_pulse[i] = k
 			mi.transparency = 0.0
-			if n >= 2 and is_vulnerable():
-				mi.scale = Vector3.ONE * (1.06 if int(_t * 8.0) % 2 == 0 else 1.0)
-			elif combat.is_stunned():
-				mi.scale = Vector3.ONE * (1.05 if int(_t * 14.0) % 2 == 0 else 1.0)
-			else:
-				mi.scale = Vector3.ONE
-
+			mi.scale = Vector3.ONE * k
 
 func on_hit_feedback(res: Dictionary) -> void:
 	## Оружие не проходит, но подтверждаем отскок визуально.

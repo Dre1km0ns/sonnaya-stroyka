@@ -139,45 +139,68 @@ const FACES := [
 
 static func emit_box(st: Dictionary, mn: Vector3, size: Vector3, col: Color, skip_mask: int, tiles: Array, norm_uv: bool = false) -> void:
 	## st: {v: PackedVector3Array, n: PackedVector3Array, c: PackedColorArray, uv: PackedVector2Array, uv2: PackedVector2Array}
+	## v0.14: без временных Array на каждую грань — сразу resize и запись по индексу (тот же порядок вершин).
+	if skip_mask & 63 == 63:
+		return
 	var verts: PackedVector3Array = st["v"]
 	var norms: PackedVector3Array = st["n"]
 	var cols: PackedColorArray = st["c"]
 	var uvs: PackedVector2Array = st["uv"]
 	var uv2s: PackedVector2Array = st["uv2"]
+	var faces := 0
+	for fi in range(6):
+		if not (skip_mask & (1 << fi)):
+			faces += 1
+	var w := verts.size()
+	var nsz := w + faces * 6
+	verts.resize(nsz); norms.resize(nsz); cols.resize(nsz); uvs.resize(nsz); uv2s.resize(nsz)
+	var qs: Vector3 = Vector3.ONE if norm_uv else size
+	var p0: Vector3; var p1: Vector3; var p2: Vector3; var p3: Vector3
+	var u0: Vector2; var u1: Vector2; var u2: Vector2; var u3: Vector2
 	for fi in range(6):
 		if skip_mask & (1 << fi):
 			continue
-		var f: Array = FACES[fi]
-		var n: Vector3 = f[0]
-		var cs: Array = f[1]
-		var shade := 1.0
-		if n.y < -0.5:
-			shade = 0.55
-		elif absf(n.x) > 0.5:
-			shade = 0.80
-		elif absf(n.z) > 0.5:
-			shade = 0.90
+		var n: Vector3 = _FACE_N[fi]
+		var shade: float = _FACE_SHADE[fi]
 		var cc := Color(col.r * shade, col.g * shade, col.b * shade, 1.0)
 		var t := Vector2(float(tiles[fi]), 0.0)
-		var p: Array = []
-		var u: Array = []
 		for k in range(4):
-			var lc: Vector3 = (cs[k] as Vector3) * size
-			p.append(mn + lc)
-			var q: Vector3 = (cs[k] as Vector3) if norm_uv else lc
-			var qs: Vector3 = Vector3.ONE if norm_uv else size
+			var c: Vector3 = _FACE_C[fi * 4 + k]
+			var lc: Vector3 = c * size
+			var q: Vector3 = c if norm_uv else lc
+			var uv: Vector2
 			if absf(n.x) > 0.5:
-				u.append(Vector2(qs.z - q.z if n.x > 0 else q.z, qs.y - q.y))
+				uv = Vector2(qs.z - q.z if n.x > 0 else q.z, qs.y - q.y)
 			elif absf(n.z) > 0.5:
-				u.append(Vector2(q.x if n.z > 0 else qs.x - q.x, qs.y - q.y))
+				uv = Vector2(q.x if n.z > 0 else qs.x - q.x, qs.y - q.y)
 			else:
-				u.append(Vector2(q.x, q.z))
-		for k2 in [0, 2, 1, 0, 3, 2]:
-			verts.append(p[k2])
-			uvs.append(u[k2])
-			uv2s.append(t)
-			norms.append(n)
-			cols.append(cc)
+				uv = Vector2(q.x, q.z)
+			match k:
+				0: p0 = mn + lc; u0 = uv
+				1: p1 = mn + lc; u1 = uv
+				2: p2 = mn + lc; u2 = uv
+				_: p3 = mn + lc; u3 = uv
+		# порядок треугольников [0, 2, 1, 0, 3, 2] — как раньше
+		verts[w] = p0; verts[w + 1] = p2; verts[w + 2] = p1; verts[w + 3] = p0; verts[w + 4] = p3; verts[w + 5] = p2
+		uvs[w] = u0; uvs[w + 1] = u2; uvs[w + 2] = u1; uvs[w + 3] = u0; uvs[w + 4] = u3; uvs[w + 5] = u2
+		for k2 in range(6):
+			uv2s[w + k2] = t
+			norms[w + k2] = n
+			cols[w + k2] = cc
+		w += 6
+
+
+## v0.14: развёрнутые FACES для emit_box (нормаль, затенение, 4 угла подряд).
+const _FACE_N: Array[Vector3] = [Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, -1, 0), Vector3(0, 0, 1), Vector3(0, 0, -1)]
+const _FACE_SHADE: Array[float] = [0.80, 0.80, 1.0, 0.55, 0.90, 0.90]
+const _FACE_C: Array[Vector3] = [
+	Vector3(1, 0, 0), Vector3(1, 1, 0), Vector3(1, 1, 1), Vector3(1, 0, 1),
+	Vector3(0, 0, 1), Vector3(0, 1, 1), Vector3(0, 1, 0), Vector3(0, 0, 0),
+	Vector3(0, 1, 0), Vector3(0, 1, 1), Vector3(1, 1, 1), Vector3(1, 1, 0),
+	Vector3(0, 0, 1), Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(1, 0, 1),
+	Vector3(1, 0, 1), Vector3(1, 1, 1), Vector3(0, 1, 1), Vector3(0, 0, 1),
+	Vector3(0, 0, 0), Vector3(0, 1, 0), Vector3(1, 1, 0), Vector3(1, 0, 0),
+]
 
 
 static func new_stream() -> Dictionary:

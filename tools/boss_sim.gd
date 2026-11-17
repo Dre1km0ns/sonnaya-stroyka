@@ -125,6 +125,10 @@ func _one(bot: String, sd: int) -> Dictionary:
 	boss.set_physics_process(false)
 	player.set_physics_process(false)
 	await process_frame
+	# v0.14: move_and_slide() берёт не наш delta, а get_process_delta_time() — реальное время кадра,
+	# если вызван вне physics-кадра. Из-за этого шаг движения бота и Матери был случайным (зависел от ЦП),
+	# и прогоны с одним сидом расходились. Продолжаем цикл внутри physics-кадра: там шаг = 1/60 = наш delta.
+	await physics_frame
 	var sword_dmg := 8
 	var pick := "pickaxe"
 	if bot == "upgraded":
