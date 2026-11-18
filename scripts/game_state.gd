@@ -19,6 +19,8 @@ signal anchor_selected(t: int)
 signal toast(text: String)
 signal chat_message(text: String, color: Color)
 signal player_hp_changed(hp: int, max_hp: int)
+signal hit_marker(kind: String)                      # v0.15: «hit» / «core» / «bounce» / «sealed» / «kill» / «immune»
+signal player_hurt_from(origin: Vector3, dmg: int)   # v0.15: откуда прилетел урон (для дуги направления)
 signal player_died
 signal day_phase_changed(phase: String)
 signal heal_used(cd: float)
@@ -1300,7 +1302,26 @@ func combo_damage_recent() -> int:
 	return total
 
 
+var _hit_origin := Vector3.INF
+var last_hurt_origin := Vector3.INF
+
+
+func hit_from(origin: Vector3) -> void:
+	## v0.15: атакующий сообщает свою позицию прямо перед damage_player — HUD рисует дугу направления.
+	_hit_origin = origin
+
+
 func damage_player(amount: int, source: String = "", ignore_iframes: bool = false) -> int:
+	var origin := _hit_origin
+	_hit_origin = Vector3.INF
+	var dealt := _damage_player_core(amount, source, ignore_iframes)
+	if dealt > 0 and origin != Vector3.INF:
+		last_hurt_origin = origin
+		player_hurt_from.emit(origin, dealt)
+	return dealt
+
+
+func _damage_player_core(amount: int, source: String = "", ignore_iframes: bool = false) -> int:
 	## Возвращает фактический урон. i-frames 0.5 с после удара ≥10; за любые 3 с — не больше 70 (запрет ваншот-цепочек).
 	if god_mode or amount <= 0 or player_hp <= 0:
 		return 0

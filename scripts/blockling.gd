@@ -193,6 +193,7 @@ func _physics_process(delta: float) -> void:
 		var to := player.global_position - global_position
 		if Vector2(to.x, to.z).length() <= BITE_RANGE and absf(to.y) < 1.6 and _bite_cd <= 0.0:
 			_bite_cd = BITE_CD
+			GameState.hit_from(global_position)
 			GameState.damage_player(BITE_DAMAGE, "блоклинг")
 
 

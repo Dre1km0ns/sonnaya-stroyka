@@ -1,0 +1,9 @@
+ANASIM TABLE bot | kills | TTK avg/min/max | hits taken avg | dmg taken avg | deaths | torches broken avg (body/burrow) | replacements avg | skipped phases | time to dawn avg | share placed%/held%/weapon%
+ANASIM ROW no_light | 0/12 | — | 16.9 | 353.0 | 22 | 0.0 (0.0/0.0) | 0.0 | 0 | — | 0/0/0
+ANASIM ROW held_only | 0/12 | — | 16.9 | 353.0 | 22 | 0.0 (0.0/0.0) | 0.0 | 0 | — | 0/0/0
+ANASIM ROW one_placed | 0/12 | — | 17.7 | 374.0 | 22 | 21.8 (21.8/0.0) | 21.2 | 0 | — | 0/0/0
+ANASIM ROW two_placed | 12/12 | 232/172/290 s | 12.2 | 230.9 | 17 | 11.4 (5.2/6.2) | 10.3 | 0 | 183 s | 100/0/0
+ANASIM ROW three_placed | 2/12 | 193/182/205 s | 26.0 | 416.6 | 34 | 7.5 (2.1/5.4) | 4.6 | 0 | 222 s | 100/0/0
+ANASIM ROW three_placed_no_held | 12/12 | 196/173/272 s | 10.4 | 202.6 | 15 | 10.2 (4.4/5.8) | 9.8 | 0 | 219 s | 100/0/0
+ANASIM ROW three_placed_with_spares | 12/12 | 196/173/272 s | 10.4 | 202.6 | 15 | 10.2 (4.4/5.8) | 9.8 | 0 | 219 s | 100/0/0
+ANASIM ROW human_like | 11/12 | 204/166/323 s | 15.1 | 293.2 | 11 | 13.7 (7.2/6.5) | 12.4 | 0 | 211 s | 100/0/0

@@ -15,6 +15,8 @@ var _hotbar: Array = []
 var _specials: Array = []
 var _boss_wrap: Control
 var _boss_bar: ProgressBar
+var _core_bar: ProgressBar          # v0.15: сколько урона ещё влезет в открытое ядро
+var combat_feedback: Control
 var _boss_label: Label
 var _name_label: Label
 var _name_t := 0.0
@@ -58,6 +60,8 @@ func _ready() -> void:
 	_build_special_bar()
 	_build_labels()
 	_build_boss_bar()
+	combat_feedback = load("res://scripts/combat_feedback.gd").new()   # v0.15: хит-маркер + дуга урона
+	$Root.add_child(combat_feedback)
 	_build_chat()
 	_build_hearts()
 	_build_phase_label()
@@ -558,6 +562,24 @@ func _build_boss_bar() -> void:
 		mark.offset_bottom = 24
 		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_boss_bar.add_child(mark)
+	_core_bar = ProgressBar.new()
+	_core_bar.name = "CoreWindowBar"
+	_core_bar.max_value = 1.0
+	_core_bar.step = 0.0
+	_core_bar.value = 1.0
+	_core_bar.show_percentage = false
+	_core_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_core_bar.offset_top = 50
+	_core_bar.offset_bottom = 58
+	_core_bar.custom_minimum_size = Vector2(0, 8)
+	var cbg := StyleBoxFlat.new()
+	cbg.bg_color = Color(0.1, 0.08, 0.05, 0.75)
+	var cfill := StyleBoxFlat.new()
+	cfill.bg_color = Color(1.0, 0.78, 0.25)
+	_core_bar.add_theme_stylebox_override("background", cbg)
+	_core_bar.add_theme_stylebox_override("fill", cfill)
+	_core_bar.visible = false
+	_boss_wrap.add_child(_core_bar)
 
 
 func _process(delta: float) -> void:
@@ -590,6 +612,11 @@ func _process(delta: float) -> void:
 	var mx: int = int(live.get("max_hp"))
 	_boss_bar.max_value = mx
 	_boss_bar.value = hp
+	var win := float(live.call("core_window_left")) if live.has_method("core_window_left") else -1.0
+	if _core_bar:
+		_core_bar.visible = win >= 0.0
+		if win >= 0.0:
+			_core_bar.value = win
 	var ph := int(live.get("phase")) if "phase" in live else 1
 	var vuln := bool(live.call("is_vulnerable")) if live.has_method("is_vulnerable") else false
 	var title := str(live.call("boss_title")) if live.has_method("boss_title") else "Мать блоков"

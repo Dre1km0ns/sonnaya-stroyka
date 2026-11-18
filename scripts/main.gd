@@ -98,7 +98,7 @@ func _ready() -> void:
 		saver.save_game("new-world")
 	GameState.inventory_changed.emit()
 	_camp_label()
-	print("Сонная стройка v0.14 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.15 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func _on_player_died() -> void:

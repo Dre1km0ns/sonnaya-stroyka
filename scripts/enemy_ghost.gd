@@ -223,6 +223,7 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	if push.length() < 0.01:
 		push = Vector3(1, 0, 0)
 	player.velocity += Vector3(push.x, 0.3, push.z).normalized() * KNOCKBACK
+	GameState.hit_from(global_position)
 	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE), kind_name())
 	var stolen := GameState.steal_resource_hardcore(1)
 	if stolen.begins_with("dust"):

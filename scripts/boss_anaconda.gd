@@ -806,6 +806,7 @@ func _start_burst(player: CharacterBody3D) -> void:
 	var hid := "burst_%d" % attack_log["burst"]
 	var to := player.global_position - _emerge
 	if combat.can_hit(hid) and Vector2(to.x, to.z).length() <= BURST_RADIUS and to.y > -1.0 and to.y < 2.5:
+		GameState.hit_from(_head.global_position if _head else global_position)
 		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,BURST_DAMAGE), "Анаконда: укус из-под земли") > 0:
 			attack_log["burst_hit"] += 1
 			player.velocity += Vector3(to.x, 0, to.z).normalized() * 7.0 + Vector3(0, 4.0, 0)
@@ -865,6 +866,7 @@ func _tick_dash(delta: float, player: CharacterBody3D) -> void:
 	if not attack_log.has("dash_landed_%d" % attack_log["dash"]):
 		var d := player.global_position - _head.global_position
 		if Vector2(d.x, d.z).length() <= DASH_RADIUS and d.y > -0.8 and d.y < 2.2:
+			GameState.hit_from(_head.global_position if _head else global_position)
 			if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,DASH_DAMAGE), "Анаконда: рывок") > 0:
 				attack_log["dash_hit"] += 1
 				player.velocity += _dash_dir * 8.0 + Vector3(0, 3.5, 0)
@@ -970,6 +972,7 @@ func _contact(player: CharacterBody3D) -> void:
 		return
 	if player.global_position.distance_to(_head.global_position) < HEAD_SIZE * 0.5 + 0.6:
 		_contact_cd = CONTACT_CD
+		GameState.hit_from(_head.global_position if _head else global_position)
 		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONTACT_DAMAGE), "Анаконда: касание") > 0:
 			attack_log["contact_hit"] += 1
 
@@ -1072,6 +1075,7 @@ func _tick_rocks(delta: float, player: CharacterBody3D) -> void:
 		_dust_puff(at + Vector3(0, 0.3, 0))
 		var d := player.global_position - at
 		if Vector2(d.x, d.z).length() <= ROCK_RADIUS + 0.3 and d.y > -0.6 and d.y < 2.0:
+			GameState.hit_from(_head.global_position if _head else global_position)
 			if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,ROCK_DAMAGE), "Анаконда: обвал") > 0:
 				attack_log["rock_hit"] += 1
 	_rocks = keep
@@ -1172,6 +1176,7 @@ func _tick_coil(delta: float, player: CharacterBody3D) -> void:
 		for s in _segs:
 			if s.global_position.distance_to(player.global_position + Vector3(0, 0.6, 0)) < 0.9:
 				_coil_hit_cd = 1.0
+				GameState.hit_from(_head.global_position if _head else global_position)
 				if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,COIL_CONTACT), "Анаконда: чешуя кольца") > 0:
 					attack_log["coil_hit"] += 1
 				break
@@ -1201,6 +1206,7 @@ func _resolve_constrict(player: CharacterBody3D) -> void:
 			safe = true
 			break
 	if inside and not safe:
+		GameState.hit_from(_head.global_position if _head else global_position)
 		if GameState.damage_player(preload("res://scripts/enemy_navigation.gd").combat_damage(self,CONSTRICT_DAMAGE), "Анаконда: удушение") > 0:
 			attack_log["constrict_hit"] += 1
 	_emerge = _head.global_position

@@ -145,6 +145,8 @@ var _last_dist: float = 999.0
 var _bricks: Array = [] # [{node, shadow, pos, t, hit}]
 var _waves: Array = []  # [{node, r, center, hit}]
 var _shadow: MeshInstance3D = null
+var _pre_shadow: MeshInstance3D = null   # v0.15: метка приземления уже во время замаха (WINDUP)
+var pre_shadow_shown := 0
 var _marker: Node3D = null
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _rng := RandomNumberGenerator.new()
@@ -311,9 +313,19 @@ func receive_weapon_hit(amount: int, weapon_id: String = "") -> Dictionary:
 		res.bounce = true
 		_bounce_feedback(weapon_id)
 		return res
+	var seals0 := window_seals
 	res.dealt = _apply_core_damage(int(round(float(amount) * mult)), weapon_id)
 	res.target = "core"
+	res["sealed"] = window_seals > seals0   # v0.15: HUD показывает «ядро захлопнулось»
+	res["killed"] = hp <= 0
 	return res
+
+
+func core_window_left() -> float:
+	## v0.15: доля урона, которая ещё влезет в текущее открытие ядра; −1 — ядро закрыто.
+	if state in [S.CORE, S.CORE_LONG, S.STAGGER]:
+		return clampf(float(CORE_WINDOW_CAP - _window_dealt) / float(CORE_WINDOW_CAP), 0.0, 1.0)
+	return -1.0
 
 
 func _apply_core_damage(dmg: int, weapon_id: String) -> int:
@@ -575,6 +587,9 @@ func _flash() -> void:
 func _enter(s: int) -> void:
 	if s in [S.CORE, S.CORE_LONG, S.STAGGER] and s != state:
 		_window_dealt = 0
+	if s != S.WINDUP and _pre_shadow != null:
+		_free_node(_pre_shadow)
+		_pre_shadow = null
 	state = s
 	_t = 0.0
 	state_log.append([STATE_NAMES[s], phase, hp])
@@ -649,6 +664,7 @@ func _physics_process(delta: float) -> void:
 		S.WINDUP:
 			_ground_move(delta)
 			_face(flat, delta)
+			_update_pre_shadow(player)
 			if _t >= float(WINDUP[phase - 1]):
 				_jump(player)
 		S.AIR:
@@ -836,7 +852,24 @@ func _jump(player: CharacterBody3D) -> void:
 	_make_shadow()
 
 
+func _update_pre_shadow(player: CharacterBody3D) -> void:
+	## v0.15: оранжевая метка там, куда Мать прыгнет, — видна весь замах (0.45–0.6 с) до тени полёта.
+	if player == null:
+		return
+	if _pre_shadow == null or not is_instance_valid(_pre_shadow):
+		_pre_shadow = _disc(SLAM_RADIUS, Color(1.0, 0.55, 0.1, 0.24))
+		pre_shadow_shown += 1
+	var at := predicted_landing(player)
+	_pre_shadow.global_position = Vector3(at.x, _ground_y_at(at) + 0.03, at.z)
+	var k := clampf(_t / maxf(0.05, float(WINDUP[phase - 1])), 0.2, 1.0)
+	var inner := _pre_shadow.get_node_or_null("Inner") as Node3D
+	if inner:
+		inner.scale = Vector3(k, 1, k)
+
+
 func _make_shadow() -> void:
+	_free_node(_pre_shadow)
+	_pre_shadow = null
 	_free_node(_shadow)
 	_shadow = _disc(SLAM_RADIUS, Color(0.95, 0.12, 0.1, 0.38))
 	_update_shadow()
@@ -1282,6 +1315,7 @@ func _hurt(player: CharacterBody3D, amount: int, source: String, knock: float) -
 	var amt: int = mini(_Nav.combat_damage(self, amount), _mercy_room())
 	if amt <= 0:
 		return 0
+	GameState.hit_from(global_position + Vector3(0, 1.2, 0))
 	var dealt: int = GameState.damage_player(amt, "Мать блоков: " + source)
 	if dealt > 0:
 		var now := Time.get_ticks_msec() if not has_meta("sim_clock") else int(get_meta("sim_clock"))
@@ -1345,6 +1379,8 @@ func leave(msg: String = "") -> void:
 
 
 func _cleanup_fx() -> void:
+	_free_node(_pre_shadow)
+	_pre_shadow = null
 	_free_node(_shadow)
 	_free_node(_marker)
 	_shadow = null

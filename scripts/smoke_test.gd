@@ -3137,3 +3137,95 @@ func _v014_checks() -> void:
 	bat.queue_free()
 	await process_frame
 	print("SMOKE: v0.14 nonsolid set / emit_box == v0.13 / crossfire == brute force / HUD idle no redraw OK")
+	await _v015_checks()
+
+
+func _v015_checks() -> void:
+	## v0.15: хит-маркер, дуга урона, полоса окна ядра, метка замаха Матери, кольца факела.
+	var G: Node = root.get_node("GameState")
+	var BC: GDScript = load("res://scripts/build_controller.gd")
+	var CF: GDScript = load("res://scripts/combat_feedback.gd")
+	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
+	# 1) типы хит-маркера
+	_a(BC.hit_marker_kind({"dealt": 8, "target": "enemy"}) == "hit", 15001)
+	_a(BC.hit_marker_kind({"dealt": 30, "target": "core"}) == "core", 15002)
+	_a(BC.hit_marker_kind({"dealt": 0, "target": "armor", "bounce": true}) == "bounce", 15003)
+	_a(BC.hit_marker_kind({"dealt": 10, "target": "core", "sealed": true}) == "sealed", 15004)
+	_a(BC.hit_marker_kind({"dealt": 10, "target": "core", "killed": true}) == "kill", 15005)
+	_a(BC.hit_marker_kind({"dealt": 0, "target": "scales", "bounce": true}) == "immune", 15006)
+	_a(BC.hit_marker_kind({"dealt": 0, "target": "none"}) == "miss", 15007)
+	_a(BC.TORCH_RING_R == AS.TORCH_RADIUS, 15008)
+	# 2) Мать: sealed в результате удара, полоса окна ядра, метка замаха
+	G.reset_state(); G.dev_mode = false
+	var host := Node3D.new(); root.add_child(host)
+	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
+	pl.global_position = Vector3(0, 0, 4)
+	var mom: Node = load("res://scripts/block_mother.gd").new()
+	host.add_child(mom)
+	await process_frame
+	_a(mom.core_window_left() < 0.0, 15010)
+	mom._enter(mom.S.IDLE)
+	mom._open_plate()
+	mom._break_plate(mom.open_plate)
+	_a(is_equal_approx(mom.core_window_left(), 1.0), 15011)
+	var r1: Dictionary = mom.receive_weapon_hit(24, "sword3")
+	_a(int(r1.dealt) > 0 and not bool(r1.sealed) and mom.core_window_left() < 1.0 and mom.core_window_left() > 0.0, 15012)
+	var sealed_seen := false
+	for i in range(10):
+		var r: Dictionary = mom.receive_weapon_hit(24, "sword3")
+		if bool(r.get("sealed", false)):
+			sealed_seen = true
+			break
+	_a(sealed_seen and mom.core_window_left() < 0.0, 15013)
+	mom._enter(mom.S.WINDUP)
+	mom._update_pre_shadow(pl)
+	_a(mom._pre_shadow != null and is_instance_valid(mom._pre_shadow) and mom.pre_shadow_shown == 1, 15014)
+	var pre = mom._pre_shadow
+	mom._make_shadow()
+	_a(mom._pre_shadow == null and mom._shadow != null, 15015)
+	mom._enter(mom.S.IDLE)
+	await process_frame
+	_a(not is_instance_valid(pre), 15016)
+	mom.free()
+	host.queue_free()
+	# 3) направление урона: hit_from → player_hurt_from, одноразово
+	G.reset_state(); G.dev_mode = false; G.god_mode = false
+	G.player_hp = 100
+	G._iframes = 0.0
+	var got := []
+	var cb := func(o: Vector3, d: int) -> void: got.append([o, d])
+	G.player_hurt_from.connect(cb)
+	G.hit_from(Vector3(3, 1, -2))
+	var d1: int = G.damage_player(12, "тест")
+	G._iframes = 0.0
+	var d2: int = G.damage_player(5, "тест без источника")
+	G.player_hurt_from.disconnect(cb)
+	_a(d1 > 0 and got.size() == 1 and got[0][0] == Vector3(3, 1, -2) and int(got[0][1]) == d1 and d2 > 0, 15020)
+	# 4) угол дуги на экране: камера смотрит в −Z
+	var bs := Basis.IDENTITY
+	_a(absf(CF.screen_angle(bs, Vector3.ZERO, Vector3(0, 0, -5))) < 0.01, 15021)
+	_a(absf(CF.screen_angle(bs, Vector3.ZERO, Vector3(5, 0, 0)) - PI * 0.5) < 0.01, 15022)
+	_a(absf(absf(CF.screen_angle(bs, Vector3.ZERO, Vector3(0, 0, 5))) - PI) < 0.01, 15023)
+	_a(absf(CF.screen_angle(bs, Vector3.ZERO, Vector3(-5, 0, 0)) + PI * 0.5) < 0.01, 15024)
+	# 5) слой обратной связи: маркер живёт ~0.3 с, дуга ~1.1 с, в покое не перерисовывается
+	var cf: Control = CF.new()
+	cf.size = Vector2(1280, 720)
+	var cam := Camera3D.new(); root.add_child(cam)
+	cf.camera_provider = func() -> Camera3D: return cam
+	root.add_child(cf)
+	await process_frame
+	G.hit_marker.emit("core")
+	_a(cf.current_marker() == "core" and cf.marks_shown == 1, 15030)
+	G.player_hurt_from.emit(Vector3(5, 0, 0), 20)
+	_a(cf.arcs_shown == 1 and absf(cf.last_arc_angle() - PI * 0.5) < 0.01, 15031)
+	await create_timer(1.4).timeout
+	_a(cf.current_marker() == "" and cf.last_arc_angle() == INF, 15032)
+	var dc: int = cf.draw_count
+	for i in range(30):
+		await process_frame
+	_a(cf.draw_count == dc, 15033)
+	G.hit_marker.emit("no_such_kind")
+	_a(cf.marks_shown == 1, 15034)
+	cf.queue_free(); cam.queue_free()
+	await process_frame
+	print("SMOKE: v0.15 hit markers / sealed+core window bar / windup pre-shadow / hurt direction / feedback idle OK")

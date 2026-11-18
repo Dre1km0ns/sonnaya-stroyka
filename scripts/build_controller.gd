@@ -67,6 +67,7 @@ func _process(delta: float) -> void:
 		_try_place_beacon()
 	if not GameState.is_dream():
 		ghost.visible = false
+		update_torch_rings()
 		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
 			return
 		if (GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2") or GameState.get_selected_item().get("id","")=="") and (Input.is_action_pressed("place_block") or Input.is_action_pressed("remove_block")):
@@ -336,6 +337,99 @@ func _try_pick_up_torch() -> bool:
 	return true
 
 
+# ---------------------------------------------------------------- v0.15: радиус факела
+const TORCH_RING_R := 3.5          # = boss_anaconda.TORCH_RADIUS (проверяется в смоуке)
+const TORCH_RING_MAX := 10
+const TORCH_RING_NEAR := 16.0
+var _rings_root: Node3D
+var _rings: Array[MeshInstance3D] = []
+var ring_state := {"ghost": false, "ghost_cell": Vector3i.ZERO, "overlap": 0, "existing": 0}
+
+
+func _ring_mesh(col: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = TORCH_RING_R - 0.07
+	tm.outer_radius = TORCH_RING_R + 0.07
+	tm.rings = 48
+	tm.ring_segments = 6
+	mi.mesh = tm
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.no_depth_test = false
+	mat.albedo_color = col
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+
+func _ring(i: int) -> MeshInstance3D:
+	if _rings_root == null or not is_instance_valid(_rings_root):
+		_rings_root = Node3D.new()
+		_rings_root.name = "TorchRings"
+		var host: Node = get_tree().current_scene if get_tree() and get_tree().current_scene else get_parent()
+		host.add_child(_rings_root)
+		_rings.clear()
+	while _rings.size() <= i:
+		var r := _ring_mesh(Color(1.0, 0.62, 0.2, 0.45))
+		_rings_root.add_child(r)
+		_rings.append(r)
+	return _rings[i]
+
+
+func _hide_rings() -> void:
+	for r in _rings:
+		if is_instance_valid(r):
+			r.visible = false
+	ring_state.ghost = false
+
+
+func update_torch_rings() -> void:
+	## Пока в руке факел: кольцо света на месте установки (зелёное, если даст перекрёстный огонь
+	## с уже стоящим факелом) и тусклые кольца у ближайших поставленных факелов.
+	if not GameState.selected_is("torch") or GameState.is_dream():
+		_hide_rings()
+		return
+	var origin: Vector3 = player.global_position if player else Vector3.ZERO
+	var near: Array = []
+	for c in GameState.torch_cells():
+		var wp := Vector3(c) + Vector3(0.5, 0.0, 0.5)
+		if wp.distance_to(origin) <= TORCH_RING_NEAR:
+			near.append(wp)
+	near.sort_custom(func(a, b): return a.distance_squared_to(origin) < b.distance_squared_to(origin))
+	near = near.slice(0, TORCH_RING_MAX)
+	var idx := 1
+	for wp in near:
+		var r := _ring(idx)
+		r.global_position = wp + Vector3(0, 0.06, 0)
+		(r.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.62, 0.2, 0.4)
+		r.visible = true
+		idx += 1
+	for j in range(idx, _rings.size()):
+		_rings[j].visible = false
+	ring_state.existing = near.size()
+	var g := _ring(0)
+	var aim := _aim()
+	var vox := _wake_voxels()
+	g.visible = false
+	ring_state.ghost = false
+	if aim.get("hit", false) and vox:
+		var cell: Vector3i = vox.world_to_cell(Vector3(aim["position"]) + Vector3(aim["normal"]) * 0.51)
+		if _wake_cell_free(cell) and placement_supported(cell, false):
+			var gp := Vector3(cell) + Vector3(0.5, 0.06, 0.5)
+			var overlap := 0
+			for wp in near:
+				if Vector2(wp.x - gp.x, wp.z - gp.z).length() <= TORCH_RING_R * 2.0:
+					overlap += 1
+			g.global_position = gp
+			(g.material_override as StandardMaterial3D).albedo_color = Color(0.35, 1.0, 0.45, 0.8) if overlap > 0 else Color(1.0, 0.9, 0.35, 0.75)
+			g.visible = true
+			ring_state.ghost = true
+			ring_state.ghost_cell = cell
+			ring_state.overlap = overlap
+
+
 func _try_place_torch() -> void:
 	var vox := _wake_voxels()
 	if vox == null:
@@ -556,6 +650,7 @@ func _combat_feedback(res: Dictionary, target: Node) -> void:
 	## Подтверждение попадания или отскока. Камеру не трясём.
 	var bounce := bool(res.get("bounce", false))
 	var dealt := int(res.get("dealt", 0))
+	GameState.hit_marker.emit(hit_marker_kind(res))
 	if dealt <= 0 and not bounce:
 		return
 	if viewmodel and viewmodel.has_method("play_recoil"):
@@ -566,6 +661,23 @@ func _combat_feedback(res: Dictionary, target: Node) -> void:
 		Sfx.play("break_wood", get_tree().root if is_inside_tree() else null)
 	if target and target.has_method("on_hit_feedback"):
 		target.on_hit_feedback(res)
+
+
+static func hit_marker_kind(res: Dictionary) -> String:
+	## v0.15: тип хит-маркера у прицела по результату удара.
+	if bool(res.get("killed", false)):
+		return "kill"
+	if bool(res.get("sealed", false)):
+		return "sealed"
+	if str(res.get("target", "")) == "scales":
+		return "immune"
+	if bool(res.get("bounce", false)):
+		return "bounce"
+	if int(res.get("dealt", 0)) <= 0:
+		return "miss"
+	if str(res.get("target", "")) == "core":
+		return "core"
+	return "hit"
 
 
 const Mining := preload("res://scripts/mining_rules.gd")

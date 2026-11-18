@@ -152,6 +152,7 @@ func tick(delta: float) -> void:
 		var tp := player.global_position - pos
 		if Vector2(tp.x, tp.z).length() < 0.9 and _cd <= 0.0:
 			_cd = BITE_CD
+			GameState.hit_from(global_position)
 			GameState.damage_player(BITE, "Землеройка")
 	# Перекрёстный свет (2+ поставленных факела) убивает за 1 с; один факел — нет.
 	_lit = _lit + delta if lit_sources(pos) >= 2 else 0.0

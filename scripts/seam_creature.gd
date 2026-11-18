@@ -195,6 +195,7 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	if GameState.awake_time > 60.0:
 		amount = maxi(amount, 2)
 	# v0.7: мобы бьют игрока (i-frames и анти-комбо-кап — в GameState.damage_player).
+	GameState.hit_from(global_position)
 	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE_ELITE if elite else HIT_DAMAGE), "Шовник")
 	var stolen := GameState.steal_resource_hardcore(amount)
 	if stolen.begins_with("dust"):
