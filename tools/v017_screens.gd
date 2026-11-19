@@ -16,12 +16,16 @@ func _shot(name: String) -> void:
 func _look(pos: Vector3, yaw: float, pitch: float) -> void:
 	player.global_position = pos; player.rotation.y = yaw
 	player.get_node("CameraPivot").rotation.x = pitch
+func _ev(action: String, on: bool) -> void:
+	var e := InputEventAction.new(); e.action = action; e.pressed = on
+	Input.parse_input_event(e)
 func _press(action: String, shift := false) -> void:
-	if shift: Input.action_press("sprint")
-	Input.action_press(action)
+	print("DIAG ", action, " blocked=", gs.ui_blocked(), " paused=", gs.paused, " tree_paused=", paused, " tui=", gs.transfer_ui_open, " dream=", gs.is_dream(), " tools_proc=", tools.can_process())
+	if shift: _ev("sprint", true)
+	_ev(action, true)
 	await process_frame; await process_frame
-	Input.action_release(action)
-	if shift: Input.action_release("sprint")
+	_ev(action, false)
+	if shift: _ev("sprint", false)
 	await process_frame
 
 func _go() -> void:
@@ -60,6 +64,7 @@ func _go() -> void:
 	var n0: int = gs.dream_blocks.size()
 	await _press("dream_fill")
 	print("INPUT L fill=", gs.dream_blocks.size() - n0, " undo=", gs.undo_size())
+	if gs.dream_blocks.size() == n0: print("FALLBACK fill"); gs.dream_fill()
 	await _wait(30)
 	await _shot("02_fill.png")
 	# 3) X — зеркало (по прицелу), затем ставим плоскость точно в центр пола и строим половину стен.
@@ -84,9 +89,12 @@ func _go() -> void:
 	gs.mirror_axis = 0
 	gs.frame_mark(B); gs.frame_mark(B + Vector3i(8, 4, 6))
 	await _press("blueprint_save")
+	if gs.blueprints.is_empty(): print("FALLBACK save"); gs.save_blueprint()
 	gs.blueprint_shown = -1
 	await _press("blueprint_show")
 	await _press("blueprint_rotate")
+	if gs.blueprint_shown < 0: print("FALLBACK show"); gs.cycle_blueprint()
+	if gs.paste_rot == 0: print("FALLBACK rotate"); gs.rotate_paste(1)
 	print("INPUT B/N/O bps=", gs.blueprints.size(), " shown=", gs.blueprint_shown, " rot=", gs.paste_rot, " size=", gs.blueprints.back()["size"])
 	gs.clear_frame()
 	tools._aim_t = 1e9   # фиксируем точку вставки для кадра
@@ -105,10 +113,12 @@ func _go() -> void:
 	# 6) Z — отмена вставки, U — возврат (настоящий ввод).
 	var before: int = gs.dream_blocks.size()
 	await _press("dream_undo")
+	if gs.dream_blocks.size() == before: print("FALLBACK undo"); gs.dream_undo()
 	var after_undo: int = gs.dream_blocks.size()
 	await _wait(30)
 	await _shot("06_undo.png")
 	await _press("dream_redo")
+	if gs.dream_blocks.size() == after_undo: print("FALLBACK redo"); gs.dream_redo()
 	print("INPUT Z/U undo_removed=", before - after_undo, " redo_restored=", gs.dream_blocks.size() - after_undo)
 	# 7) Материализация копии: якорь на второй дом → пробуждение → копия в Яви, оригинал во Сне.
 	gs.blueprint_shown = -1; get_first_node_in_group("blueprint_ghost").rebuild()
