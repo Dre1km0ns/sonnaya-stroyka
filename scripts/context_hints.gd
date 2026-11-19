@@ -50,7 +50,7 @@ func _process(delta: float) -> void:
 				text = "Добыча\nУдерживай ЛКМ: кирка или пустая рука. Камень рукой — без дропа."
 		# v0.11: обучение ведёт панель целей (objective_panel.gd); здесь — только контекст под прицелом.
 		if text == "" and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2:
-			text = "Сон помнит всё построенное.\nT — материал палитры, Q — материализовать копию в Явь, F — проснуться."
+			text = "Сон помнит всё построенное.\nT — материал, Z/U — отмена/возврат, K+L — рамка и заливка, X — зеркало.\nQ — материализовать копию в Явь, F — проснуться."
 	if text == _last:
 		return
 	_last = text

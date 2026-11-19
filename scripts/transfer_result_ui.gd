@@ -35,7 +35,7 @@ func show_result(result:Dictionary,switcher:Node)->void:
 		if not result.get("aborted",false): details.text+="Оригиналы остались во Сне (%d объектов) — Сон помнит.\n"%int(result.get("kept_in_dream",0))
 		if result.get("aborted",false): details.text+="%d объектов осталось во Сне. Якоря отменены, резерв возвращён.\n"%result.get("draft_saved",0)
 		else:
-			details.text+="Бросок мутации 7%% на блок; общий предел — 3%% структуры.\nМаяки защитили: %d (+5 осыпи за каждый предотвращённый бросок)."%result.get("protected",0)
+			details.text+="Бросок мутации 7%% на каждый блок дрейфа (отпечатки стабильны); общий предел — 3%% структуры.\nМаяки защитили: %d (+5 осыпи за каждый предотвращённый бросок)."%result.get("protected",0)
 			if int(result.get("chest_moved",0))>0: details.text+="\nСундуки перенесли в Явь стаков: %d."%int(result.chest_moved)
 			if int(result.get("chest_returned",0))>0: details.text+="\nВ Яви место сундука было занято — %d стаков вернулись в инвентарь Сна."%int(result.chest_returned)
 			if int(result.transferred)==0: details.text+="\nНичего не материализовано — постройки ждут во Сне. Закрепи их якорем (Q), когда будут материалы."

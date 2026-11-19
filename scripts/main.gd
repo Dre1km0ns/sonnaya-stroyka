@@ -37,6 +37,9 @@ func _ready() -> void:
 	switcher.setup(player, wake_world, dream_world, bed, wake_voxels, dream_voxels)
 	threat.setup(player, wake_world, bed)
 	dream_world.add_child(load("res://scripts/blueprint_ghost.gd").new())
+	var dream_tools: Node3D = load("res://scripts/dream_tools.gd").new() # v0.17: инструменты сновидца
+	dream_world.add_child(dream_tools)
+	dream_tools.setup(player, dream_voxels)
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
 	var loaded := false
 	if not _want_shots() and saver.has_save():

@@ -159,8 +159,12 @@ func _place_at(cell: Vector3i) -> void:
 			break
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
-	if GameState.place_dream_block(cell, kind, facing):
-		var placed_cells: Array = [cell]
+	var placed_cells: Array = []
+	if from_palette:
+		placed_cells = GameState.dream_tool_place(cell, kind) # v0.17: зеркало + история отмены
+	elif GameState.place_dream_block(cell, kind, facing):
+		placed_cells = [cell]
+	if placed_cells.has(cell):
 		if kind == "drift" and GameState.heart_structure and Input.is_action_pressed("sprint"):
 			placed_cells.append_array(mass_place_row(cell, facing))
 		dream_voxels.sync_cells(placed_cells)
@@ -201,9 +205,11 @@ func _try_remove() -> void:
 	if not bool(collider.get_meta("is_dream")):
 		return
 	var cell: Vector3i = GameState.ray_cell(aim)
-	if GameState.remove_dream_block(cell):
-		dream_voxels.remove_block(cell)
-		GameState.set_hint("Снят блок [%d,%d,%d]" % [cell.x, cell.y, cell.z], false)
+	var removed: Array = GameState.dream_tool_remove(cell) # v0.17: палитра — с зеркалом и отменой
+	for c in removed:
+		dream_voxels.remove_block(c)
+	if not removed.is_empty():
+		GameState.set_hint("Снят блок [%d,%d,%d]%s · Z — отменить" % [cell.x, cell.y, cell.z, (" (+%d зеркально)" % (removed.size() - 1)) if removed.size() > 1 else ""], false)
 
 
 func _try_mine_wake() -> void:

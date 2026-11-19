@@ -1,0 +1,127 @@
+{
+ "method": "медиана 3 чередующихся прогонов tools/v016_bench.gd (каждый — медиана 5 повторов)",
+ "compare": {
+  "anchor_preview_wedge_us": {
+   "v0.16": 307.4,
+   "v0.17": 306.48
+  },
+  "dream_sync_5000_ms": {
+   "v0.16": 9.083,
+   "v0.17": 8.139
+  },
+  "enter_dream_ms": {
+   "v0.16": 0.236,
+   "v0.17": 0.225
+  },
+  "load_ms": {
+   "v0.16": 16.092,
+   "v0.17": 16.104
+  },
+  "place_5000_ms": {
+   "v0.16": 10.852,
+   "v0.17": 10.745
+  },
+  "save_ms": {
+   "v0.16": 20.643,
+   "v0.17": 20.404
+  },
+  "wake_anchor3_ms": {
+   "v0.16": 4.129,
+   "v0.17": 3.94
+  },
+  "save_bytes": {
+   "v0.16": 355000,
+   "v0.17": 355018
+  }
+ },
+ "raw": {
+  "016": [
+   {
+    "anchor_preview_wedge_us": 307.4,
+    "dream_left_after_wake": 5000,
+    "dream_sync_5000_ms": 9.304,
+    "enter_dream_ms": 0.211,
+    "load_ms": 16.092,
+    "place_5000_ms": 10.733,
+    "save_bytes": 355000,
+    "save_ms": 20.643,
+    "transferred": 162,
+    "version": "Сонная стройка v0.16",
+    "wake_anchor3_ms": 4.129,
+    "wake_ok": true
+   },
+   {
+    "anchor_preview_wedge_us": 304.78,
+    "dream_left_after_wake": 5000,
+    "dream_sync_5000_ms": 8.166,
+    "enter_dream_ms": 0.236,
+    "load_ms": 15.214,
+    "place_5000_ms": 10.852,
+    "save_bytes": 355000,
+    "save_ms": 19.987,
+    "transferred": 162,
+    "version": "Сонная стройка v0.16",
+    "wake_anchor3_ms": 3.96,
+    "wake_ok": true
+   },
+   {
+    "anchor_preview_wedge_us": 313.52,
+    "dream_left_after_wake": 5000,
+    "dream_sync_5000_ms": 9.083,
+    "enter_dream_ms": 0.238,
+    "load_ms": 17.694,
+    "place_5000_ms": 11.176,
+    "save_bytes": 355000,
+    "save_ms": 21.632,
+    "transferred": 162,
+    "version": "Сонная стройка v0.16",
+    "wake_anchor3_ms": 4.338,
+    "wake_ok": true
+   }
+  ],
+  "017": [
+   {
+    "anchor_preview_wedge_us": 306.04,
+    "dream_left_after_wake": 5000,
+    "dream_sync_5000_ms": 8.063,
+    "enter_dream_ms": 0.229,
+    "load_ms": 16.104,
+    "place_5000_ms": 10.745,
+    "save_bytes": 355018,
+    "save_ms": 20.301,
+    "transferred": 162,
+    "version": "Сонная стройка v0.17",
+    "wake_anchor3_ms": 3.94,
+    "wake_ok": true
+   },
+   {
+    "anchor_preview_wedge_us": 307.2,
+    "dream_left_after_wake": 5000,
+    "dream_sync_5000_ms": 9.46,
+    "enter_dream_ms": 0.225,
+    "load_ms": 16.897,
+    "place_5000_ms": 10.756,
+    "save_bytes": 355018,
+    "save_ms": 21.319,
+    "transferred": 162,
+    "version": "Сонная стройка v0.17",
+    "wake_anchor3_ms": 4.188,
+    "wake_ok": true
+   },
+   {
+    "anchor_preview_wedge_us": 306.48,
+    "dream_left_after_wake": 5000,
+    "dream_sync_5000_ms": 8.139,
+    "enter_dream_ms": 0.205,
+    "load_ms": 15.333,
+    "place_5000_ms": 10.383,
+    "save_bytes": 355018,
+    "save_ms": 20.404,
+    "transferred": 162,
+    "version": "Сонная стройка v0.17",
+    "wake_anchor3_ms": 3.812,
+    "wake_ok": true
+   }
+  ]
+ }
+}

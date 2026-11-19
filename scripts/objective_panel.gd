@@ -98,7 +98,7 @@ func refresh() -> void:
 		_threat_bar.value = GameState.deep_threat
 	if GameState.is_dream() and GameState.archive_unlocked():
 		_next.visible = true
-		_next.text += ("\n" if _next.text != "" else "") + "Архив Снов: B — сохранить, N — контур (%d/3)" % GameState.blueprints.size()
+		_next.text += ("\n" if _next.text != "" else "") + "Архив Снов %d/%d: K — рамка, B — сохранить, N — выбрать, P — вставить, O — поворот · Z/U — отмена/возврат, L — заливка, X — зеркало" % [GameState.blueprints.size(), GameState.blueprint_cap()]
 	if str(cur.get("id", "")) != _last_id:
 		_last_id = str(cur.get("id", ""))
 	reset_size()

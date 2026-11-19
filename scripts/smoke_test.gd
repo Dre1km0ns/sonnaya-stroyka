@@ -884,7 +884,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	g2.apply_save_dict(JSON.parse_string(JSON.stringify(blob)))
 	_a(g2.is_terrain_removed((tree["logs"] as Array)[0]), 856)
 	_a(g2.is_terrain_removed(leaves[0]), 857)
-	_a(int(blob["version"]) == 11, 858)
+	_a(int(blob["version"]) >= 11, 858)
 	cm.queue_free()
 	anchor.queue_free()
 	# --- Бревно → доски (верстак) ---
@@ -1504,7 +1504,7 @@ func _v08_checks() -> void:
 	var Rules: GDScript = load("res://scripts/mining_rules.gd")
 	G.reset_state()
 	G.dev_mode = false
-	_a(G.SAVE_FORMAT == 11, 8001)
+	_a(G.SAVE_FORMAT >= 11, 8001)
 	for pair in [["ground",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
 		_a(is_equal_approx(Rules.hardness(pair[0]),pair[1]),8002)
 	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),3.0),8003)
@@ -3259,7 +3259,7 @@ func _v016_checks() -> void:
 	_a(r0.ok and int(r0.transferred) == 0 and gs.dream_blocks.size() == 20 and int(r0.kept_in_dream) == 20, 16002)
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
 	gs.reset_state(); gs.apply_save_dict(sv)
-	_a(gs.dream_blocks.size() == 20 and is_equal_approx(gs.clarity, 40.0) and int(sv.version) == 11, 16003)
+	_a(gs.dream_blocks.size() == 20 and is_equal_approx(gs.clarity, 40.0) and int(sv.version) == gs.SAVE_FORMAT, 16003)
 	# 3) Осознанность копится в Яви: бодрствование, пережитая ночь (только если ночь прожита в Яви), убийство.
 	gs.dev_mode = false; gs.clarity = 10.0
 	gs._lucid_tick(8.0)
@@ -3403,3 +3403,155 @@ func _v016_checks() -> void:
 	_a(wr.ok and not G.is_dream() and G.dream_blocks.has(cell), 16103)
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.16 persistent dream / lucidity from wake / imprints palette / copy materialization + cost / repair / skip conflicts / unique move / migration OK")
+	await _v017_checks()
+
+
+func _v017_checks() -> void:
+	## v0.17 «Инструменты сновидца»: отмена/возврат, зеркало, рамка-заливка/очистка, чертежи с поворотом, миграция.
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	gs.reset_state(); gs.dev_mode = false; gs.clarity = 50.0
+	gs.add_item_count("stone", 1); gs.add_item_count("planks", 1)   # отпечатки
+	gs.enter_dream()
+	var snap0: String = JSON.stringify(gs.to_save_dict().get("dream_blocks", {}))
+	# 1) Отмена/возврат — байт-в-байт.
+	var o := Vector3i(100, 5, 100)
+	for i in range(3): gs.dream_tool_place(o + Vector3i(i, 0, 0), "stone")
+	var snap1: String = JSON.stringify(gs.to_save_dict().get("dream_blocks", {}))
+	_a(gs.undo_size() == 3 and gs.dream_blocks.size() == 3, 17001)
+	for i in range(3): gs.dream_undo()
+	_a(JSON.stringify(gs.to_save_dict().get("dream_blocks", {})) == snap0 and gs.redo_size() == 3, 17002)
+	for i in range(3): gs.dream_redo()
+	_a(JSON.stringify(gs.to_save_dict().get("dream_blocks", {})) == snap1 and gs.undo_size() == 3 and gs.redo_size() == 0, 17003)
+	gs.dream_undo(); gs.dream_tool_place(o + Vector3i(0, 1, 0), "planks")
+	_a(gs.redo_size() == 0, 17004)   # новая правка стирает «возврат»
+	gs.dream_blocks[o + Vector3i(0, 1, 0)]["anchored"] = true
+	_a(gs.dream_undo() == 0 and gs.dream_blocks.has(o + Vector3i(0, 1, 0)), 17005)   # закреплённое не отменяется
+	gs.dream_blocks[o + Vector3i(0, 1, 0)]["anchored"] = false
+	for i in range(80): gs.dream_tool_place(Vector3i(200 + i, 5, 0), "drift")
+	_a(gs.undo_size() == gs.UNDO_MAX, 17006)
+	# 2) Зеркало.
+	gs.cycle_mirror(Vector3i(10, 5, 0))
+	_a(gs.mirror_axis == 1 and gs.mirror_cell(gs.mirror_cell(Vector3i(13, 2, 7))) == Vector3i(13, 2, 7) and gs.mirror_cell(Vector3i(13, 2, 7)) == Vector3i(7, 2, 7), 17010)
+	var mp: Array = gs.dream_tool_place(Vector3i(12, 5, 0), "stone")
+	_a(mp.size() == 2 and gs.dream_blocks.has(Vector3i(8, 5, 0)), 17011)
+	var mr: Array = gs.dream_tool_remove(Vector3i(8, 5, 0))
+	_a(mr.size() == 2 and not gs.dream_blocks.has(Vector3i(12, 5, 0)), 17012)
+	gs.dream_tool_place(Vector3i(10, 6, 0), "stone")
+	_a(gs.dream_blocks.has(Vector3i(10, 6, 0)) and gs.undo_size() == gs.UNDO_MAX, 17013)   # клетка на плоскости — один блок
+	gs.cycle_mirror(Vector3i(10, 5, 0)); _a(gs.mirror_axis == 2, 17014)
+	gs.cycle_mirror(Vector3i(10, 5, 0)); _a(gs.mirror_axis == 0, 17015)
+	# 3) Рамка: заливка ≤64 бесплатно, дальше — осознанность; нехватка — ничего не меняется.
+	gs.clear_dream_history()
+	gs.clarity = 50.0
+	gs.frame_mark(Vector3i(300, 5, 300)); gs.frame_mark(Vector3i(303, 8, 303))
+	_a(gs.frame_volume() == 64 and gs.frame_dims_text() == "4×4×4", 17020)
+	var n0: int = gs.dream_blocks.size()
+	_a(gs.dream_fill("stone") == 64 and is_equal_approx(gs.clarity, 50.0) and gs.dream_blocks.size() == n0 + 64, 17021)
+	_a(gs.dream_fill("stone") == 0, 17022)   # пустых клеток нет
+	gs.frame_mark(Vector3i(400, 5, 400)); gs.frame_mark(Vector3i(407, 12, 407))
+	gs.clarity = 3.0
+	_a(gs.dream_fill("stone") == 0 and gs.dream_blocks.size() == n0 + 64 and is_equal_approx(gs.clarity, 3.0), 17023)
+	gs.clarity = 20.0
+	_a(gs.dream_fill("stone") == 512 and is_equal_approx(gs.clarity, 20.0 - 7.0) and is_equal_approx(gs.tool_cost(512), 7.0), 17024)
+	_a(gs.dream_fill("log") == 0, 17025)   # нет отпечатка
+	var before_undo: int = gs.dream_blocks.size()
+	gs.dream_undo()
+	_a(gs.dream_blocks.size() == before_undo - 512, 17026)
+	gs.dream_redo()
+	# очистка: станции и закреплённое не трогает
+	gs.place_dream_block(Vector3i(500, 5, 500), "workbench")
+	gs.place_dream_block(Vector3i(501, 5, 500), "stone"); gs.place_dream_block(Vector3i(502, 5, 500), "stone")
+	gs.dream_blocks[Vector3i(502, 5, 500)]["anchored"] = true
+	gs.place_dream_block(Vector3i(503, 5, 500), "planks")
+	gs.frame_mark(Vector3i(500, 5, 500)); gs.frame_mark(Vector3i(503, 5, 500))
+	_a(gs.dream_clear() == 2 and gs.dream_blocks.has(Vector3i(500, 5, 500)) and gs.dream_blocks.has(Vector3i(502, 5, 500)) and int(gs.last_tool.skipped) == 2, 17027)
+	gs.dream_blocks[Vector3i(502, 5, 500)]["anchored"] = false
+	gs.dream_undo()
+	_a(str(gs.dream_blocks.get(Vector3i(503, 5, 500), {}).get("kind", "")) == "planks", 17028)
+	gs.frame_mark(Vector3i(0, 0, 0)); gs.frame_mark(Vector3i(40, 40, 40))
+	_a(gs.dream_fill("stone") == 0 and gs.frame_volume() > gs.TOOL_MAX_CELLS, 17029)
+	# 4) Чертежи: рамка → относительный чертёж; лимит 3 (8 после Матери); поворот 4×90° = тождество.
+	gs.frame_mark(Vector3i(600, 5, 600)); gs.frame_mark(Vector3i(602, 6, 601))
+	gs.place_dream_block(Vector3i(600, 5, 600), "stone"); gs.place_dream_block(Vector3i(601, 5, 600), "stone")
+	gs.place_dream_block(Vector3i(602, 5, 600), "planks"); gs.place_dream_block(Vector3i(600, 6, 601), "drift")
+	gs.place_dream_block(Vector3i(599, 5, 600), "stone")   # вне рамки
+	_a(gs.archive_unlocked() and gs.save_blueprint(), 17030)
+	var bp: Dictionary = gs.blueprints.back()
+	_a(bp.rel and bp.blocks.size() == 4 and bp["size"] == [3, 2, 2] and str(bp.blocks.get("0,0,0", "")) == "stone" and str(bp.blocks.get("2,0,0", "")) == "planks", 17031)
+	var idx: int = gs.blueprints.size() - 1
+	var c0: Dictionary = gs.blueprint_cells(idx, Vector3i.ZERO, 0)
+	var ok_rot := true
+	for c in c0:
+		var r: Vector3i = c
+		for k in range(4): r = gs.rotate_rel(r, bp["size"], 1)
+		ok_rot = ok_rot and r == c
+	_a(ok_rot and gs.blueprint_cells(idx, Vector3i.ZERO, 4) == c0, 17032)
+	var c1: Dictionary = gs.blueprint_cells(idx, Vector3i.ZERO, 1)
+	_a(c1.size() == 4 and str(c1.get(Vector3i(1, 0, 0), "")) == "stone" and str(c1.get(Vector3i(1, 0, 2), "")) == "planks" and str(c1.get(Vector3i(0, 1, 0), "")) == "drift", 17033)
+	for i in range(4): gs.save_blueprint()
+	_a(gs.blueprints.size() == gs.BLUEPRINT_BASE, 17034)
+	gs.mother_defeated = true
+	for i in range(8): gs.save_blueprint()
+	_a(gs.blueprints.size() == gs.BLUEPRINT_AFTER_MOTHER, 17035)
+	# вставка: занятые клетки и материалы без отпечатка пропускаются; одна операция отмены
+	gs.blueprints.append({"name": "Тест", "rel": true, "size": [2, 1, 1], "blocks": {"0,0,0": "stone", "1,0,0": "lumen"}})
+	gs.blueprint_shown = gs.blueprints.size() - 1
+	gs.paste_rot = 0
+	var pu: int = gs.undo_size()
+	_a(gs.paste_blueprint(Vector3i(700, 5, 700)) == 1 and int(gs.last_tool.no_imprint) == 1 and gs.dream_blocks.has(Vector3i(700, 5, 700)) and gs.undo_size() == pu + 1, 17036)
+	gs.blueprint_shown = idx if idx < gs.blueprints.size() else 0
+	gs.blueprints[gs.blueprint_shown] = bp
+	gs.paste_rot = 1
+	_a(gs.paste_blueprint(Vector3i(710, 5, 710)) == 4 and str(gs.dream_blocks.get(Vector3i(711, 5, 712), {}).get("kind", "")) == "planks", 17037)
+	gs.dream_undo()
+	_a(not gs.dream_blocks.has(Vector3i(711, 5, 712)) and not gs.dream_blocks.has(Vector3i(711, 5, 710)), 17038)
+	gs.set_paste_origin(Vector3i(720, 5, 720))
+	_a(gs.blueprint_ghost_cells().size() == 4, 17039)
+	# 5) Сейв/миграция: абсолютные чертежи v0.11–v0.16 → относительные; история после пробуждения пуста.
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	_a(int(sv.version) == 12, 17040)
+	sv.version = 11
+	sv.blueprints = [{"name": "Старый", "blocks": {"5,6,7": "drift", "6,6,7": "stone", "5,7,7": "drift"}}]
+	gs.reset_state(); gs.apply_save_dict(JSON.parse_string(JSON.stringify(sv)))
+	var mb: Dictionary = gs.blueprints[0]
+	_a(mb.get("rel", false) and mb["size"] == [2, 2, 1] and str(mb.blocks.get("1,0,0", "")) == "stone" and str(mb.blocks.get("0,1,0", "")) == "drift" and str(mb.name) == "Старый", 17041)
+	var sv2: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	gs.reset_state(); gs.apply_save_dict(sv2)
+	_a(gs.blueprint_cells(0, Vector3i(1, 1, 1), 2) == {Vector3i(1, 1, 1): "stone", Vector3i(2, 1, 1): "drift", Vector3i(2, 2, 1): "drift"}, 17042)
+	gs.enter_dream(); gs.dream_tool_place(Vector3i(800, 5, 800), "drift")
+	_a(gs.undo_size() == 1, 17043)
+	gs.resolve_wake()
+	_a(gs.undo_size() == 0 and gs.redo_size() == 0 and gs.dream_blocks.has(Vector3i(800, 5, 800)), 17044)
+	var f091: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/v091_save.json"))
+	gs.reset_state(); gs.apply_save_dict(f091)
+	var all_rel := true
+	for b in gs.blueprints: all_rel = all_rel and b.get("rel", false)
+	_a(all_rel, 17045)
+	gs.queue_free(); await process_frame
+	# 6) Сцена: узел инструментов есть; ЛКМ с зеркалом ставит пару; статус показывает зеркало и историю.
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v017 scene", "", "1707", 1707, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	await process_frame
+	scene.player.set_physics_process(false)
+	var tools: Node = scene.get_tree().get_first_node_in_group("dream_tools")
+	_a(tools != null, 17050)
+	scene.switcher.enter_dream()
+	for i in range(G.inv_dream.size()): G.inv_dream[i] = {}
+	G.select_item_slot(0); G.dream_material = "drift"
+	G.cycle_mirror(Vector3i(40, 10, 40))
+	scene.build._place_at(Vector3i(42, 10, 40))
+	_a(G.dream_blocks.has(Vector3i(42, 10, 40)) and G.dream_blocks.has(Vector3i(38, 10, 40)) and G.undo_size() == 1, 17051)
+	await process_frame
+	_a(tools.status_text().contains("Зеркало X") and tools.status_text().contains("Отмена 1"), 17052)
+	G.frame_mark(Vector3i(40, 12, 40)); G.frame_mark(Vector3i(41, 13, 41))
+	await process_frame
+	_a(tools._lines.visible and tools.status_text().contains("Рамка 2×2×2"), 17053)
+	G.dream_undo(); G.cycle_mirror(Vector3i.ZERO); G.cycle_mirror(Vector3i.ZERO)
+	_a(not G.dream_blocks.has(Vector3i(38, 10, 40)) and G.mirror_axis == 0, 17054)
+	scene.switcher.show_result_ui = false
+	scene.switcher.wake_up()
+	await process_frame
+	_a(not tools._label.visible, 17055)
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.17 undo/redo byte-exact / mirror / frame fill+clear+cost / relative blueprints + rotate + paste / migration / scene tools OK")

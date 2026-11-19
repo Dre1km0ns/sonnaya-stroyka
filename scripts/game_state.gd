@@ -95,7 +95,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 11 # v0.16: постоянный Сон, отпечатки, осознанность
+const SAVE_FORMAT := 12 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -373,6 +373,7 @@ func reset_state() -> void:
 	dream_material = "drift"
 	night_awake = 0.0
 	nights_survived = 0
+	_undo = []; _redo = []; frame_points = 0; mirror_axis = 0; paste_rot = 0; paste_origin_set = false; _bp_seq = 0
 	selected_anchor = AnchorType.NAIL
 	last_hint = ""
 	awake_time = 0.0
@@ -2290,6 +2291,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 		if transferred>0: _transfers_done+=1;milestones_mark("first_transfer")
 		if real_copy: milestones_mark("palette_copy")
 	current_world=World.WAKE;_bind_inventory();dream_exit_count+=1 # v0.16: осознанность не сбрасывается
+	clear_dream_history();paste_origin_set=false # v0.17: история правок Сна живёт в пределах одного сна
 	clarity_changed.emit(clarity,dream_clarity_max());notify_inventory();world_changed.emit(false)
 	wake_resolved.emit(transferred,dust_gained,mutation.cells.size());last_transfer_apply_usec=Time.get_ticks_usec()-started
 	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0,"kept_in_dream":root_count-moved_count,"copied":copied,"moved":moved_count,"materials":materials_spent,"unpaid":unpaid_count,"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
@@ -2395,6 +2397,7 @@ func to_save_dict() -> Dictionary:
 		"heart_structure": heart_structure,
 		"blockoliths_killed": blockoliths_killed,
 		"blueprints": blueprints.duplicate(true),
+		"blueprint_seq": _bp_seq,
 		"starter_kit_given": starter_kit_given,
 		"starter_camp_built": starter_camp_built,
 		"dream_stash": dream_stash.duplicate(true),
@@ -2490,6 +2493,9 @@ func apply_save_dict(data: Dictionary) -> void:
 	for bp in data.get("blueprints", []):
 		if typeof(bp) == TYPE_DICTIONARY and typeof(bp.get("blocks")) == TYPE_DICTIONARY: blueprints.append(bp.duplicate(true))
 	blueprint_shown = -1
+	migrate_blueprints_v017()
+	_bp_seq = maxi(int(data.get("blueprint_seq", 0)), blueprints.size())
+	clear_dream_history(); frame_points = 0; mirror_axis = 0; paste_rot = 0; paste_origin_set = false
 	starter_kit_given = bool(data.get("starter_kit_given", false))
 	starter_camp_built = bool(data.get("starter_camp_built", int(data.get("version", 4)) < 10))
 	dream_stash = []
@@ -3384,50 +3390,95 @@ const BLUEPRINT_MAX := 3
 
 
 func archive_unlocked() -> bool:
-	return mother_defeated or dev_mode
+	return true # v0.17: Архив Снов доступен с начала; Мать расширяет его до 8 чертежей
 
 
 func save_blueprint() -> bool:
+	## v0.17: если задана рамка (K) — сохраняется только она; иначе вся постройка Сна. Чертёж хранит
+	## относительные координаты: его можно вставить где угодно (P) и повернуть (O).
 	if not is_dream():
 		set_hint("Чертёж снимают во Сне.", false); return false
-	if not archive_unlocked():
-		set_hint("Архив Снов откроется после победы над Матерью блоков.", false); return false
-	var blocks := {}
-	for c in dream_blocks:
+	var src: Array = []
+	if frame_complete():
+		var box := frame_box()
+		for c in dream_blocks:
+			if _in_box(c, box[0], box[1]): src.append(c)
+	else:
+		src = dream_blocks.keys()
+	var cells := {}
+	for c in src:
 		var d: Dictionary = dream_blocks[c]
-		if d.has("root"): continue
-		blocks[cell_key(c)] = str(d.get("kind","drift"))
-	if blocks.is_empty():
-		set_hint("Во Сне пока нечего сохранять.", false); return false
-	if blueprints.size() >= BLUEPRINT_MAX:
+		if d.has("root") or not _palette_kind(str(d.get("kind", ""))): continue
+		cells[c] = str(d.get("kind", "drift"))
+	if cells.is_empty():
+		set_hint("В рамке нет блоков палитры — сохранять нечего.", false); return false
+	var bp := _blueprint_from_abs(cells)
+	if blueprints.size() >= blueprint_cap():
 		blueprints.pop_front()
-	blueprints.append({"name": "Чертёж %d" % (blueprints.size() + 1), "blocks": blocks})
+	bp.name = "Чертёж %d" % (_bp_seq + 1)
+	_bp_seq += 1
+	blueprints.append(bp)
 	blueprint_shown = blueprints.size() - 1
 	milestones_mark("archive")
-	set_hint("Архив Снов: сохранён «%s» (%d блоков). N — показать/скрыть." % [blueprints[-1].name, blocks.size()], false)
+	set_hint("Архив Снов: «%s» (%d блоков, %d×%d×%d). P — вставить, O — повернуть, N — следующий." % [bp.name, cells.size(), bp["size"][0], bp["size"][1], bp["size"][2]], false)
 	objective_changed.emit()
 	return true
 
 
+var _bp_seq := 0
+
+
+func _blueprint_from_abs(cells: Dictionary) -> Dictionary:
+	var lo := Vector3i(2147483647, 2147483647, 2147483647); var hi := -lo
+	for c in cells:
+		lo = Vector3i(mini(lo.x, c.x), mini(lo.y, c.y), mini(lo.z, c.z)); hi = Vector3i(maxi(hi.x, c.x), maxi(hi.y, c.y), maxi(hi.z, c.z))
+	var rel := {}
+	for c in cells: rel[cell_key(c - lo)] = cells[c]
+	return {"name": "", "blocks": rel, "rel": true, "size": [hi.x - lo.x + 1, hi.y - lo.y + 1, hi.z - lo.z + 1], "origin": cell_key(lo)}
+
+
+func blueprint_cap() -> int:
+	return BLUEPRINT_AFTER_MOTHER if (mother_defeated or dev_mode) else BLUEPRINT_BASE
+
+
 func cycle_blueprint() -> int:
 	if blueprints.is_empty():
-		set_hint("Архив Снов пуст. B во Сне — сохранить постройку.", false)
+		set_hint("Архив Снов пуст. K — рамка, B — сохранить чертёж.", false)
 		blueprint_shown = -1
 	else:
 		blueprint_shown += 1
 		if blueprint_shown >= blueprints.size(): blueprint_shown = -1
-		set_hint(("Архив Снов: показан «%s» — только контур, блоки ставь сам." % blueprints[blueprint_shown].name) if blueprint_shown >= 0 else "Архив Снов: контур скрыт.", false)
+		set_hint(("Архив Снов: «%s» — контур у прицела. P — вставить, O — повернуть." % blueprints[blueprint_shown].name) if blueprint_shown >= 0 else "Архив Снов: контур скрыт.", false)
 	objective_changed.emit()
 	return blueprint_shown
 
 
+static func rotate_rel(c: Vector3i, size: Array, rot: int) -> Vector3i:
+	## Поворот вокруг вертикали на rot×90° внутри габарита чертежа (результат снова от 0).
+	var mx: int = int(size[0]) - 1; var mz: int = int(size[2]) - 1
+	match posmod(rot, 4):
+		1: return Vector3i(mz - c.z, c.y, c.x)
+		2: return Vector3i(mx - c.x, c.y, mz - c.z)
+		3: return Vector3i(c.z, c.y, mx - c.x)
+	return c
+
+
+func blueprint_cells(idx: int, origin: Vector3i, rot: int = 0) -> Dictionary:
+	var out := {}
+	if idx < 0 or idx >= blueprints.size(): return out
+	var bp: Dictionary = blueprints[idx]
+	for k in bp.blocks:
+		out[origin + rotate_rel(key_cell(str(k)), bp["size"], rot)] = str(bp.blocks[k])
+	return out
+
+
 func blueprint_ghost_cells() -> Array:
-	## Клетки чертежа, которые ещё не построены во Сне (для призрачного контура).
+	## Клетки выбранного чертежа у прицела (с поворотом), которые ещё не заняты во Сне.
 	var out: Array = []
-	if blueprint_shown < 0 or blueprint_shown >= blueprints.size() or not is_dream():
+	if blueprint_shown < 0 or blueprint_shown >= blueprints.size() or not is_dream() or not paste_origin_set:
 		return out
-	for k in blueprints[blueprint_shown].blocks:
-		var c := key_cell(str(k))
+	var cells := blueprint_cells(blueprint_shown, paste_origin, paste_rot)
+	for c in cells:
 		if not dream_blocks.has(c): out.append(c)
 	return out
 
@@ -3484,5 +3535,312 @@ func migrate_v016() -> int:
 		if learn_imprint(str(k), true): n += 1
 	if n > 0: milestones_mark("imprint", true)
 	nails = maxi(nails, 1)
+	return n
+
+
+# --- v0.17: инструменты сновидца (DREAM_CORE_PLAN.md §4.4) ---
+# Только во Сне: отмена/возврат, рамка-заливка, зеркало, чертежи с вставкой и поворотом.
+const UNDO_MAX := 64
+const TOOL_FREE_CELLS := 64          # до стольких блоков за действие — бесплатно
+const TOOL_CELLS_PER_LUCID := 64     # дальше 1 осознанность за каждые 64 блока
+const TOOL_MAX_CELLS := 32768        # потолок одной операции (32³) — защита от зависания
+const BLUEPRINT_BASE := 3
+const BLUEPRINT_AFTER_MOTHER := 8
+var _undo: Array = []
+var _redo: Array = []
+var frame_a := Vector3i.ZERO
+var frame_b := Vector3i.ZERO
+var frame_points := 0                 # 0 — рамки нет, 1 — угол A, 2 — рамка готова
+var mirror_axis := 0                  # 0 — выкл, 1 — плоскость X, 2 — плоскость Z
+var mirror_at := Vector3i.ZERO
+var paste_rot := 0
+var paste_origin := Vector3i.ZERO
+var paste_origin_set := false
+var last_tool := {}                   # отчёт последней операции (для смоука/HUD)
+
+
+func _palette_kind(kind: String) -> bool:
+	return kind == "drift" or IMPRINT_KINDS.has(kind)
+
+
+func undo_size() -> int: return _undo.size()
+func redo_size() -> int: return _redo.size()
+
+
+func clear_dream_history() -> void:
+	_undo.clear(); _redo.clear()
+
+
+func _dream_snap(cells: Array) -> Dictionary:
+	var out := {}
+	for c in cells:
+		if dream_blocks.has(c):
+			var d: Dictionary = dream_blocks[c].duplicate(true); if d.has("anchored"): d["anchored"] = false
+			out[c] = d
+		else:
+			out[c] = null
+	return out
+
+
+func _push_edit(label: String, before: Dictionary, after: Dictionary) -> void:
+	if before.is_empty() or before == after: return
+	_undo.append({"label": label, "before": before, "after": after})
+	while _undo.size() > UNDO_MAX: _undo.pop_front()
+	_redo.clear()
+
+
+func _apply_snap(snap: Dictionary) -> void:
+	var changed: Array = []
+	for c in snap:
+		var v: Variant = snap[c]
+		if v == null: dream_blocks.erase(c)
+		else: dream_blocks[c] = (v as Dictionary).duplicate(true)
+		changed.append(c)
+	placed_cells_changed.emit(true, changed)
+
+
+func _touches_anchor(snap: Dictionary) -> bool:
+	for c in snap:
+		if dream_blocks.get(c, {}).get("anchored", false): return true
+	return false
+
+
+func dream_undo() -> int:
+	if not is_dream() or _undo.is_empty():
+		set_hint("Отменять нечего.", false); return 0
+	var op: Dictionary = _undo.back()
+	if _touches_anchor(op.after):
+		set_hint("Отмена задела бы закреплённые блоки — сначала сними якоря.", false); return 0
+	_undo.pop_back(); _apply_snap(op.before); _redo.append(op)
+	set_hint("Отменено: %s (%d) · Z — ещё, U — вернуть" % [op.label, op.before.size()], false)
+	return op.before.size()
+
+
+func dream_redo() -> int:
+	if not is_dream() or _redo.is_empty():
+		set_hint("Возвращать нечего.", false); return 0
+	var op: Dictionary = _redo.back()
+	if _touches_anchor(op.before):
+		set_hint("Возврат задел бы закреплённые блоки — сначала сними якоря.", false); return 0
+	_redo.pop_back(); _apply_snap(op.after); _undo.append(op)
+	set_hint("Возвращено: %s (%d)" % [op.label, op.after.size()], false)
+	return op.after.size()
+
+
+func mirror_cell(c: Vector3i) -> Vector3i:
+	if mirror_axis == 1: return Vector3i(2 * mirror_at.x - c.x, c.y, c.z)
+	if mirror_axis == 2: return Vector3i(c.x, c.y, 2 * mirror_at.z - c.z)
+	return c
+
+
+func _with_mirror(cells: Array) -> Array:
+	if mirror_axis == 0: return cells
+	var seen := {}
+	for c in cells: seen[c] = true; seen[mirror_cell(c)] = true
+	return seen.keys()
+
+
+func cycle_mirror(at: Vector3i) -> int:
+	mirror_axis = (mirror_axis + 1) % 3
+	mirror_at = at
+	set_hint(["Зеркало выключено.", "Зеркало по X: плоскость x = %d. Всё, что ставишь и снимаешь, отражается." % at.x, "Зеркало по Z: плоскость z = %d." % at.z][mirror_axis], false)
+	return mirror_axis
+
+
+func dream_tool_place(cell: Vector3i, kind: String) -> Array:
+	## Блок палитры рукой: с зеркалом и записью в историю отмены.
+	var cells := _with_mirror([cell])
+	var before := _dream_snap(cells)
+	var changed: Array = []
+	for c in cells:
+		if place_dream_block(c, kind): changed.append(c)
+	if not changed.is_empty(): _push_edit("блок", before, _dream_snap(cells))
+	return changed
+
+
+func dream_tool_remove(cell: Vector3i) -> Array:
+	## Снять блок: палитра — с зеркалом и отменой; предметы (станции и т. п.) — как раньше, без отмены.
+	if not dream_blocks.has(cell): return []
+	cell = root_cell(dream_blocks, cell)
+	var kind := str(dream_blocks[cell].get("kind", ""))
+	if not _palette_kind(kind):
+		return [cell] if remove_dream_block(cell) else []
+	var cells: Array = []
+	for c in _with_mirror([cell]):
+		if dream_blocks.has(c) and not dream_blocks[c].has("root") and _palette_kind(str(dream_blocks[c].get("kind", ""))): cells.append(c)
+	var before := _dream_snap(cells)
+	for c in cells: remove_dream_block(c)
+	_push_edit("снятие", before, _dream_snap(cells))
+	return cells
+
+
+# --- рамка ---
+func frame_mark(c: Vector3i) -> int:
+	if frame_points != 1:
+		frame_a = c; frame_points = 1
+		set_hint("Рамка: угол A [%d,%d,%d]. K — угол B." % [c.x, c.y, c.z], false)
+	else:
+		frame_b = c; frame_points = 2
+		var n := frame_volume()
+		set_hint("Рамка %s (%d клеток). L — залить «%s», Shift+L — очистить, B — в чертёж, K — заново." % [frame_dims_text(), n, block_display_name(dream_material)], false)
+	return frame_points
+
+
+func frame_complete() -> bool: return frame_points == 2
+
+
+func frame_box() -> Array:
+	return [Vector3i(mini(frame_a.x, frame_b.x), mini(frame_a.y, frame_b.y), mini(frame_a.z, frame_b.z)), Vector3i(maxi(frame_a.x, frame_b.x), maxi(frame_a.y, frame_b.y), maxi(frame_a.z, frame_b.z))]
+
+
+func frame_volume() -> int:
+	if not frame_complete(): return 0
+	var b := frame_box(); var d: Vector3i = b[1] - b[0] + Vector3i.ONE
+	return d.x * d.y * d.z
+
+
+func frame_dims_text() -> String:
+	if not frame_complete(): return ""
+	var b := frame_box(); var d: Vector3i = b[1] - b[0] + Vector3i.ONE
+	return "%d×%d×%d" % [d.x, d.y, d.z]
+
+
+func clear_frame() -> void:
+	frame_points = 0
+
+
+static func _in_box(c: Vector3i, lo: Vector3i, hi: Vector3i) -> bool:
+	return c.x >= lo.x and c.y >= lo.y and c.z >= lo.z and c.x <= hi.x and c.y <= hi.y and c.z <= hi.z
+
+
+func tool_cost(n: int) -> float:
+	return 0.0 if n <= TOOL_FREE_CELLS else ceilf(float(n - TOOL_FREE_CELLS) / float(TOOL_CELLS_PER_LUCID))
+
+
+func _tool_pay(n: int, what: String) -> bool:
+	var cost := tool_cost(n)
+	if cost > 0.0 and not spend_clarity(cost):
+		set_hint("%s: нужно %d осознанности (есть %d). Её дают дела в Яви." % [what, int(cost), int(clarity)], false)
+		return false
+	return true
+
+
+func dream_fill(kind: String = "") -> int:
+	if kind == "": kind = dream_material
+	last_tool = {"op": "fill", "n": 0, "cost": 0.0}
+	if not is_dream(): return 0
+	if not frame_complete(): set_hint("Сначала рамка: K — угол A, K — угол B.", false); return 0
+	if not has_imprint(kind): set_hint("Нет отпечатка «%s»." % block_display_name(kind), false); return 0
+	if frame_volume() > TOOL_MAX_CELLS: set_hint("Рамка больше %d клеток — уменьши её." % TOOL_MAX_CELLS, false); return 0
+	var box := frame_box(); var lo: Vector3i = box[0]; var hi: Vector3i = box[1]
+	var cells: Array = []
+	for x in range(lo.x, hi.x + 1):
+		for y in range(lo.y, hi.y + 1):
+			for z in range(lo.z, hi.z + 1):
+				var c := Vector3i(x, y, z)
+				if not dream_blocks.has(c): cells.append(c)
+	cells = _with_mirror(cells).filter(func(c): return not dream_blocks.has(c))
+	if cells.is_empty(): set_hint("В рамке нет пустых клеток.", false); return 0
+	if not _tool_pay(cells.size(), "Заливка"): return 0
+	var before := {}
+	for c in cells: before[c] = null
+	for c in cells: dream_blocks[c] = {"kind": kind, "anchored": false, "mutant": false}
+	_dream_session_blocks += cells.size()
+	_push_edit("заливка", before, _dream_snap(cells))
+	placed_cells_changed.emit(true, cells)
+	last_tool = {"op": "fill", "n": cells.size(), "cost": tool_cost(cells.size())}
+	milestones_mark("dream_tools")
+	set_hint("Залито %d × «%s»%s. Z — отменить." % [cells.size(), block_display_name(kind), (" · −%d осознанности" % int(tool_cost(cells.size()))) if tool_cost(cells.size()) > 0 else ""], false)
+	return cells.size()
+
+
+func dream_clear() -> int:
+	last_tool = {"op": "clear", "n": 0, "cost": 0.0}
+	if not is_dream(): return 0
+	if not frame_complete(): set_hint("Сначала рамка: K — угол A, K — угол B.", false); return 0
+	var box := frame_box(); var lo: Vector3i = box[0]; var hi: Vector3i = box[1]
+	var raw: Array = []
+	if frame_volume() <= dream_blocks.size():
+		for x in range(lo.x, hi.x + 1):
+			for y in range(lo.y, hi.y + 1):
+				for z in range(lo.z, hi.z + 1):
+					if dream_blocks.has(Vector3i(x, y, z)): raw.append(Vector3i(x, y, z))
+	else:
+		for c in dream_blocks:
+			if _in_box(c, lo, hi): raw.append(c)
+	var cells: Array = []
+	var skipped := 0
+	for c in _with_mirror(raw):
+		var d: Dictionary = dream_blocks.get(c, {})
+		if d.is_empty(): continue
+		if d.has("root") or not _palette_kind(str(d.get("kind", ""))) or d.get("anchored", false): skipped += 1; continue
+		cells.append(c)
+	if cells.is_empty(): set_hint("В рамке нечего очищать (станции и закреплённое не трогаю).", false); return 0
+	if not _tool_pay(cells.size(), "Очистка"): return 0
+	var before := _dream_snap(cells)
+	for c in cells: dream_blocks.erase(c)
+	_push_edit("очистка", before, _dream_snap(cells))
+	placed_cells_changed.emit(true, cells)
+	last_tool = {"op": "clear", "n": cells.size(), "cost": tool_cost(cells.size()), "skipped": skipped}
+	set_hint("Очищено %d%s. Z — отменить." % [cells.size(), (" · пропущено %d (станции/якоря)" % skipped) if skipped > 0 else ""], false)
+	return cells.size()
+
+
+func set_paste_origin(c: Vector3i) -> bool:
+	var changed := not paste_origin_set or c != paste_origin
+	paste_origin = c; paste_origin_set = true
+	return changed
+
+
+func rotate_paste(step: int = 1) -> int:
+	paste_rot = posmod(paste_rot + step, 4)
+	set_hint("Поворот чертежа: %d°." % (paste_rot * 90), false)
+	objective_changed.emit()
+	return paste_rot
+
+
+func paste_blueprint(origin: Vector3i) -> int:
+	last_tool = {"op": "paste", "n": 0, "cost": 0.0, "no_imprint": 0}
+	if not is_dream(): return 0
+	if blueprint_shown < 0 or blueprint_shown >= blueprints.size():
+		set_hint("Выбери чертёж: N — листать Архив Снов.", false); return 0
+	var want := blueprint_cells(blueprint_shown, origin, paste_rot)
+	var cells: Array = []; var kinds := {}; var no_imprint := 0
+	for c in want:
+		if dream_blocks.has(c): continue
+		if not has_imprint(str(want[c])): no_imprint += 1; continue
+		cells.append(c); kinds[c] = want[c]
+	var mirrored: Array = []
+	if mirror_axis != 0:
+		for c in cells:
+			var m := mirror_cell(c)
+			if m != c and not kinds.has(m) and not dream_blocks.has(m): kinds[m] = kinds[c]; mirrored.append(m)
+	cells.append_array(mirrored)
+	if cells.is_empty(): set_hint("Чертёж: все клетки заняты%s." % ((" · нет отпечатков для %d" % no_imprint) if no_imprint > 0 else ""), false); return 0
+	if not _tool_pay(cells.size(), "Вставка"): return 0
+	var before := {}
+	for c in cells: before[c] = null
+	for c in cells: dream_blocks[c] = {"kind": str(kinds[c]), "anchored": false, "mutant": false}
+	_dream_session_blocks += cells.size()
+	_push_edit("вставка", before, _dream_snap(cells))
+	placed_cells_changed.emit(true, cells)
+	last_tool = {"op": "paste", "n": cells.size(), "cost": tool_cost(cells.size()), "no_imprint": no_imprint}
+	milestones_mark("dream_tools")
+	set_hint("Вставлен «%s»: %d блоков%s. Z — отменить." % [blueprints[blueprint_shown].name, cells.size(), (" · без отпечатка пропущено %d" % no_imprint) if no_imprint > 0 else ""], false)
+	return cells.size()
+
+
+func migrate_blueprints_v017() -> int:
+	## Чертежи v0.11–v0.16 хранили абсолютные клетки — переводим в относительные (габарит + origin).
+	var n := 0
+	for i in range(blueprints.size()):
+		var bp: Dictionary = blueprints[i]
+		if bp.get("rel", false): continue
+		var cells := {}
+		for k in bp.get("blocks", {}): cells[key_cell(str(k))] = str(bp.blocks[k])
+		if cells.is_empty(): continue
+		var nb := _blueprint_from_abs(cells); nb.name = str(bp.get("name", "Чертёж %d" % (i + 1)))
+		blueprints[i] = nb; n += 1
+	_bp_seq = maxi(_bp_seq, blueprints.size())
 	return n
 
