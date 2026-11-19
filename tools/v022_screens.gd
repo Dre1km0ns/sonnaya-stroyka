@@ -61,9 +61,25 @@ func _go() -> void:
 		await _shot("06_bed_no_prompt.png")
 	# крафт-меню (верстак)
 	var craft = get_first_node_in_group("craft_menu")
-	if craft and craft.has_method("open"):
-		craft.open(); await _wait(10)
-		await _shot("07_craft_menu.png")
-		if craft.has_method("close"): craft.close()
+	if craft:
+		craft.open_workbench(); await _wait(10)
+		await _shot("07_craft_menu_no_brackets.png")
+		craft.toggle(); await _wait(5)
+	gs.dev_mode = true; gs.world_seed = gs.DEV_SEED
+	var con = get_first_node_in_group("dev_console")
+	print(con.execute("god")); print(con.execute("time night"))
+	var sp2: Vector3 = gs.spawn_point + Vector3(6, 0, 6)
+	print(con.execute("spawn mother 1")); await _wait(120)
+	var m = get_first_node_in_group("block_mother")
+	if m:
+		_look(m.global_position + Vector3(0, 1.2, 7.0), 0.0, 0.0); await _wait(15)
+		await _shot("08_mother_v011.png")
+		m.queue_free(); await _wait(10)
+	print(con.execute("spawn anaconda 1")); await _wait(60)
+	var ana = get_first_node_in_group("anaconda")
+	if ana:
+		_look(ana._head.global_position + Vector3(0, 3.0, 9.0), 0.0, -0.2); await _wait(20)
+		await _shot("09_anaconda_v011.png")
+	print(con.execute("aggro")); print(con.execute("economy")); print(con.execute("dayspawn")); print(con.execute("timeskip"))
 	await _wait(5)
 	quit()

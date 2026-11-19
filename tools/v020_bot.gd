@@ -3,7 +3,7 @@ extends SceneTree
 ## godot --headless --path . --fixed-fps 60 -s res://tools/v020_bot.gd -- --minutes=40
 ##
 ## Что настоящее: меню → создание мира → старт во Сне; полёт (удержание клавиш, физика игрока); постановка
-## блоков через build._place_at (как ЛКМ); M, L, J, F1, F — через ввод (InputEventAction); якоря, пробуждение,
+## блоков через build._place_at (как ПКМ); M, L, J, F1, F — через ввод (InputEventAction); якоря, пробуждение,
 ## сон, смена суток, ночные угрозы, кошмары, автосейв, сейв/загрузка с диска.
 ## Что симулировано (бот не прицеливается и не сражается): добыча — выдачей предметов тем же путём, что подбор
 ## дропа (add_item_count в Яви); рамка K — вызовом frame_mark; поломка постройки чудовищем — destroy_wake_structure;
@@ -156,7 +156,7 @@ func _go() -> void:
 	var wb := -1
 	for i in range(9):
 		if typeof(gs.inv_dream[i]) == TYPE_DICTIONARY and str(gs.inv_dream[i].get("id", "")) == "workbench": wb = i
-	await _press("hotbar_9")   # пустая рука — ставится материал палитры (дрейф)
+	await _press("hotbar_1")   # v0.22: материал палитры ставится только из пустого слота 1
 	_place_row(base, 6, Vector3i(1, 0, 0))
 	await _wait(3)
 	_mark("обучение: 5 блоков", gs.tutorial_done.has("build"))
@@ -171,7 +171,7 @@ func _go() -> void:
 	main.build._place_at(wcell)
 	await _wait(2)
 	_mark("обучение: верстак", gs.tutorial_done.has("workbench") and str(gs.dream_blocks.get(wcell, {}).get("kind", "")) == "workbench", "слот %d" % (wb + 1))
-	await _press("hotbar_9")
+	await _press("hotbar_1")
 	_mark("обучение: якорь (подаренные реагенты)", await _anchor_at(wcell, gs.AnchorType.WEDGE))
 	main.switcher.show_result_ui = false
 	await _press("wake_up")
@@ -210,6 +210,7 @@ func _go() -> void:
 	# во Сне у трещины — неякорённый дрейф (декор у стены): его и будут грызть кошмары
 	await _sleep()
 	gs.dream_material = "drift"
+	gs.select_item_slot(0) # v0.22: палитра — только слот 1
 	for dx in [-1, 0, 1]: main.build._place_at(victim + Vector3i(dx, 0, 2))
 	await _wake()
 	var eaten0: int = gs.nightmare_eaten
