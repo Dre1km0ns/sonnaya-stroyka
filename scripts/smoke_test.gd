@@ -3231,12 +3231,19 @@ func _v015_checks() -> void:
 	_a(cf.current_marker() == "core" and cf.marks_shown == 1, 15030)
 	G.player_hurt_from.emit(Vector3(5, 0, 0), 20)
 	_a(cf.arcs_shown == 1 and absf(cf.last_arc_angle() - PI * 0.5) < 0.01, 15031)
-	await create_timer(1.4).timeout
+	# v0.18: шагаем время детерминированно (было create_timer(1.4) — флаки при медленных кадрах, ~1 из 3 прогонов)
+	# посторонний урон от узлов прошлых тестов (player_hurt_from) давал случайную дугу — изолируем слой на время проверки покоя
+	G.player_hurt_from.disconnect(cf.show_hurt_from); G.hit_marker.disconnect(cf.show_marker)
+	cf.set_process(false)
+	for i in range(15): cf._process(0.1)
+	cf.set_process(true)
 	_a(cf.current_marker() == "" and cf.last_arc_angle() == INF, 15032)
+	await process_frame; await process_frame   # отложенная последняя перерисовка
 	var dc: int = cf.draw_count
 	for i in range(30):
 		await process_frame
 	_a(cf.draw_count == dc, 15033)
+	G.player_hurt_from.connect(cf.show_hurt_from); G.hit_marker.connect(cf.show_marker)
 	G.hit_marker.emit("no_such_kind")
 	_a(cf.marks_shown == 1, 15034)
 	cf.queue_free(); cam.queue_free()
@@ -3509,7 +3516,7 @@ func _v017_checks() -> void:
 	_a(gs.blueprint_ghost_cells().size() == 4, 17039)
 	# 5) Сейв/миграция: абсолютные чертежи v0.11–v0.16 → относительные; история после пробуждения пуста.
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
-	_a(int(sv.version) == 12, 17040)
+	_a(int(sv.version) >= 12, 17040)
 	sv.version = 11
 	sv.blueprints = [{"name": "Старый", "blocks": {"5,6,7": "drift", "6,6,7": "stone", "5,7,7": "drift"}}]
 	gs.reset_state(); gs.apply_save_dict(JSON.parse_string(JSON.stringify(sv)))
@@ -3555,3 +3562,120 @@ func _v017_checks() -> void:
 	_a(not tools._label.visible, 17055)
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.17 undo/redo byte-exact / mirror / frame fill+clear+cost / relative blueprints + rotate + paste / migration / scene tools OK")
+	await _v018_checks()
+
+
+func _v018_checks() -> void:
+	## v0.18 «Живой Сон»: трещины, кошмары, защита светом/маяком, заплатка, сады Сна, просьбы, сейв.
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	gs.reset_state(); gs.dev_mode = false
+	# 1) Трещина — только когда чудовище ломает материализованную копию.
+	var c := Vector3i(50, 5, 50)
+	gs.dream_blocks[c] = {"kind": "stone", "anchored": false, "mutant": false}
+	gs.wake_blocks[c] = {"kind": "stone"}
+	_a(gs.destroy_wake_structure(c) and not gs.wake_blocks.has(c) and gs.dream_cracks.has(gs.cell_key(c)), 18001)
+	gs.wake_blocks[c + Vector3i(5, 0, 0)] = {"kind": "planks"}   # нет двойника во Сне
+	gs.destroy_wake_structure(c + Vector3i(5, 0, 0))
+	var c2 := c + Vector3i(0, 0, 9)
+	gs.dream_blocks[c2] = {"kind": "planks", "anchored": false, "mutant": false}; gs.wake_blocks[c2] = {"kind": "planks"}
+	for i in range(gs.inv_wake.size()): gs.inv_wake[i] = {}
+	gs.select_item_slot(0)
+	_a(gs.mine_wake_block(c2) and gs.dream_cracks.size() == 1, 18002)   # своя кирка — не трещина
+	var ct := c + Vector3i(0, 0, -9)
+	gs.dream_blocks[ct] = {"kind": "torch", "anchored": false, "mutant": false}; gs.wake_blocks[ct] = {"kind": "torch"}
+	_a(gs.remove_torch(ct) and gs.dream_cracks.size() == 2, 18003)
+	# 2) Кошмар на рассвете: 4 ближайших дрейфа, настоящие материалы и якорь не трогает; детерминированно.
+	gs.dream_cracks.erase(gs.cell_key(ct)); gs.dream_blocks.erase(ct)
+	for i in range(1, 4):
+		gs.dream_blocks[c + Vector3i(i, 0, 0)] = {"kind": "drift", "anchored": false, "mutant": false}
+		gs.dream_blocks[c + Vector3i(-i, 0, 0)] = {"kind": "drift", "anchored": false, "mutant": false}
+	gs.dream_blocks[c + Vector3i(0, 1, 0)] = {"kind": "stone", "anchored": false, "mutant": false}
+	gs.dream_blocks[c + Vector3i(0, 0, 1)] = {"kind": "drift", "anchored": true, "mutant": false}
+	var copy: Node = load("res://scripts/game_state.gd").new(); root.add_child(copy)
+	copy.reset_state(); copy.apply_save_dict(JSON.parse_string(JSON.stringify(gs.to_save_dict())))
+	gs._on_night_edge(true); gs._on_night_edge(false)
+	var r1: Dictionary = gs.last_nightmare
+	_a(int(r1.eaten) == 4 and gs.dream_blocks.has(c + Vector3i(0, 1, 0)) and gs.dream_blocks.has(c + Vector3i(0, 0, 1)) and gs.dream_blocks.has(c), 18010)
+	_a(not gs.dream_blocks.has(c + Vector3i(1, 0, 0)) and not gs.dream_blocks.has(c + Vector3i(-2, 0, 0)) and gs.dream_blocks.has(c + Vector3i(3, 0, 0)) and gs.nightmare_eaten == 4, 18011)
+	copy.nightmare_tick()
+	_a(JSON.stringify(copy.to_save_dict().dream_blocks) == JSON.stringify(gs.to_save_dict().dream_blocks), 18012)
+	copy.queue_free()
+	# защита: светоблок в радиусе 3 и маяк во Сне
+	gs.dream_blocks[c + Vector3i(6, 0, 0)] = {"kind": "lumen", "anchored": false, "mutant": false}
+	var r2: Dictionary = gs.nightmare_tick()
+	_a(int(r2.eaten) == 1 and int(r2.guarded) == 1 and gs.dream_blocks.has(c + Vector3i(3, 0, 0)) and not gs.dream_blocks.has(c + Vector3i(-3, 0, 0)), 18013)   # светоблок на +6 защищает только +3
+	gs.dream_blocks.erase(c + Vector3i(6, 0, 0))
+	gs.dream_blocks[c + Vector3i(0, 9, 0)] = {"kind": "beacon", "anchored": false, "mutant": false}
+	_a(int(gs.nightmare_tick().eaten) == 0, 18014)
+	gs.dream_blocks.erase(c + Vector3i(0, 9, 0))
+	_a(int(gs.nightmare_tick().eaten) == 1 and not gs.dream_blocks.has(c + Vector3i(3, 0, 0)) and int(gs.dream_cracks[gs.cell_key(c)].nights) == 4, 18015)
+	# 3) Заплатка: в Яви снова тот же материал → трещина закрыта, +осознанность; нет проекта — закрыта без награды.
+	gs.clarity = 20.0
+	gs.wake_blocks[c] = {"kind": "stone"}
+	_a(gs.patch_cracks() == 1 and gs.dream_cracks.is_empty() and is_equal_approx(gs.clarity, 20.0 + gs.LUCID_PATCH) and gs.milestones.has("patch"), 18020)
+	gs.add_crack(c + Vector3i(0, 1, 0), "stone"); gs.dream_blocks.erase(c + Vector3i(0, 1, 0))
+	_a(gs.patch_cracks() == 0 and gs.dream_cracks.is_empty() and gs.cracks_patched == 1, 18021)
+	# через настоящий цикл: якорь во Сне → пробуждение чинит и закрывает трещину
+	gs.dev_mode = true
+	gs.wake_blocks.erase(c); gs.add_crack(c, "stone")
+	gs.enter_dream(); gs.select_anchor(gs.AnchorType.NAIL); gs.nails = 1; gs.pouch.reagent1 = 10; gs.clarity = 50.0
+	var anc: bool = gs.try_place_anchor(c)
+	var rw: Dictionary = gs.resolve_wake()
+	_a(anc and int(rw.get("patched", 0)) == 1 and str(gs.wake_blocks.get(c, {}).get("kind", "")) == "stone" and gs.dream_cracks.is_empty(), 18022)
+	gs.dev_mode = false
+	# 4) Сады Сна: Мать → Каменный сад, Анаконда → Сад света (отпечатки, предел осознанности, небо).
+	gs.reset_state(); gs.dev_mode = false
+	var m0: float = gs.dream_clarity_max(); var sky0: Array = gs.dream_sky()
+	gs.on_mother_killed()
+	_a(gs.dream_zones == ["stone_garden"] and gs.has_imprint("ruin") and gs.has_imprint("strut") and is_equal_approx(gs.dream_clarity_max(), m0 + gs.ZONE_LUCID_BONUS) and gs.dream_sky()[0] != sky0[0], 18030)
+	gs.on_anaconda_killed()
+	_a(gs.dream_zones.size() == 2 and gs.has_imprint("lumen") and gs.has_imprint("lamp") and not gs.unlock_zone("light_garden"), 18031)
+	# 5) Просьбы Сна.
+	gs.reset_state(); gs.dev_mode = false; gs.clarity = 10.0
+	var rq: Dictionary = gs.ensure_request()
+	_a(str(rq.kind) == "log" and int(rq.n) == 8 and not gs.offer_request(), 18040)   # в Яви — нельзя
+	gs.enter_dream()
+	_a(not gs.offer_request() and gs.requests_done == 0, 18041)
+	gs.inv_wake[5] = {"id": "log", "name": "Бревно", "count": 11}
+	_a(gs.offer_request() and gs._inv_count(gs.inv_wake, "log") == 3 and is_equal_approx(gs.clarity, 10.0 + gs.LUCID_REQUEST) and gs.requests_done == 1 and gs.milestones.has("dream_request"), 18042)
+	_a(str(gs.dream_request.kind) != "" and gs.request_text().begins_with("Просьба Сна"), 18043)
+	var cap0: int = gs.blueprint_cap()
+	gs.requests_done = 3
+	_a(gs.blueprint_cap() == cap0 + 1, 18044)
+	# 6) Сейв/миграция.
+	gs.add_crack(Vector3i(1, 2, 3), "planks"); gs.dream_blocks[Vector3i(1, 2, 3)] = {"kind": "planks", "anchored": false, "mutant": false}
+	gs.on_mother_killed(); gs.clarity = gs.dream_clarity_max()
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	_a(int(sv.version) == 13, 18050)
+	var keep_req: String = JSON.stringify(gs.dream_request)
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.dream_cracks.has("1,2,3") and gs.dream_zones == ["stone_garden"] and gs.requests_done == 3 and JSON.stringify(gs.dream_request) == keep_req and is_equal_approx(gs.clarity, gs.dream_clarity_max()), 18051)
+	sv.version = 12; sv.erase("dream_zones"); sv.erase("dream_cracks"); sv.erase("dream_request"); sv.erase("requests_done")
+	sv.imprints = ["log"]; sv.anaconda_defeated = true
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.dream_zones.size() == 2 and gs.has_imprint("ruin") and gs.has_imprint("lumen") and gs.has_imprint("log") and gs.dream_cracks.is_empty() and gs.requests_done == 0, 18052)
+	gs.queue_free(); await process_frame
+	# 7) Сцена: узел трещин, небо сада, J отдаёт просьбу настоящим вводом.
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v018 scene", "", "1808", 1808, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	await process_frame
+	scene.player.set_physics_process(false)
+	var cr: Node = scene.get_tree().get_first_node_in_group("dream_cracks")
+	G.dream_blocks[Vector3i(20, 9, 20)] = {"kind": "drift", "anchored": false, "mutant": false}
+	G.add_crack(Vector3i(20, 9, 20), "drift")
+	_a(cr != null and cr.shown == 1, 18060)
+	G.unlock_zone("light_garden")
+	G.inv_wake[3] = {"id": "log", "name": "Бревно", "count": 8}
+	scene.switcher.enter_dream()
+	await process_frame
+	_a(scene.switcher._env == null or scene.switcher._env.background_color == G.dream_sky()[0], 18061)
+	var e := InputEventAction.new(); e.action = "dream_offer"; e.pressed = true; Input.parse_input_event(e)
+	await process_frame; await process_frame
+	e = InputEventAction.new(); e.action = "dream_offer"; e.pressed = false; Input.parse_input_event(e)
+	await process_frame
+	_a(G.requests_done == 1 and G._inv_count(G.inv_wake, "log") == 0, 18062)
+	scene.switcher.show_result_ui = false
+	scene.switcher.wake_up()
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.18 cracks from monsters only / nightmare deterministic + guards / patch via anchor / dream gardens / requests / save v13 + migration / scene OK")

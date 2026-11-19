@@ -40,6 +40,7 @@ func _ready() -> void:
 	var dream_tools: Node3D = load("res://scripts/dream_tools.gd").new() # v0.17: инструменты сновидца
 	dream_world.add_child(dream_tools)
 	dream_tools.setup(player, dream_voxels)
+	dream_world.add_child(load("res://scripts/dream_cracks.gd").new()) # v0.18: трещины Сна
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
 	var loaded := false
 	if not _want_shots() and saver.has_save():

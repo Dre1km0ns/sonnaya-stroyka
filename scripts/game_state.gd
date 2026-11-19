@@ -95,7 +95,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 12 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи
+const SAVE_FORMAT := 13 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -374,6 +374,7 @@ func reset_state() -> void:
 	night_awake = 0.0
 	nights_survived = 0
 	_undo = []; _redo = []; frame_points = 0; mirror_axis = 0; paste_rot = 0; paste_origin_set = false; _bp_seq = 0
+	dream_cracks = {}; dream_zones = []; dream_request = {}; requests_done = 0; nightmare_eaten = 0; cracks_patched = 0
 	selected_anchor = AnchorType.NAIL
 	last_hint = ""
 	awake_time = 0.0
@@ -1748,7 +1749,9 @@ func pick_up_torch(c: Vector3i) -> bool:
 func remove_torch(c: Vector3i) -> bool:
 	if str(wake_blocks.get(c, {}).get("kind", "")) != "torch":
 		return false
+	var twin := _dream_twin(c, "torch") # v0.18: факел, материализованный из Сна, сломан чудовищем — трещина
 	wake_blocks.erase(c)
+	if twin: add_crack(c, "torch")
 	mark_torches_dirty()
 	terrain_cell_changed.emit(c)
 	return true
@@ -1779,8 +1782,9 @@ func on_mother_killed() -> void:
 	deep_threat = 0.0
 	_deep_warned = 0
 	heart_structure = true
+	unlock_zone("stone_garden")
 	if first:
-		var t := "Сердце структуры: во Сне — массовая постановка (Shift+ЛКМ — ряд из 5), якоря шире на 2, перенос без мутаций, подпорки (C). Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов (B/N во Сне). Блоколиты иногда бродят по Яви."
+		var t := "Сердце структуры: во Сне — массовая постановка (Shift+ЛКМ — ряд из 5), якоря шире на 2, перенос без мутаций, подпорки (C). Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1789,6 +1793,7 @@ func on_anaconda_killed() -> void:
 	var first := not anaconda_defeated
 	anaconda_defeated = true
 	heart_light = true
+	unlock_zone("light_garden")
 	if first:
 		var t := "Сердце света: во Сне открыты светоблоки, светильники (C → Светоблок / Светильник) и чешуйчатое оружие на станке."
 		chat(t, Color(0.6, 1.0, 0.8))
@@ -1956,6 +1961,7 @@ func _on_night_edge(now_night: bool) -> void:
 	if now_night:
 		night_awake = 0.0
 		return
+	nightmare_tick() # v0.18: на рассвете кошмары грызут дрейф у трещин
 	if night_awake >= LUCID_NIGHT_AWAKE_MIN:
 		nights_survived += 1
 		gain_lucidity(LUCID_NIGHT, "ночь пережита в Яви")
@@ -2216,6 +2222,7 @@ func enter_dream() -> void:
 		if dream_stash.size() < before:
 			chat("Вещи из растворившегося сундука Сна вернулись в инвентарь Сна.", Color(0.75, 0.85, 1.0))
 	milestones_mark("first_dream")
+	ensure_request()
 	# v0.16: осознанность не восстанавливается входом в Сон — её приносят из Яви.
 	awake_time = 0.0
 	if not has_imprint(dream_material): dream_material = "drift"
@@ -2295,6 +2302,8 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	clarity_changed.emit(clarity,dream_clarity_max());notify_inventory();world_changed.emit(false)
 	wake_resolved.emit(transferred,dust_gained,mutation.cells.size());last_transfer_apply_usec=Time.get_ticks_usec()-started
 	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0,"kept_in_dream":root_count-moved_count,"copied":copied,"moved":moved_count,"materials":materials_spent,"unpaid":unpaid_count,"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
+	var patched := patch_cracks()
+	result["patched"] = patched
 	set_hint("Пробуждение: материализовано %d (копий %d, перенесено объектов %d), мутаций %d%s. Сон сохранил всё построенное."%[transferred,copied,moved_count,mutation.cells.size()," · резерв якорей возвращён" if abort_transfer else ""],false)
 	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
 		chat("Под подушкой лежат зелья (%d). Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
@@ -2398,6 +2407,12 @@ func to_save_dict() -> Dictionary:
 		"blockoliths_killed": blockoliths_killed,
 		"blueprints": blueprints.duplicate(true),
 		"blueprint_seq": _bp_seq,
+		"dream_cracks": dream_cracks.duplicate(true),
+		"dream_zones": dream_zones.duplicate(),
+		"dream_request": dream_request.duplicate(),
+		"requests_done": requests_done,
+		"nightmare_eaten": nightmare_eaten,
+		"cracks_patched": cracks_patched,
 		"starter_kit_given": starter_kit_given,
 		"starter_camp_built": starter_camp_built,
 		"dream_stash": dream_stash.duplicate(true),
@@ -2629,6 +2644,7 @@ func apply_save_dict(data: Dictionary) -> void:
 		_migrate_v010(data)
 	migrate_lanterns() # v0.11.1: «Фонарь глубин» удалён — в любых сейвах превращается в факелы.
 	_load_v016(data, fmt)
+	_load_v018(data)
 	_loading_save = false
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
@@ -2783,7 +2799,7 @@ const Mining := preload("res://scripts/mining_rules.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 
 func dream_clarity_max() -> float:
-	return CLARITY_MAX + minf(dream_bonus_seconds, IDEA_BONUS_CAP) * CLARITY_DRAIN_PER_SEC
+	return CLARITY_MAX + minf(dream_bonus_seconds, IDEA_BONUS_CAP) * CLARITY_DRAIN_PER_SEC + ZONE_LUCID_BONUS * dream_zones.size()
 
 
 func dream_seconds_left() -> float:
@@ -3151,7 +3167,9 @@ func destroy_wake_structure(c: Vector3i, respect_beacon: bool = false) -> bool:
 		return false
 	if not break_storage(c, false):
 		return false
+	var twin := _dream_twin(c, kind) # v0.18: материализованная копия → трещина во Сне
 	remove_shape(wake_blocks,c)
+	if twin: add_crack(c, kind)
 	if active_bed == cell_key(c):
 		active_bed = ""
 		spawn_point = creation_spawn
@@ -3438,7 +3456,9 @@ func _blueprint_from_abs(cells: Dictionary) -> Dictionary:
 
 
 func blueprint_cap() -> int:
-	return BLUEPRINT_AFTER_MOTHER if (mother_defeated or dev_mode) else BLUEPRINT_BASE
+	## v0.18: каждые 3 исполненные просьбы Сна — +1 слот (до 8).
+	var base := BLUEPRINT_AFTER_MOTHER if (mother_defeated or dev_mode) else BLUEPRINT_BASE
+	return mini(BLUEPRINT_AFTER_MOTHER, base + requests_done / 3)
 
 
 func cycle_blueprint() -> int:
@@ -3843,4 +3863,210 @@ func migrate_blueprints_v017() -> int:
 		blueprints[i] = nb; n += 1
 	_bp_seq = maxi(_bp_seq, blueprints.size())
 	return n
+
+
+# --- v0.18: Живой Сон (DREAM_CORE_PLAN.md §4.5) ---
+# Трещины: чудовища Яви ломают материализованную копию → во Сне на этом месте трещина. На рассвете
+# кошмары грызут дрейф вокруг неё (настоящие материалы стабильны; свет и маяки защищают).
+# Залатать — материализовать ту же постройку снова (ремонт из Сна). Сады Сна открываются боссами.
+# Просьбы Сна — поводы спускаться в Явь: принеси N материала (J во Сне) → осознанность и слоты Архива.
+const CRACK_MAX := 64
+const NIGHTMARE_RADIUS := 3
+const NIGHTMARE_BITES := 4
+const LIGHT_GUARD_RADIUS := 3
+const BEACON_GUARD_RADIUS := 10
+const DREAM_LIGHT_KINDS := ["lumen", "lumen_cold", "lamp", "torch"]
+const LUCID_PATCH := 3.0
+const LUCID_REQUEST := 15.0
+const ZONE_LUCID_BONUS := 10.0
+const ZONES := {
+	"stone_garden": {"name": "Каменный сад", "kinds": ["ruin", "mossy_ruin", "deep_stone", "strut"], "sky": [Color(0.30, 0.22, 0.20), Color(0.75, 0.6, 0.5), Color(0.6, 0.45, 0.35)]},
+	"light_garden": {"name": "Сад света", "kinds": ["lumen", "lumen_cold", "lamp", "torch"], "sky": [Color(0.32, 0.20, 0.30), Color(0.85, 0.65, 0.7), Color(0.75, 0.5, 0.55)]},
+}
+const REQUESTS := [["log", 8], ["planks", 12], ["stone", 12], ["sand", 8], ["torch", 6], ["deep_stone", 8], ["mossy_ruin", 6], ["lumen", 4], ["lamp", 2], ["strut", 6]]
+signal cracks_changed
+var dream_cracks: Dictionary = {}     # "x,y,z" -> {"kind", "nights"}
+var dream_zones: Array = []
+var dream_request: Dictionary = {}    # {"kind", "n"}
+var requests_done := 0
+var nightmare_eaten := 0
+var cracks_patched := 0
+var last_nightmare := {}
+
+
+func _dream_twin(c: Vector3i, kind: String) -> bool:
+	return str(dream_blocks.get(c, {}).get("kind", "")) == kind and not dream_blocks[c].has("root")
+
+
+func add_crack(c: Vector3i, kind: String) -> bool:
+	var k := cell_key(c)
+	if dream_cracks.has(k) or dream_cracks.size() >= CRACK_MAX: return false
+	dream_cracks[k] = {"kind": kind, "nights": 0}
+	cracks_changed.emit()
+	if dream_cracks.size() == 1 or dream_cracks.size() % 8 == 0:
+		chat("Во Сне треснула стена: чудовища сломали материализованный «%s». Трещин: %d. До рассвета залатай — заякорь постройку во Сне снова." % [block_display_name(kind), dream_cracks.size()], Color(1.0, 0.6, 0.55))
+	return true
+
+
+func crack_cells() -> Array:
+	var out: Array = []
+	for k in dream_cracks: out.append(key_cell(str(k)))
+	return out
+
+
+func _dream_beacons() -> Array:
+	var out: Array = []
+	for c in dream_blocks:
+		if str(dream_blocks[c].get("kind", "")) == "beacon": out.append(c)
+	return out
+
+
+func dream_guarded(c: Vector3i, beacons: Array = []) -> bool:
+	for b in beacons:
+		var d: Vector3i = c - b
+		if maxi(absi(d.x), maxi(absi(d.y), absi(d.z))) <= BEACON_GUARD_RADIUS: return true
+	var r := LIGHT_GUARD_RADIUS
+	for x in range(-r, r + 1):
+		for y in range(-r, r + 1):
+			for z in range(-r, r + 1):
+				var n: Variant = dream_blocks.get(c + Vector3i(x, y, z))
+				if n != null and DREAM_LIGHT_KINDS.has(str(n.get("kind", ""))): return true
+	return false
+
+
+func nightmare_tick() -> Dictionary:
+	## Детерминированно: для каждой трещины — до NIGHTMARE_BITES ближайших блоков дрейфа в радиусе,
+	## без якоря и без защиты светом/маяком. Настоящие материалы (отпечатки) кошмары не трогают.
+	var eaten: Array = []
+	var guarded := 0
+	if dream_cracks.is_empty():
+		last_nightmare = {"eaten": 0, "guarded": 0, "cracks": 0}
+		return last_nightmare
+	var beacons := _dream_beacons()
+	var keys: Array = dream_cracks.keys(); keys.sort()
+	var r := NIGHTMARE_RADIUS
+	for k in keys:
+		var cc := key_cell(str(k))
+		dream_cracks[k]["nights"] = int(dream_cracks[k].get("nights", 0)) + 1
+		var cand: Array = []
+		for x in range(-r, r + 1):
+			for y in range(-r, r + 1):
+				for z in range(-r, r + 1):
+					var c := cc + Vector3i(x, y, z)
+					var d: Variant = dream_blocks.get(c)
+					if d == null or str(d.get("kind", "")) != "drift" or d.get("anchored", false) or d.has("root"): continue
+					cand.append([absi(x) + absi(y) + absi(z), c])
+		cand.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and str(a[1]) < str(b[1])))
+		var bites := 0
+		for e in cand:
+			if bites >= NIGHTMARE_BITES: break
+			var c2: Vector3i = e[1]
+			if not dream_blocks.has(c2): continue
+			if dream_guarded(c2, beacons): guarded += 1; continue
+			dream_blocks.erase(c2); eaten.append(c2); bites += 1
+	nightmare_eaten += eaten.size()
+	if not eaten.is_empty():
+		placed_cells_changed.emit(true, eaten)
+		chat("Кошмары сгрызли %d блоков дрейфа у трещин (%d). Свет и маяк во Сне защищают; настоящие материалы кошмарам не по зубам." % [eaten.size(), dream_cracks.size()], Color(1.0, 0.6, 0.55))
+	cracks_changed.emit()
+	last_nightmare = {"eaten": eaten.size(), "guarded": guarded, "cracks": dream_cracks.size()}
+	return last_nightmare
+
+
+func patch_cracks() -> int:
+	## Трещина закрыта, если в Яви на её месте снова тот же материал (ремонт из Сна) — +осознанность;
+	## или если во Сне проекта больше нет (нечего чинить) — закрывается без награды.
+	var patched := 0
+	for k in dream_cracks.keys():
+		var c := key_cell(str(k)); var kind := str(dream_cracks[k].get("kind", ""))
+		if str(wake_blocks.get(c, {}).get("kind", "")) == kind:
+			dream_cracks.erase(k); patched += 1
+		elif not _dream_twin(c, kind):
+			dream_cracks.erase(k)
+	if patched > 0:
+		cracks_patched += patched
+		gain_lucidity(LUCID_PATCH * patched, "трещины залатаны")
+		milestones_mark("patch")
+		chat("Залатано трещин: %d. Сон благодарен: осознанность +%d." % [patched, int(LUCID_PATCH * patched)], Color(0.75, 0.9, 1.0))
+	cracks_changed.emit()
+	return patched
+
+
+# --- сады Сна ---
+func unlock_zone(id: String, silent: bool = false) -> bool:
+	if not ZONES.has(id) or dream_zones.has(id): return false
+	dream_zones.append(id)
+	for k in ZONES[id].kinds: learn_imprint(k, true)
+	clarity_changed.emit(clarity, dream_clarity_max())
+	if not silent:
+		chat("Открыт %s: в палитре Сна — %s; запас осознанности +%d; небо Сна изменилось." % [ZONES[id].name, ", ".join(ZONES[id].kinds.map(func(k): return block_display_name(k))), int(ZONE_LUCID_BONUS)], Color(0.85, 0.75, 1.0))
+		milestones_mark("zone")
+	return true
+
+
+func dream_sky() -> Array:
+	## [фон, окружающий свет, туман] — последний открытый сад задаёт небо Сна.
+	if dream_zones.is_empty(): return [Color(0.18, 0.14, 0.32), Color(0.55, 0.45, 0.75), Color(0.45, 0.35, 0.65)]
+	return ZONES[dream_zones.back()].sky
+
+
+# --- просьбы Сна ---
+func ensure_request() -> Dictionary:
+	if not dream_request.is_empty(): return dream_request
+	for i in range(REQUESTS.size()):
+		var rq: Array = REQUESTS[(requests_done + i) % REQUESTS.size()]
+		if rq[0] == "log" or has_imprint(rq[0]):
+			var n: int = int(rq[1]) + 4 * (requests_done / REQUESTS.size())
+			dream_request = {"kind": rq[0], "n": n}
+			return dream_request
+	dream_request = {"kind": "log", "n": 8}
+	return dream_request
+
+
+func request_text() -> String:
+	if dream_request.is_empty(): return ""
+	var have := _inv_count(inv_wake, str(dream_request.kind))
+	return "Просьба Сна: %d × %s (в Яви: %d)%s" % [int(dream_request.n), block_display_name(str(dream_request.kind)), have, " — J во Сне, чтобы отдать" if have >= int(dream_request.n) else ""]
+
+
+func offer_request() -> bool:
+	if not is_dream():
+		set_hint("Просьбу Сна исполняют во Сне (J).", false); return false
+	ensure_request()
+	var kind := str(dream_request.kind); var n := int(dream_request.n)
+	if _inv_count(inv_wake, kind) < n:
+		set_hint("Сну нужно %d × %s, в Яви есть %d. Добудь и возвращайся." % [n, block_display_name(kind), _inv_count(inv_wake, kind)], false)
+		return false
+	_inv_take(inv_wake, kind, n)
+	requests_done += 1
+	var cap_before := blueprint_cap()
+	dream_request = {}
+	gain_lucidity(LUCID_REQUEST, "просьба Сна")
+	milestones_mark("dream_request")
+	ensure_request()
+	var extra := " Архив Снов: +1 слот (%d)." % blueprint_cap() if blueprint_cap() > cap_before else ""
+	chat("Сон принял %d × %s: осознанность +%d.%s Новая просьба: %d × %s." % [n, block_display_name(kind), int(LUCID_REQUEST), extra, int(dream_request.n), block_display_name(str(dream_request.kind))], Color(0.85, 0.75, 1.0))
+	notify_inventory(); objective_changed.emit()
+	return true
+
+
+func _load_v018(data: Dictionary) -> void:
+	dream_cracks = {}
+	var dc: Variant = data.get("dream_cracks", {})
+	if typeof(dc) == TYPE_DICTIONARY:
+		for k in dc:
+			if typeof(dc[k]) == TYPE_DICTIONARY: dream_cracks[str(k)] = {"kind": str(dc[k].get("kind", "drift")), "nights": int(dc[k].get("nights", 0))}
+	dream_zones = []
+	for z in data.get("dream_zones", []):
+		if ZONES.has(str(z)) and not dream_zones.has(str(z)): dream_zones.append(str(z))
+	# миграция v0.17 и раньше: сады по уже побеждённым боссам
+	if mother_defeated and not dream_zones.has("stone_garden"): unlock_zone("stone_garden", true)
+	if anaconda_defeated and not dream_zones.has("light_garden"): unlock_zone("light_garden", true)
+	var rq: Variant = data.get("dream_request", {})
+	dream_request = {"kind": str(rq.get("kind")), "n": int(rq.get("n", 8))} if typeof(rq) == TYPE_DICTIONARY and rq.has("kind") else {}
+	requests_done = int(data.get("requests_done", 0))
+	nightmare_eaten = int(data.get("nightmare_eaten", 0))
+	cracks_patched = int(data.get("cracks_patched", 0))
+	# сады поднимают предел осознанности — восстановить сохранённое значение до нового предела
+	clarity = clampf(maxf(clarity, float(data.get("clarity", clarity))), 0.0, dream_clarity_max())
 

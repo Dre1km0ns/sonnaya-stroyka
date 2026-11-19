@@ -45,6 +45,8 @@ func _process(delta: float) -> void:
 		open_pillow()
 	if Input.is_action_just_pressed("use_heal") and not GameState.is_dream():
 		GameState.use_heal()
+	if GameState.is_dream() and InputMap.has_action("dream_offer") and Input.is_action_just_pressed("dream_offer"):
+		GameState.offer_request()
 	if GameState.is_dream() and InputMap.has_action("blueprint_save") and Input.is_action_just_pressed("blueprint_save"):
 		GameState.save_blueprint()
 	if GameState.is_dream() and InputMap.has_action("blueprint_show") and Input.is_action_just_pressed("blueprint_show"):
@@ -187,9 +189,10 @@ func _tint_dream(is_dream: bool) -> void:
 		return
 	if is_dream:
 		_env.background_mode = Environment.BG_COLOR
-		_env.background_color = Color(0.18, 0.14, 0.32)
-		_env.ambient_light_color = Color(0.55, 0.45, 0.75)
-		_env.fog_light_color = Color(0.45, 0.35, 0.65)
+		var sky: Array = GameState.dream_sky() # v0.18: сады Сна меняют небо
+		_env.background_color = sky[0]
+		_env.ambient_light_color = sky[1]
+		_env.fog_light_color = sky[2]
 		GameSettings.apply_distance_fog(_env)
 		_env.glow_intensity = 0.45
 	else:

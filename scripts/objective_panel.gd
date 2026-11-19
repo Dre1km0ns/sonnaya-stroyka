@@ -96,6 +96,13 @@ func refresh() -> void:
 	if show_threat:
 		_threat.text = "Угроза глубин %d%% — Мать блоков слышит раскопки" % int(GameState.deep_threat)
 		_threat_bar.value = GameState.deep_threat
+	var rq: String = GameState.request_text() # v0.18: просьба Сна видна и в Яви — это повод добывать
+	if rq != "":
+		_next.visible = true
+		_next.text += ("\n" if _next.text != "" else "") + rq
+	if not GameState.dream_cracks.is_empty():
+		_next.visible = true
+		_next.text += ("\n" if _next.text != "" else "") + "Трещин во Сне: %d — залатай до рассвета (заякорь постройку снова)" % GameState.dream_cracks.size()
 	if GameState.is_dream() and GameState.archive_unlocked():
 		_next.visible = true
 		_next.text += ("\n" if _next.text != "" else "") + "Архив Снов %d/%d: K — рамка, B — сохранить, N — выбрать, P — вставить, O — поворот · Z/U — отмена/возврат, L — заливка, X — зеркало" % [GameState.blueprints.size(), GameState.blueprint_cap()]
