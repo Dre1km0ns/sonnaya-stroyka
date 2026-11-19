@@ -29,6 +29,8 @@ func _go() -> void:
 	await _shot("01_menu.png")
 	mm._show("create"); mm._name_edit.text = "Кадры v0.21"; mm._seed_edit.text = "сон21"
 	await _wait(5)
+	mm._show_loading("Загрузка мира «Кадры v0.21»…")
+	await _shot("01b_loading.png")
 	mm._create_world()
 	await _wait(160)
 	gs = root.get_node("GameState"); main = current_scene; player = main.get_node("Player")
@@ -65,6 +67,26 @@ func _go() -> void:
 	await _press("hotbar_1")
 	_look(Vector3(wcell.x + 0.5, wcell.y + 1.2, wcell.z + 2.5), 0.0, -0.4); await _wait(20)
 	await _shot("07_after_tutorial_objectives_hints.png")
+	# острова закреплены в мире: снизу и стоя на острове
+	var sc = main.get_tree().get_first_node_in_group("dream_scenery")
+	sc.update_islands(player.global_position)
+	var near_isl: Node3D = null
+	for isl in sc.islands.get_children():
+		if isl == sc.landmark: continue
+		if near_isl == null or isl.global_position.distance_to(player.global_position) < near_isl.global_position.distance_to(player.global_position): near_isl = isl
+	if near_isl:
+		var ip := near_isl.global_position
+		var from := ip + Vector3(0, -ip.y + 3.0, 22.0)
+		_look(from, 0.0, atan2(ip.y - from.y, 22.0)); await _wait(30)
+		await _shot("07b_island_from_ground.png")
+		gs.dev_mode = true; gs.world_seed = gs.DEV_SEED
+		var con0 = main.get_tree().get_first_node_in_group("dev_console")
+		print(con0.execute("dreamdecor island"))
+		player.rotation.y = 2.4; player.get_node("CameraPivot").rotation.x = -0.35
+		player.set_physics_process(true); await _wait(60); player.set_physics_process(false)
+		print("ON ISLAND: player y=%.2f island top=%.2f" % [player.global_position.y, ip.y + 1.0])
+		player.velocity = Vector3.ZERO
+		await _shot("07c_standing_on_island.png")
 	main.switcher.show_result_ui = false
 	main.switcher.wake_up()
 	await _wait(120)
@@ -83,6 +105,9 @@ func _go() -> void:
 		await _shot("10_mother_close_no_giant_bar.png")
 		_look(mp + Vector3(0, 0.6, 7.0), 0.0, 0.05); await _wait(10)
 		await _shot("11_mother_mid.png")
+		main.get_tree().get_first_node_in_group("boss_camera").apply_fade(m, 0.55)
+		await _shot("11b_mother_mid_fade55_test.png")
+		main.get_tree().get_first_node_in_group("boss_camera").apply_fade(m, 0.0)
 		print("SHELL r=", m.shell_radius())
 		# честная проверка оболочки: физика игрока включена, игрок идёт прямо в Мать 2.5 с
 		# детерминированно: Мать в обычной стойке (не «пересборка», где её коллизия честно выключена)
@@ -90,12 +115,21 @@ func _go() -> void:
 		m.global_position = mp
 		_look(mp + Vector3(0, 0.2, 5.0), 0.0, 0.1)
 		player.set_physics_process(true); player.flying = false
+		player.velocity = Vector3.ZERO
 		Input.action_press("move_forward")
-		await _wait(150)
+		for i in range(5):
+			await _wait(30)
+			print("walk t=%d pos=%s fly=%s vel=%s" % [i, player.global_position - mp, player.flying, player.velocity])
 		Input.action_release("move_forward")
 		var dd := Vector2(player.global_position.x - mp.x, player.global_position.z - mp.z).length()
 		print("WALK-IN distance to Mother center = %.2f (shell %.2f + capsule 0.4; melee %.1f)" % [dd, m.shell_radius(), m.MELEE_RANGE])
+		await _wait(90) # камера боя: прозрачность набирается плавно
+		var bcam = main.get_tree().get_first_node_in_group("boss_camera")
+		print("BOSSCAM: ", bcam.status_text())
 		await _shot("12_walked_into_mother.png")
+		bcam.enabled = false; await _wait(90)
+		await _shot("12b_mother_bosscam_off.png")
+		bcam.enabled = true
 		# меч с этой дистанции достаёт?
 		print(con.execute("give sword 1"))
 		for i in range(gs.HOTBAR_SIZE):

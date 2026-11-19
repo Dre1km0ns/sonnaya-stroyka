@@ -32,10 +32,3 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 3, -4)
 light_color = Color(0.55, 0.95, 0.8, 1)
 light_energy = 0.6
 omni_range = 15.0
-
-[node name="Hint" type="Label3D" parent="."]
-visible = false
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, -6)
-text = "Сон — строй свободно, якорь то, что заберёшь"
-font_size = 40
-modulate = Color(0.85, 0.75, 1, 1)

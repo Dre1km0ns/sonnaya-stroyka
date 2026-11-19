@@ -17,6 +17,7 @@ var t0_ms := 0
 var frame_us: PackedInt32Array = PackedInt32Array()
 var _last_us := 0
 var minutes := 40.0
+var nodecor := false
 var saves := 0
 var loads := 0
 var nights := 0
@@ -27,6 +28,7 @@ var worst: Array = [] # v0.21 c2: самые долгие кадры с конт
 func _init() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--minutes="): minutes = clampf(float(a.split("=")[1]), 1.0, 90.0)
+		if a == "--nodecor": nodecor = true # v0.21 c3: замер без декора Сна (сравнение p99)
 	call_deferred("_go")
 
 
@@ -137,6 +139,10 @@ func _go() -> void:
 	await _wait(40)
 	gs = root.get_node("GameState"); main = current_scene
 	gs.god_mode = true
+	if nodecor:
+		var sc = main.get_tree().get_first_node_in_group("dream_scenery")
+		if sc: sc.visible = false; sc.process_mode = Node.PROCESS_MODE_DISABLED
+		for isl in (sc.islands.get_children() if sc else []): isl.queue_free()
 	_mark("новая игра начинается во Сне", gs.is_dream() and gs.tutorial_active, "обучение: %s" % str(gs.tutorial_current().get("title", "")))
 	# --- обучение ---
 	var e := InputEventAction.new(); e.action = "move_forward"; e.pressed = true; Input.parse_input_event(e)
@@ -265,7 +271,7 @@ func _go() -> void:
 		"dream_blocks": gs.dream_blocks.size(), "wake_blocks": gs.wake_blocks.size(), "milestones": gs.milestones.keys(), "trials": gs.trials_run, "requests": gs.requests_done,
 		"static_mem_mb": snappedf(OS.get_static_memory_usage() / 1048576.0, 0.1), "fails": fails, "log": log, "worst_frames": worst,
 		"frame_ms_max_ingame": worst.filter(func(w): return float(w[1]) > 0.1).map(func(w): return int(w[0])).max() if not worst.is_empty() else 0}
-	var f := FileAccess.open("res://benchmarks/v020_bot.json", FileAccess.WRITE)
+	var f := FileAccess.open("res://benchmarks/v020_bot%s.json" % ("_nodecor" if nodecor else ""), FileAccess.WRITE)
 	f.store_string(JSON.stringify(res, "  ")); f.close()
 	print("BOT RESULT ", JSON.stringify(res.duplicate().merged({"log": log.size()}, true)))
 	print("BOT OK" if fails.is_empty() else "BOT FAIL %s" % str(fails))

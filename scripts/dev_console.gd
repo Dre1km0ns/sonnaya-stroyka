@@ -56,7 +56,8 @@ const COMMAND_HELP := {
 "blueprint":"Архив Снов (B/N/P/O, v0.17): список, сохранить рамку, показать N, вставить под прицелом, повернуть, стереть все. Пример: blueprint list; blueprint save; blueprint show 1; blueprint paste; blueprint rotate; blueprint clear",
 "undo":"Отмена/возврат правок Сна (Z/U), N раз. Пример: undo 5; undo redo 2",
 "mirror":"Зеркало Сна (X): переключить ось у игрока или выключить. Пример: mirror; mirror off",
-"dreamdecor":"Декор Сна v0.21: острова, флора на земле (кристаллы, кочки, пятна света), пылинки. status — счётчики; rebuild — пересобрать флору вокруг; off/on — спрятать/показать весь декор (для сравнения и замера FPS). Пример: dreamdecor; dreamdecor rebuild; dreamdecor off",
+"dreamdecor":"Декор Сна v0.21: острова, флора на земле (кристаллы, кочки, пятна света), пылинки. status — счётчики; rebuild — пересобрать флору вокруг; island — телепорт на ближайший остров (острова закреплены в мире, на них можно встать); off/on — спрятать/показать весь декор (для сравнения и замера FPS). Пример: dreamdecor; dreamdecor rebuild; dreamdecor off",
+"bosscam":"Камера боя v0.21: у боссов FOV шире (до +10°), вплотную Мать блоков полупрозрачная. on/off — включить/выключить, status — текущие FOV и прозрачность. Пример: bosscam; bosscam off; bosscam on",
 "hudfocus":"Фокус HUD обучения v0.21: что сейчас скрыто (цели, якорная панель, колонка Гвоздь/Клин/Якорь3/Маяк, цена якоря). Пример: hudfocus",
 }
 var history: Array[String] = []
@@ -167,7 +168,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 			all.append("setblock "+id)
 			all.append("fill "+id)
 			all.append("hardness "+id)
-	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","hudfocus"]: all.append(command)
+	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","dreamdecor island","hudfocus","bosscam","bosscam on","bosscam off","bosscam status"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -550,7 +551,7 @@ func _v010_command(a: PackedStringArray) -> String:
 			if where in ["sawmill","sawmill_plus"]: ctx={"station":"sawmill","upgraded":true}
 			if where=="alchemy": ctx={"station":"alchemy"}
 			return "Крафт: "+str(GameState.craft_recipe(a[1],ctx))
-		"clarity","imprint","palette","frame","dreamfill","crack","nightmare","garden","request","trial","tutorial","blueprint","undo","mirror","dreamdecor","hudfocus":
+		"clarity","imprint","palette","frame","dreamfill","crack","nightmare","garden","request","trial","tutorial","blueprint","undo","mirror","dreamdecor","hudfocus","bosscam":
 			return _dream_cmd(a, _player())
 	return "Ошибка: неизвестная команда. help — список."
 
@@ -715,8 +716,33 @@ func _dream_cmd(a: PackedStringArray, p: Node3D) -> String:
 				var t0 := Time.get_ticks_usec()
 				sc.rebuild_flora(Vector2i(c.x, c.z))
 				return "Флора пересобрана за %.1f мс · кристаллов %d, кочек %d, пятен %d" % [(Time.get_ticks_usec() - t0) / 1000.0, sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2]]
-			elif sub != "" and sub != "status": return "Ошибка: dreamdecor [status|rebuild|off|on]"
+			elif sub == "island":
+				var e9 := _need_dream(); if e9 != "": return e9
+				if p == null: return "Ошибка: нет игрока."
+				sc.update_islands(p.global_position)
+				var best: Node3D = null
+				for isl in sc.islands.get_children():
+					if isl == sc.landmark: continue
+					if best == null or isl.global_position.distance_to(p.global_position) < best.global_position.distance_to(p.global_position): best = isl
+				if best == null: return "Островов рядом нет."
+				# встаём на верх острова, а не в шпиль/дерево в центре: ищем свободную клетку лучом сверху
+				var space := p.get_world_3d().direct_space_state
+				var spot := best.global_position + Vector3(0.5, 1.2, 0.5)
+				for off in [Vector3(2.5, 0, 0.5), Vector3(-1.5, 0, 0.5), Vector3(0.5, 0, 2.5), Vector3(0.5, 0, -1.5), Vector3(1.5, 0, 1.5)]:
+					var q := PhysicsRayQueryParameters3D.create(best.global_position + off + Vector3(0, 3.0, 0), best.global_position + off + Vector3(0, -2.0, 0), 1)
+					var hit := space.intersect_ray(q)
+					if not hit.is_empty() and absf(float(hit.position.y) - (best.global_position.y + 1.0)) < 0.1:
+						spot = hit.position + Vector3(0, 0.05, 0); break
+				p.global_position = spot
+				return "Телепорт на остров %s (%.0f, %.0f, %.0f)." % [best.name, best.global_position.x, best.global_position.y, best.global_position.z]
+			elif sub != "" and sub != "status": return "Ошибка: dreamdecor [status|rebuild|island|off|on]"
 			return "Декор Сна: %s · островов %d (кубов %d) · флора: кристаллов %d, кочек %d, пятен %d · пылинок %d" % ["виден" if sc.visible else "спрятан", sc.island_count, sc.cube_count, sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2], sc.motes.amount]
+		"bosscam":
+			var bc := get_tree().get_first_node_in_group("boss_camera")
+			if bc == null: return "Ошибка: камеры боя нет в сцене."
+			if sub == "on" or sub == "off": bc.enabled = sub == "on"
+			elif sub != "" and sub != "status": return "Ошибка: bosscam [on|off|status]"
+			return bc.status_text()
 		"hudfocus":
 			var hud := get_tree().get_first_node_in_group("hud")
 			var hide_tools: bool = hud.tutorial_hides_wake_tools() if hud and hud.has_method("tutorial_hides_wake_tools") else false

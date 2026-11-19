@@ -4,6 +4,9 @@ var text_label: Label
 var _last := ""
 var _timer := 0.0
 var _tween: Tween
+const CHEAT_TEXT := "Сон помнит всё. T — материал · K, L — рамка и заливка · Z/U — отмена · F — проснуться"
+const CHEAT_SECONDS := 12.0
+var cheat_shown := 0.0
 func _ready() -> void:
 	position = Vector2(10,330)
 	custom_minimum_size = Vector2(260,70)
@@ -49,8 +52,10 @@ func _process(delta: float) -> void:
 			elif col.has_meta("terrain_chunk") and not GameState.is_dream(): # v0.21: подсказка добычи — только в Яви
 				text = "Добыча\nУдерживай ЛКМ: кирка или пустая рука. Камень рукой — без дропа."
 		# v0.11: обучение ведёт панель целей (objective_panel.gd); здесь — только контекст под прицелом.
-		if text == "" and not GameState.tutorial_focus() and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2:
-			text = "Сон помнит всё построенное.\nT — материал, Z/U — отмена/возврат, K+L — рамка и заливка, X — зеркало.\nQ — материализовать копию в Явь, F — проснуться."
+		# v0.21 c3: шпаргалка Сна — коротко и один раз (12 с показа за сессию), не висит рядом с целью постоянно.
+		if text == "" and not GameState.tutorial_focus() and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2 and cheat_shown < CHEAT_SECONDS:
+			text = CHEAT_TEXT
+		if text == CHEAT_TEXT: cheat_shown += 0.2
 	_place_below_objectives()
 	if text == _last:
 		return

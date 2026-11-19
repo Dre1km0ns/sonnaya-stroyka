@@ -43,6 +43,7 @@ func _ready() -> void:
 	dream_world.add_child(load("res://scripts/dream_cracks.gd").new()) # v0.18: трещины Сна
 	dream_world.add_child(load("res://scripts/dream_trial_view.gd").new()) # v0.19: показ испытания
 	dream_world.add_child(load("res://scripts/dream_scenery.gd").new()) # v0.21: небо, острова, светлячки Сна
+	add_child(load("res://scripts/boss_camera.gd").new()) # v0.21 c3: камера боя (FOV у боссов, полупрозрачная Мать вплотную)
 	add_child(load("res://scripts/dream_tutorial.gd").new()) # v0.20: обучение во Сне
 	add_child(load("res://scripts/dream_tone.gd").new()) # v0.20: тон Сна
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)

@@ -3951,7 +3951,7 @@ func _v021_checks() -> void:
 	_a(not (hud.get_node("Root/SpecialBar") as Control).visible and cap.text.begins_with("Осознанность") and not cap.text.contains("гвоздь"), 21030)
 	var sc: Node = scene.get_tree().get_first_node_in_group("dream_scenery")
 	sc.rebuild_flora(Vector2i(0, 0))
-	_a(sc.flora_counts[0] > 0 and sc.flora_counts[1] > 0 and sc.flora_counts[2] > 0 and sc.island_count == 12, 21034)
+	_a(sc.flora_counts[0] > 0 and sc.flora_counts[1] > 0 and sc.flora_counts[2] > 0 and sc.update_islands(Vector3.ZERO) > 0, 21034)
 	var fl_before: int = sc.flora_counts[0] + sc.flora_counts[1] + sc.flora_counts[2]
 	# флора не лезет в постройки: на клетке с блоком игрока её нет
 	var occupied_ok := true
@@ -3995,12 +3995,52 @@ func _v021_checks() -> void:
 	_a(G.clarity > 0.0 and G.dream_zones.has("stone_garden") and G.has_imprint("stone") and G.dream_cracks.is_empty() and G.frame_points == 0, 21021)
 	_a(con.execute("clarity 25") == "Осознанность: 25 / %.0f" % G.dream_clarity_max() and is_equal_approx(G.clarity, 25.0), 21022)
 	_a(con.execute("dreamdecor").contains("кристаллов") and con.execute("dreamdecor off").contains("спрятан") and not sc.visible and con.execute("dreamdecor on").contains("показан") and sc.visible, 21036)
+	# v0.21 c3: острова закреплены в мире — один и тот же сектор даёт тот же остров при другом центре; есть коллизия
+	sc.update_islands(Vector3.ZERO)
+	var pos_a := {}
+	for isl in sc.islands.get_children(): pos_a[isl.name] = isl.global_position
+	sc.update_islands(Vector3(40, 0, 0))
+	var same := 0; var moved := 0
+	for isl in sc.islands.get_children():
+		if pos_a.has(isl.name):
+			if (pos_a[isl.name] as Vector3).is_equal_approx(isl.global_position): same += 1
+			else: moved += 1
+	var has_col := sc.landmark is StaticBody3D and (sc.landmark as StaticBody3D).collision_layer == 1
+	_a(same > 0 and moved == 0 and has_col, 21050)
+	var ti: String = con.execute("dreamdecor island"); print("SMOKE island: ", ti)
+	_a(ti.contains("Телепорт") or ti.contains("Островов рядом нет"), 21051)
+	# камера боя: команда и полупрозрачность модели
+	var bc: Node = scene.get_tree().get_first_node_in_group("boss_camera")
+	_a(bc != null and con.execute("bosscam off").contains("выкл") and not bc.enabled and con.execute("bosscam on").contains("вкл") and bc.enabled, 21052)
+	var fake := Node3D.new(); var fm := Node3D.new(); fm.name = "Model"; fake.add_child(fm)
+	var fmi := MeshInstance3D.new(); fmi.mesh = BoxMesh.new(); fm.add_child(fmi); root.add_child(fake)
+	bc.apply_fade(fake, 0.4)
+	var faded_ok: bool = is_equal_approx(bc.fade_of(fmi), 0.4)
+	bc.apply_fade(fake, 0.0)
+	var om := fmi.get_surface_override_material(0) as BaseMaterial3D
+	_a(faded_ok and om != null and om.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED and is_equal_approx(om.albedo_color.a, 1.0), 21053)
+	fake.queue_free()
 	var rb: String = con.execute("dreamdecor rebuild"); print("SMOKE flora: ", rb)
 	_a(rb.contains("мс"), 21042)
 	_a(con.execute("hudfocus").contains("Обучение") and con.execute("help dreamdecor").contains("dreamdecor"), 21037)
 	scene.switcher.show_result_ui = false
 	scene.switcher.wake_up()
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	# v0.21 c3: во время обучения цели не сыплют «✔ …» в чат; скрытой надписи Hint в сцене Сна нет
+	var chat_seen: Array = []
+	var cb := func(t: String, _c: Color) -> void: chat_seen.append(t)
+	G.chat_message.connect(cb)
+	G.start_tutorial(); G.milestones.erase("first_dream"); G.milestones_mark("first_dream")
+	var tut_chat := chat_seen.filter(func(t): return str(t).begins_with("✔")).size()
+	G.skip_tutorial(); G.milestones.erase("first_dream"); G.milestones_mark("first_dream")
+	var after_chat := chat_seen.filter(func(t): return str(t).begins_with("✔")).size()
+	G.chat_message.disconnect(cb)
+	_a(tut_chat == 0 and after_chat == 1, 21054)
+	var dw: Node = load("res://scenes/world_dream.tscn").instantiate()
+	_a(dw.get_node_or_null("Hint") == null and dw.get_node_or_null("PillarA") == null, 21055)
+	dw.free()
+	var CH: GDScript = load("res://scripts/context_hints.gd")
+	_a(float(CH.CHEAT_SECONDS) <= 15.0 and str(CH.CHEAT_TEXT).length() < 100, 21056)
 	# цели Сна не советуют «R — Клин» в Яви; Мать держит дистанцию, её удар достаёт
 	var Obj: GDScript = load("res://scripts/objectives.gd")
 	var fa: Dictionary = {}
@@ -4012,5 +4052,6 @@ func _v021_checks() -> void:
 	var ep := ConfigFile.new(); var has_ep := ep.load("res://export_presets.cfg") == OK # в .pck пресетов нет
 	_a(FileAccess.file_exists("res://assets/icon/icon.ico") and (not has_ep or str(ep.get_value("preset.0.options", "application/icon", "")) == "res://assets/icon/icon.ico" and bool(ep.get_value("preset.0.options", "application/modify_resources", false))) and str(ProjectSettings.get_setting("application/config/icon")) == "res://assets/icon/icon_256.png", 21040)
 	_a(root.get_node("GameSettings").has_method("safe_quit"), 21041)
+	print("SMOKE: v0.21 c3: world islands + collision / island tp / bosscam + fade / no tutorial chat spam / scene cleanup / short cheat card OK")
 	print("SMOKE: v0.21 c2: wake tools hidden in tutorial / caption / anchor hint / dream flora / decor+hudfocus console / dream objectives / mother distance / exe icon OK")
 	print("SMOKE: v0.21 c1: tutorial focus HUD / starter slot 5 / hp bars / music guard / unique uids / opaque settings / camp sign / dream console OK")

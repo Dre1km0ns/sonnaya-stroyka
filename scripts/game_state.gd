@@ -2222,7 +2222,7 @@ func enter_dream() -> void:
 		if inv_dream.size() > 4 and str(inv_dream[4].get("id", "")) == "":
 			inv_dream[4] = {"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}; put = true; notify_inventory()
 		if put or _give_items(inv_dream, [{"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}]).is_empty():
-			chat("Во сне ты вспомнил, как выглядит верстак. Поставь его (слот хотбара) и закрепи якорем.", Color(0.75, 0.85, 1.0))
+			if not tutorial_focus(): chat("Во сне ты вспомнил, как выглядит верстак. Поставь его (слот хотбара) и закрепи якорем.", Color(0.75, 0.85, 1.0))
 	if not dream_stash.is_empty():
 		var before := dream_stash.size()
 		dream_stash = _give_items(inv_dream, dream_stash)
@@ -3372,8 +3372,10 @@ func milestones_mark(id: String, silent: bool = false) -> void:
 	milestones[id] = true
 	var title := Objectives.title(id)
 	if not silent and title != "":
-		toast.emit("Цель выполнена: " + title)
-		chat("✔ " + title, Color(0.6, 1.0, 0.6))
+		# v0.21 c3: во время обучения прогресс ведёт его панель — без тостов и чата «✔ …» поверх
+		if not tutorial_focus():
+			toast.emit("Цель выполнена: " + title)
+			chat("✔ " + title, Color(0.6, 1.0, 0.6))
 		milestone_done.emit(id, title)
 		if is_inside_tree():
 			Sfx.play("milestone", get_tree().root)

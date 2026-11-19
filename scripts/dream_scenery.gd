@@ -1,10 +1,7 @@
 extends Node3D
 ## v0.21: Сон оживает — летающие острова и ориентиры на горизонте, светлячки вокруг игрока, небо Сна.
-## Декор не участвует в физике и сейве. Слой декора следует за камерой (как далёкие горы):
-## при любой дальности прогрузки он стоит внутри дальнего плана камеры (масштаб от тумана).
+## v0.21 c3: острова и башня закреплены в мире, у них есть коллизия (можно долететь и встать); в сейв не входят.
 
-const AUTHOR_R := 45.0          # радиус, на котором острова «нарисованы»
-const ISLANDS := 12
 const SKY_SHADER := preload("res://shaders/dream_sky.gdshader")
 
 var islands: MeshInstance3D
@@ -23,6 +20,8 @@ var flora_counts := [0, 0, 0]
 var _flora_center := Vector2i(2147483647, 0)
 var _chunks: Node = null
 var _flora_dirty := false
+var _island_center := Vector2i(2147483647, 0)
+var _island_fog := -1.0
 var _flora_t := 0.0
 
 
@@ -51,8 +50,7 @@ func apply_palette() -> void:
 	sky_mat.set_shader_parameter("top_color", Vector3(top.r, top.g, top.b))
 	sky_mat.set_shader_parameter("horizon_color", Vector3(hor.r, hor.g, hor.b))
 	sky_mat.set_shader_parameter("unease", clampf(float(GameState.dream_cracks.size()) / 16.0, 0.0, 1.0))
-	if islands and islands.material_override:
-		(islands.material_override as StandardMaterial3D).albedo_color = Color(1, 1, 1).lerp(hor.lightened(0.2), 0.35)
+	_island_material().albedo_color = Color(1, 1, 1).lerp(hor.lightened(0.2), 0.35)
 
 
 func _process(delta: float) -> void:
@@ -62,10 +60,11 @@ func _process(delta: float) -> void:
 		_cam = get_viewport().get_camera_3d()
 	if _cam == null:
 		return
-	var k := clampf((GameSettings.fog_end_distance() * 0.82) / AUTHOR_R, 0.25, 4.0)
-	islands.global_position = _cam.global_position
-	islands.scale = Vector3.ONE * k
 	motes.global_position = _cam.global_position
+	var isc := Vector2i(floori(_cam.global_position.x / SECTOR), floori(_cam.global_position.z / SECTOR))
+	if isc != _island_center or GameSettings.fog_end_distance() != _island_fog:
+		_island_center = isc; _island_fog = GameSettings.fog_end_distance()
+		update_islands(_cam.global_position)
 	var fc := Vector2i(floori(_cam.global_position.x / FLORA_SNAP), floori(_cam.global_position.z / FLORA_SNAP))
 	_flora_t -= delta
 	if _flora_dirty and _flora_t <= 0.0:
@@ -79,57 +78,116 @@ func _rng(i: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new(); r.seed = hash(str(_seed) + ":" + str(i)); return r
 
 
+## v0.21 c3: острова закреплены в мире (сектора 64×64 м, детерминированно от сида) — до них можно долететь
+## и встать на них (коллизия). Раньше декор ездил за камерой, и долететь было нельзя.
+const SECTOR := 64
+const ISLAND_CHANCE := 0.7
+var _sectors: Dictionary = {}   # Vector2i -> Node3D (остров с коллизией) или null (пустой сектор)
+var _island_mat: StandardMaterial3D
+var landmark: Node3D
+
+
+func _island_material() -> StandardMaterial3D:
+	if _island_mat == null:
+		_island_mat = StandardMaterial3D.new()
+		_island_mat.vertex_color_use_as_albedo = true
+		# v0.21 c3: освещённые (свет Сна), а не плоские — вблизи и с вершины острова читается рельеф кубов
+		_island_mat.roughness = 1.0
+		_island_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_island_mat.emission_enabled = true
+		_island_mat.emission = Color(0.30, 0.24, 0.44)
+	return _island_mat
+
+
 func _build_islands() -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# v0.21 c2: светлее — на фоне неба острова читались тёмными силуэтами.
-	var grass := Color(0.82, 0.72, 1.0); var rock := Color(0.50, 0.42, 0.70); var glow := Color(0.85, 1.0, 0.95)
-	for i in range(ISLANDS):
-		var r := _rng(i)
-		var ang := TAU * (float(i) + r.randf_range(-0.3, 0.3)) / float(ISLANDS)
-		var dist := r.randf_range(34.0, AUTHOR_R)
-		var c := Vector3(cos(ang) * dist, r.randf_range(4.0, 22.0), sin(ang) * dist)
-		var rad := r.randi_range(2, 5)
-		var depth := rad + r.randi_range(1, 4)
-		for y in range(depth):
-			var rr := float(rad) * (1.0 - float(y) / float(depth + 1)) + 0.4
-			for x in range(-rad, rad + 1):
-				for z in range(-rad, rad + 1):
-					if Vector2(x, z).length() > rr + r.randf_range(-0.4, 0.3): continue
-					var col := grass if y == 0 else rock.lerp(Color(0.32, 0.26, 0.5), float(y) / float(depth))
-					_cube(st, c + Vector3(x, -y, z), col)
-		# ориентир на части островов: кристаллический шпиль или дерево Сна
-		if i % 4 == 0:
-			var hgt := r.randi_range(6, 11)
-			for y in range(1, hgt + 1):
-				_cube(st, c + Vector3(0, y, 0), glow.lerp(Color(0.6, 0.85, 1.0), float(y) / float(hgt)))
-			_cube(st, c + Vector3(1, 1, 0), glow); _cube(st, c + Vector3(-1, 2, 0), glow); _cube(st, c + Vector3(0, 3, 1), glow)
-		elif i % 4 == 2:
-			for y in range(1, 4): _cube(st, c + Vector3(0, y, 0), Color(0.42, 0.3, 0.5))
-			for x in range(-1, 2):
-				for z in range(-1, 2):
-					for y in range(4, 6): _cube(st, c + Vector3(x, y, z), Color(0.95, 0.6, 0.85))
-		island_count += 1
-	# большой ориентир: перевёрнутая башня над горизонтом
-	var tr := _rng(999); var ta := tr.randf_range(0.0, TAU)
-	var tc := Vector3(cos(ta) * AUTHOR_R * 0.98, 30.0, sin(ta) * AUTHOR_R * 0.98)
+	islands = MeshInstance3D.new(); islands.name = "Islands" # контейнер (совместимость с консолью/смоуком)
+	add_child(islands)
+	# большой ориентир: перевёрнутая башня, видна издалека, стоит на месте
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for y in range(14):
 		var w := 1 + int(y / 4)
 		for x in range(-w, w + 1):
 			for z in range(-w, w + 1):
 				if abs(x) == w or abs(z) == w or y % 4 == 0:
-					_cube(st, tc + Vector3(x, -y, z), Color(0.75, 0.7, 0.98).darkened(float(y) * 0.03))
+					_cube(st, Vector3(x, -y, z), Color(0.8, 0.75, 1.0).darkened(float(y) * 0.03))
+	var tr := _rng(999); var ta := tr.randf_range(0.0, TAU)
+	landmark = _make_body(st, "InvertedTower")
+	landmark.position = Vector3(cos(ta) * 90.0, 42.0, sin(ta) * 90.0)
+	islands.add_child(landmark)
+
+
+func _make_body(st: SurfaceTool, nm: String) -> Node3D:
 	st.generate_normals()
-	islands = MeshInstance3D.new(); islands.name = "Islands"
-	islands.mesh = st.commit()
-	islands.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.disable_fog = true
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	islands.material_override = m
-	add_child(islands)
+	var mesh := st.commit()
+	var body := StaticBody3D.new(); body.name = nm
+	body.collision_layer = 1; body.collision_mask = 0
+	var mi := MeshInstance3D.new(); mi.mesh = mesh; mi.material_override = _island_material()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(mi)
+	var cs := CollisionShape3D.new(); cs.shape = mesh.create_trimesh_shape(); body.add_child(cs)
+	return body
+
+
+func _build_island_at(sec: Vector2i) -> Node3D:
+	var r := _rng(sec.x * 7919 + sec.y * 104729)
+	if r.randf() > ISLAND_CHANCE:
+		return null
+	# v0.21 c2: светлее — на фоне неба острова читались тёмными силуэтами.
+	var grass := Color(0.82, 0.72, 1.0); var rock := Color(0.50, 0.42, 0.70); var glow := Color(0.85, 1.0, 0.95)
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rad := r.randi_range(2, 6)
+	var depth := rad + r.randi_range(1, 4)
+	var cubes := 0
+	for y in range(depth):
+		var rr := float(rad) * (1.0 - float(y) / float(depth + 1)) + 0.4
+		for x in range(-rad, rad + 1):
+			for z in range(-rad, rad + 1):
+				if Vector2(x, z).length() > rr + r.randf_range(-0.4, 0.3): continue
+				var col := grass if y == 0 else rock.lerp(Color(0.32, 0.26, 0.5), float(y) / float(depth))
+				col = col.darkened(r.randf_range(0.0, 0.12)) # шум по кубам — видна блочная фактура
+				_cube(st, Vector3(x, -y, z), col); cubes += 1
+	var kind := r.randi_range(0, 3)
+	if kind == 0:
+		var hgt := r.randi_range(6, 11)
+		for y in range(1, hgt + 1):
+			_cube(st, Vector3(0, y, 0), glow.lerp(Color(0.6, 0.85, 1.0), float(y) / float(hgt)))
+		_cube(st, Vector3(1, 1, 0), glow); _cube(st, Vector3(-1, 2, 0), glow); _cube(st, Vector3(0, 3, 1), glow)
+	elif kind == 2:
+		for y in range(1, 4): _cube(st, Vector3(0, y, 0), Color(0.42, 0.3, 0.5))
+		for x in range(-1, 2):
+			for z in range(-1, 2):
+				for y in range(4, 6): _cube(st, Vector3(x, y, z), Color(0.95, 0.6, 0.85))
+	var body := _make_body(st, "Island_%d_%d" % [sec.x, sec.y])
+	# клетка сетки: острова стоят ровно по блокам, к ним можно пристраивать
+	var pos := Vector3(sec.x * SECTOR + r.randi_range(10, SECTOR - 10), r.randi_range(16, 38), sec.y * SECTOR + r.randi_range(10, SECTOR - 10))
+	if Vector2(pos.x, pos.z).length() < 22.0: pos.y += 14.0 # над точкой старта — повыше, не нависает над обучением
+	body.position = pos
+	body.set_meta("cubes", cubes)
+	return body
+
+
+## Держать острова в секторах вокруг точки (по дальности тумана). Возвращает число активных островов.
+func update_islands(center: Vector3) -> int:
+	var reach := int(ceil((GameSettings.fog_end_distance() + 24.0) / float(SECTOR)))
+	var cs := Vector2i(floori(center.x / SECTOR), floori(center.z / SECTOR))
+	var keep := {}
+	for sx in range(cs.x - reach, cs.x + reach + 1):
+		for sz in range(cs.y - reach, cs.y + reach + 1):
+			var k := Vector2i(sx, sz); keep[k] = true
+			if not _sectors.has(k):
+				var isl := _build_island_at(k)
+				_sectors[k] = isl
+				if isl: islands.add_child(isl)
+	for k in _sectors.keys():
+		if not keep.has(k):
+			var n = _sectors[k]
+			if n and is_instance_valid(n): n.queue_free()
+			_sectors.erase(k)
+	island_count = 0; cube_count = 0
+	for k in _sectors:
+		if _sectors[k]:
+			island_count += 1; cube_count += int(_sectors[k].get_meta("cubes", 0))
+	return island_count
 
 
 func _cube(st: SurfaceTool, p: Vector3, col: Color) -> void:
