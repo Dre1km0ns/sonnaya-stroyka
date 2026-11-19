@@ -60,7 +60,7 @@
 - Экран загрузки: `main_menu.gd` (`_show_loading`).
 - Иконка: `assets/icon/`, `tools/gen_icon.py`, `export_presets.cfg` (`application/icon`, `modify_resources=true`).
 - Консоль: команды `dreamdecor` и `hudfocus` в `dev_console.gd`.
-- Шаблоны экспорта Windows 4.7.2 лежат в `~/.local/share/godot/export_templates/4.7.2.stable/`. Если их нет, скачать из tpz только два windows-файла, через HTTP Range (скрипт /tmp/rz.py, логика описана в отчёте цикла 2).
+- Шаблоны экспорта Windows 4.7.2 лежат в `~/.local/share/godot/export_templates/4.7.2.stable/`. Если их нет, скачать из tpz только два windows-файла, командой `python3 tools/fetch_win_templates.py` (HTTP Range).
 
 ## Что осталось
 - Цикл 3: исправить список ниже, затем снова провести бета-анализ.
