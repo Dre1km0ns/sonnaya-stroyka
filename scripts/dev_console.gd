@@ -56,8 +56,8 @@ const COMMAND_HELP := {
 "blueprint":"Архив Снов (B/N/P/O, v0.17): список, сохранить рамку, показать N, вставить под прицелом, повернуть, стереть все. Пример: blueprint list; blueprint save; blueprint show 1; blueprint paste; blueprint rotate; blueprint clear",
 "undo":"Отмена/возврат правок Сна (Z/U), N раз. Пример: undo 5; undo redo 2",
 "mirror":"Зеркало Сна (X): переключить ось у игрока или выключить. Пример: mirror; mirror off",
-"dreamdecor":"Декор Сна v0.21: острова, флора на земле (кристаллы, кочки, пятна света), пылинки. status — счётчики; rebuild — пересобрать флору вокруг; island — телепорт на ближайший остров (острова закреплены в мире, на них можно встать); off/on — спрятать/показать весь декор (для сравнения и замера FPS). Пример: dreamdecor; dreamdecor rebuild; dreamdecor off",
-"bosscam":"Камера боя v0.21: у боссов FOV шире (до +10°), вплотную Мать блоков полупрозрачная. on/off — включить/выключить, status — текущие FOV и прозрачность. Пример: bosscam; bosscam off; bosscam on",
+"dreamdecor":"Декор Сна v0.21: острова, флора на земле (кристаллы, кочки, пятна света), пылинки. status — счётчики; rebuild — пересобрать флору вокруг; island — телепорт на ближайший остров (острова закреплены в мире, на них можно встать, текстуры как у земли Сна); home — на точку старта лицом к острову старта (он всегда виден из начала игры); off/on — спрятать/показать весь декор (для сравнения и замера FPS). Пример: dreamdecor; dreamdecor rebuild; dreamdecor home; dreamdecor off",
+"bosscam":"Камера боя v0.21: у боссов FOV шире (до +10°), вплотную Мать блоков полупрозрачная, а её пластины брони уменьшаются и опускаются ниже прицела. on/off — включить/выключить, status — текущие FOV, прозрачность и размер пластин. Пример: bosscam; bosscam off; bosscam on",
 "hudfocus":"Фокус HUD обучения v0.21: что сейчас скрыто (цели, якорная панель, колонка Гвоздь/Клин/Якорь3/Маяк, цена якоря). Пример: hudfocus",
 }
 var history: Array[String] = []
@@ -168,7 +168,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 			all.append("setblock "+id)
 			all.append("fill "+id)
 			all.append("hardness "+id)
-	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","dreamdecor island","hudfocus","bosscam","bosscam on","bosscam off","bosscam status"]: all.append(command)
+	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","dreamdecor island","dreamdecor home","hudfocus","bosscam","bosscam on","bosscam off","bosscam status"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -735,8 +735,19 @@ func _dream_cmd(a: PackedStringArray, p: Node3D) -> String:
 						spot = hit.position + Vector3(0, 0.05, 0); break
 				p.global_position = spot
 				return "Телепорт на остров %s (%.0f, %.0f, %.0f)." % [best.name, best.global_position.x, best.global_position.y, best.global_position.z]
-			elif sub != "" and sub != "status": return "Ошибка: dreamdecor [status|rebuild|island|off|on]"
-			return "Декор Сна: %s · островов %d (кубов %d) · флора: кристаллов %d, кочек %d, пятен %d · пылинок %d" % ["виден" if sc.visible else "спрятан", sc.island_count, sc.cube_count, sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2], sc.motes.amount]
+			elif sub == "home":
+				var e10 := _need_dream(); if e10 != "": return e10
+				if p == null: return "Ошибка: нет игрока."
+				p.global_position = Vector3(0.5, 1.05, 0.5)
+				if "velocity" in p: p.velocity = Vector3.ZERO
+				p.rotation.y = 0.0
+				var hc := p.get_node_or_null("Head")
+				if hc: hc.rotation.x = 0.0
+				sc.update_islands(p.global_position)
+				var si = sc._sectors.get(sc.SPAWN_SECTOR)
+				return "На точке старта, лицом на север (−Z). Остров старта: %s." % (("%s (%.0f, %.0f, %.0f)" % [si.name, si.position.x, si.position.y, si.position.z]) if si else "нет")
+			elif sub != "" and sub != "status": return "Ошибка: dreamdecor [status|rebuild|island|home|off|on]"
+			return "Декор Сна: %s · островов %d (кубов %d, в очереди %d) · флора: кристаллов %d, кочек %d, пятен %d · пылинок %d" % ["виден" if sc.visible else "спрятан", sc.island_count, sc.cube_count, sc._pending.size(), sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2], sc.motes.amount]
 		"bosscam":
 			var bc := get_tree().get_first_node_in_group("boss_camera")
 			if bc == null: return "Ошибка: камеры боя нет в сцене."

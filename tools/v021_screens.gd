@@ -117,10 +117,17 @@ func _go() -> void:
 		player.set_physics_process(true); player.flying = false
 		player.velocity = Vector3.ZERO
 		Input.action_press("move_forward")
-		for i in range(5):
-			await _wait(30)
-			print("walk t=%d pos=%s fly=%s vel=%s" % [i, player.global_position - mp, player.flying, player.velocity])
+		# идём, пока не упрёмся в оболочку (шар: при малейшем смещении игрок честно соскальзывает вбок — поэтому не жмём дольше)
+		var min_d := 99.0
+		for i in range(120):
+			await process_frame
+			var d0 := Vector2(player.global_position.x - mp.x, player.global_position.z - mp.z).length()
+			min_d = minf(min_d, d0)
+			if i % 15 == 0: print("walk f=%d pos=%s vel=%s" % [i, player.global_position - mp, player.velocity])
+			if d0 <= 2.9 and player.velocity.length() < 3.0: break
 		Input.action_release("move_forward")
+		player.velocity = Vector3.ZERO
+		print("WALK-IN min distance = %.2f" % min_d)
 		var dd := Vector2(player.global_position.x - mp.x, player.global_position.z - mp.z).length()
 		print("WALK-IN distance to Mother center = %.2f (shell %.2f + capsule 0.4; melee %.1f)" % [dd, m.shell_radius(), m.MELEE_RANGE])
 		await _wait(90) # камера боя: прозрачность набирается плавно

@@ -4019,7 +4019,26 @@ func _v021_checks() -> void:
 	bc.apply_fade(fake, 0.0)
 	var om := fmi.get_surface_override_material(0) as BaseMaterial3D
 	_a(faded_ok and om != null and om.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED and is_equal_approx(om.albedo_color.a, 1.0), 21053)
+	# v0.21 c4: пластины вплотную уменьшаются и опускаются, при отходе возвращаются
+	var fpl := Node3D.new(); fpl.name = "Plate0"; fpl.position = Vector3(0, 1.25, 1.72); fake.add_child(fpl)
+	bc.apply_fade(fake, bc.FADE_MAX)
+	var squashed: bool = fpl.scale.x < 0.6 and fpl.position.y < 0.7
+	bc.apply_fade(fake, 0.0)
+	_a(squashed and is_equal_approx(fpl.scale.x, 1.0) and is_equal_approx(fpl.position.y, 1.25), 21060)
 	fake.queue_free()
+	# острова: текстура атласа (UV2 — тайл), остров старта всегда есть, очередь подгрузки с запасом за туманом
+	sc.update_islands(Vector3.ZERO)
+	var si0 = sc._sectors.get(sc.SPAWN_SECTOR)
+	var smi: MeshInstance3D = si0.get_child(0) if si0 else null
+	var arr: Array = smi.mesh.surface_get_arrays(0) if smi else []
+	_a(si0 != null and (si0.position as Vector3).is_equal_approx(Vector3(5, 20, -40)) and smi.material_override is ShaderMaterial and arr[Mesh.ARRAY_TEX_UV2] != null and (arr[Mesh.ARRAY_TEX_UV2] as PackedVector2Array).size() > 0, 21061)
+	var before_n: int = sc._sectors.size()
+	sc.update_islands(Vector3(640, 0, 0), false)
+	var queued: int = sc._pending.size()
+	_a(queued > 0 and sc._sectors.size() < before_n + queued and int(sc.LOAD_MARGIN) >= 1, 21062)
+	sc._pending.clear(); sc.update_islands(Vector3.ZERO)
+	var hm: String = con.execute("dreamdecor home"); print("SMOKE home: ", hm)
+	_a(hm.contains("Остров старта: Island_0_-1"), 21063)
 	var rb: String = con.execute("dreamdecor rebuild"); print("SMOKE flora: ", rb)
 	_a(rb.contains("мс"), 21042)
 	_a(con.execute("hudfocus").contains("Обучение") and con.execute("help dreamdecor").contains("dreamdecor"), 21037)
@@ -4052,6 +4071,7 @@ func _v021_checks() -> void:
 	var ep := ConfigFile.new(); var has_ep := ep.load("res://export_presets.cfg") == OK # в .pck пресетов нет
 	_a(FileAccess.file_exists("res://assets/icon/icon.ico") and (not has_ep or str(ep.get_value("preset.0.options", "application/icon", "")) == "res://assets/icon/icon.ico" and bool(ep.get_value("preset.0.options", "application/modify_resources", false))) and str(ProjectSettings.get_setting("application/config/icon")) == "res://assets/icon/icon_256.png", 21040)
 	_a(root.get_node("GameSettings").has_method("safe_quit"), 21041)
+	print("SMOKE: v0.21 c4: plates squash up close / textured islands + spawn island / queued island loading / dreamdecor home OK")
 	print("SMOKE: v0.21 c3: world islands + collision / island tp / bosscam + fade / no tutorial chat spam / scene cleanup / short cheat card OK")
 	print("SMOKE: v0.21 c2: wake tools hidden in tutorial / caption / anchor hint / dream flora / decor+hudfocus console / dream objectives / mother distance / exe icon OK")
 	print("SMOKE: v0.21 c1: tutorial focus HUD / starter slot 5 / hp bars / music guard / unique uids / opaque settings / camp sign / dream console OK")

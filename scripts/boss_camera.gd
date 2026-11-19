@@ -3,6 +3,8 @@ extends Node
 ## 1) Рядом с любым боссом (до 9 м) FOV плавно расширяется 75° → 85°.
 ## 2) Когда камера ближе ~3.6 м к центру Матери, её модель плавно становится полупрозрачной (до 55%; пластины брони и ядро — нет),
 ##    так что видно и её замах, и то, что за ней. Хитбоксы и урон не меняются.
+## 3) v0.21 c4: вплотную пластины брони уменьшаются (до 55%) и опускаются ниже прицела — центр экрана свободен.
+##    Попадание по пластине от геометрии не зависит (state PLATE_OPEN), так что бой не меняется.
 ## Консоль: bosscam [on|off|status].
 
 const FOV_NEAR_ADD := 10.0
@@ -10,6 +12,8 @@ const FOV_RANGE := 9.0
 const FADE_FAR := 3.6
 const FADE_SPAN := 1.2
 const FADE_MAX := 0.55
+const PLATE_SHRINK := 0.45   # 1.0 → 0.55 при полной близости
+const PLATE_DROP := 0.6      # метров вниз при полной близости
 
 var enabled := true
 var base_fov := 75.0
@@ -57,12 +61,29 @@ func _process(delta: float) -> void:
 
 
 static func apply_fade(boss: Node, t: float) -> void:
-	## Только тело (Model). Пластины брони, их кромка и ядро остаются непрозрачными — это цели и сигналы боя.
+	## Тело (Model) полупрозрачно. Пластины брони, их кромка и ядро остаются непрозрачными — это цели и сигналы боя,
+	## но вплотную они уменьшаются и опускаются (apply_plate_squash).
 	## Через копии материалов (а не GeometryInstance3D.transparency): так работает и в Compatibility-рендере.
+	apply_plate_squash(boss, clampf(t / FADE_MAX, 0.0, 1.0))
 	var model := boss.get_node_or_null("Model")
 	if model:
 		for g in model.find_children("*", "MeshInstance3D", true, false):
 			_fade_mesh(g as MeshInstance3D, t)
+
+
+static func apply_plate_squash(boss: Node, k: float) -> void:
+	for h in boss.get_children():
+		if not (h is Node3D) or not String(h.name).begins_with("Plate"): continue
+		var n := h as Node3D
+		if not n.has_meta("_base_y"): n.set_meta("_base_y", n.position.y)
+		var s := 1.0 - PLATE_SHRINK * k
+		n.scale = Vector3(s, s, s)
+		n.position.y = float(n.get_meta("_base_y")) - PLATE_DROP * k
+
+
+static func plate_scale_of(boss: Node) -> float:
+	var p := boss.get_node_or_null("Plate0") as Node3D
+	return p.scale.x if p else 1.0
 
 
 static func _fade_mesh(mi: MeshInstance3D, t: float) -> void:
@@ -97,6 +118,6 @@ static func fade_of(mi: MeshInstance3D) -> float:
 
 
 func status_text() -> String:
-	return "Камера боя: %s · FOV %.0f° (база %.0f° +%.1f) · прозрачность Матери %d%% · до ближайшего босса %s" % [
-		"вкл" if enabled else "выкл", (_cam.fov if _cam else base_fov), base_fov, fov_add, int(round(fade * 100.0)),
+	return "Камера боя: %s · FOV %.0f° (база %.0f° +%.1f) · прозрачность Матери %d%% · пластины %d%% · до ближайшего босса %s" % [
+		"вкл" if enabled else "выкл", (_cam.fov if _cam else base_fov), base_fov, fov_add, int(round(fade * 100.0)), int(round((1.0 - PLATE_SHRINK * clampf(fade / FADE_MAX, 0.0, 1.0)) * 100.0)),
 		("%.1f м" % nearest_boss_dist) if nearest_boss_dist < INF else "—"]
