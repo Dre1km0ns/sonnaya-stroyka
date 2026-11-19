@@ -3908,6 +3908,11 @@ func _v022_scene_checks() -> void:
 	G.wake_blocks[base] = {"kind": "stone", "mutant": false}; G.wake_blocks[t1] = {"kind": "torch", "mutant": false}
 	_a(b.torch_supported(t1), 22026)
 	G.wake_blocks.erase(base); _a(not b.torch_supported(t1), 22027); G.wake_blocks.erase(t1)
+	# опору ломает моб (destroy_wake_structure) — факел падает через сигнал wake_cell_removed
+	G.wake_blocks[base] = {"kind": "stone", "mutant": false}; G.wake_blocks[t1] = {"kind": "torch", "mutant": false, "attach": [base.x, base.y, base.z]}
+	_a(G.destroy_wake_structure(base), 22028)
+	await process_frame
+	_a(not G.wake_blocks.has(t1), 22029)
 	# п.14: урон от падения как в Minecraft
 	_a(G.fall_damage_for(3.0) == 0 and G.fall_damage_for(4.0) == 5 and G.fall_damage_for(10.0) == 35 and G.fall_damage_for(23.0) == 100, 22030)
 	G.player_hp = 100; G.god_mode = false

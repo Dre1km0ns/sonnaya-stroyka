@@ -1,117 +1,52 @@
-# v0.22 — работа в процессе (ветка wip/v0.22, база main f0707e1)
+# Передача работы — Сонная стройка v0.22 (выпущена 19.11.2026)
 
-Обновлено: 19.11.2026, МСК. Список владельца из 16 пунктов («работай» pt108u). Порядок: этапы, push после каждого.
-- Этап 1 (b4e4fde): боссы откачены к v0.11 (21333e4), Анаконда злится на >3 факелов и ломает их, стана от света нет.
-- Этап 2 (3953be7): все скобочные подсказки в UI убраны; честный хотбар Сна (палитра только из пустого слота 1).
-- Этап 3: нет сводки после Сна (окно только если проснуться нельзя), нет 3D-надписи лагеря, у кровати нет окна (E — Сон, Y — подушка), дневной спавн −75 %, факелы держатся на опоре и падают предметом, урон от падения, очистка рамки без лимита и цены.
-- Осталось: п.3 осыпь, п.4 время ×4, п.7 отдача/откидывание, п.8 ЛКМ/ПКМ, п.13 модель/руки, консольные команды v0.22, CHANGELOG, версия, бот 40 мин, кадры, публикация.
-
-# Передача работы — Сонная стройка v0.21 (выпущена 19.11.2026)
-
-Обновлено: 19.11.2026, МСК. Циклы 1–2 из 4 закончены, дальше цикл 3 («багфикс → промежуточная аналитика → бета-анализ»). Публикация на Drive будет только после цикла 4: ZIP «Сонная стройка v0.21.zip» в папку 1YW-aXo6q4BgBnnTx9frlZhIU1tosuMBJ. В циклах 1–3 на Drive ничего не загружать, видео владельца не трогать, отчётных документов на Drive не создавать.
+Обновлено: 19.11.2026, МСК. v0.22 закрывает список владельца из 16 пунктов (pt92u–pt108u). Подробности — CHANGELOG_V0.22.md.
 
 ## Репозиторий
 - https://github.com/Dre1km0ns/sonnaya-stroyka, checkout `/workspace/sonnaya-stroyka`.
-- `main` = v0.20 (e0823fe) плюс `export_presets.cfg` (cc69fe4). Ветки v0.x были линейными, поэтому main продвинут фаст-форвардом; PR #1–#2 влились сами, #3–#10 закрыты с комментарием.
-- Работа идёт в `wip/v0.21`, push после каждого этапа. В main попадёт после цикла 4.
+- `main` = `wip/v0.22` (fast-forward), тег `v0.22`. База v0.21 — f0707e1.
+- Этапы: b4e4fde (боссы), 3953be7 (скобки, хотбар Сна), ac2fac0 (сводка, кровать, лагерь, спавн, факелы, падение, рамка), 8306c5d (осыпь, время ×4, мышь, отдача, руки, консоль), затем финал (версия, документы, бот).
 
 ## Правила владельца
 - Каждой новой функции нужна консольная команда DevSeed (6767676767) с русской справкой, примерами и Tab.
-- Отчётных документов не создавать, если владелец не попросил.
+- **Указаний в скобках в интерфейсе нет и больше не добавлять** (pt97u).
+- Отчётных документов не создавать. Фиксы не имитировать: каждый подтверждать смоуком, ботом или кадрами.
+- Видео владельца на Drive не трогать.
 - Новый большой список идей: сначала изложить понимание и ждать «работай».
-- Фиксы не имитировать: каждый подтверждать смоуком, ботом или кадрами.
+- Лимит: если недельный расход больше 80 %, остановиться, запушить WIP и оставить шаги в этом файле.
 
-## Что сделано (цикл 1)
-См. CHANGELOG_V0.21.md. Главное:
-- фокус HUD на обучении;
-- строгий порядок шагов с ранним зачётом;
-- верстак в слоте 5;
-- подсказка добычи только в Яви;
-- табличка лагеря как табличка в мире;
-- HP-полоски без раздувания и без дубля у боссов;
-- оболочка Матери блоков (слой 64);
-- защита music_controller вне дерева;
-- уникальные UID;
-- непрозрачные настройки;
-- читаемый заголовок мира;
-- утечка аудио при выходе устранена (было 8 ресурсов, стало 0; `GameSettings.safe_quit`);
-- 14 консольных команд Сна;
-- небо, острова и пылинки Сна.
-
-## Где код
-- Обучение: `scripts/game_state.gd`. Блок «v0.20: обучение во Сне»: `TUTORIAL`, `tutorial_event`, `tutorial_focus`, `tutorial_step_id`, `tutorial_early`.
-- HUD: `scripts/hud.gd` (заголовок, осознанность, полоса босса), `scripts/objective_panel.gd`, `scripts/context_hints.gd`, `scripts/anchor_system.gd` (якорная панель), `scripts/dream_tools.gd` (отмена/возврат).
-- Табличка лагеря и подключение декора Сна: `scripts/main.gd` (`CampSign`, `DreamScenery`).
-- Декор Сна: `scripts/dream_scenery.gd`, `shaders/dream_sky.gdshader`. Небо переключает `scripts/world_switcher.gd`.
-- Оболочка Матери: `scripts/block_mother.gd` (`_add_shell`, `shell_radius`). Маска игрока — `scripts/player_controller.gd`.
-- HP-полоски: `scripts/enemy_visuals.gd`.
-- Аудио при выходе: `scripts/game_settings.gd` (`safe_quit`, `_track_audio`, `_release_audio`). Выход из меню, закрытие окна и бот идут через `safe_quit`.
-- Консоль: `scripts/dev_console.gd` (`COMMAND_HELP`, `_v010_command` → `_dream_cmd`).
-- Смоук: `scripts/smoke_test.gd`, функция `_v021_checks` (21000–21022).
+## Где код v0.22
+- Хотбар Сна: `game_state.gd` — `PALETTE_SLOT`, `palette_slot_active`, `dream_palette_kind`; `build_controller._place_at`; `hud._refresh_inv`.
+- Время ×4: `game_state.gd` — `DREAM_WAKE_TIME_SCALE`, `advance_wake_clock`, `night_counts`, `night_dreamt`, `wake_time_skipped`; `day_cycle._process`; `threat_director._on_player_woke` (`WAKE_SPAWN_GRACE`, `DAY_WAKE_CAP`).
+- Дневной спавн: `threat_director.gd` — `DAY_SPAWN_RATE`, `spawn_interval`, `_ghost_can_spawn`.
+- Факелы: `build_controller.gd` — `torch_attach_for`, `torch_supported`, `drop_unsupported_torches` (по сигналу `GameState.wake_cell_removed`), ключ `attach` в `wake_blocks`.
+- Падение: `game_state.gd` — `FALL_SAFE_BLOCKS`, `FALL_DMG_PER_BLOCK`, `fall_damage_for`, `apply_fall`; `player_controller._track_fall`.
+- Рамка: `game_state.dream_clear` (без цены и лимита).
+- Мышь: действия `attack_break` (ЛКМ) и `use_place` (ПКМ) в `project.godot` и `game_settings.BINDABLE`; логика в `build_controller._process`.
+- Отдача: `viewmodel_rig.play_recoil` / `_do_recoil`. Откидывание: `enemy_navigation.apply_knockback` и мета `kb` в `apply_movement`; `build_controller._combat_feedback`, `KNOCKBACK`.
+- Руки: `scripts/fp_arms.gd` (под `ViewModelRoot`), модель `assets/models/kenney_blocky/`. Подгонка: `SHOULDER`, `AIM`, `SCALE`.
+- Осыпь: константы в начале `game_state.gd`, `try_steal`, `DUST_STEAL_CHANCE`.
+- Боссы v0.11: `block_mother.gd`, `boss_anaconda.gd`, `anaconda_worm.gd` (из 21333e4). Агрессия: `TORCH_AGGRO_*`, `update_torch_aggro`, `break_torch_forced`.
+- Сводка Сна: `world_switcher.wake_up` (окно только при `not ok`). Кровать: `hud._update_bed_prompt`. Лагерь: `main.gd` (вызов `_camp_label` убран).
+- Консоль: `dev_console._v022_cmd`. Смоук: `_v022_checks`, `_v022_scene_checks` (22001–22091).
 
 ## Как собрать и проверить (Godot 4.7.2: /home/box/godot/godot)
-- Импорт: `godot --headless --editor --path . --import`
-- Parse: `godot --headless --path . --script res://tools/parse_check.gd` (ожидается `PARSE DONE bad=0`)
-- Смоук: `godot --headless --path . --script res://scripts/smoke_test.gd`. Для чистых сейвов ставить `XDG_DATA_HOME=/tmp/...`. Последняя строка `SMOKE: OK …`.
-- Бот-прогон: `godot --headless --path . --fixed-fps 60 -s res://tools/v020_bot.gd -- --minutes=40` (около 10 минут реального времени). Бот перезаписывает `benchmarks/v020_bot.json`, поэтому результат цикла копировать в `benchmarks/v021c1_bot.json`, а v0.20 восстанавливать. Если `--minutes` меньше 6, вех «рассвет» бот честно не дождётся: это ограничение бота, не баг.
-- Кадры: `DISPLAY=:77 godot --path . --rendering-method gl_compatibility -s res://tools/v021_screens.gd` пишет в `/workspace/shots/v021c1/`. Xvfb :77 1280×720.
-- Windows .exe: `godot --headless --export-release "Windows Desktop" build/windows/SonnayaStroyka.exe`. Проверка: `godot --headless --main-pack build/windows/SonnayaStroyka.exe --script res://scripts/smoke_test.gd`.
-- ZIP (только цикл 4): весь checkout с префиксом `Сонная стройка v0.21/`, `.godot` включить, `.git` исключить. Проверить testzip.
+- Импорт: `godot --headless --path . --import`.
+- Parse: `--script res://tools/parse_check.gd` → `PARSE DONE bad=0`.
+- Смоук: `XDG_DATA_HOME=/tmp/x godot --headless --path . --script res://scripts/smoke_test.gd` → `SMOKE: OK`.
+- Бот: `--headless --path . --fixed-fps 60 -s res://tools/v020_bot.gd -- --minutes=40` (около 10 мин). Бот перезаписывает `benchmarks/v020_bot.json`: результат копировать в `benchmarks/v022_bot.json`, затем `git checkout benchmarks/v020_bot.json`.
+- Кадры: `DISPLAY=:77 godot --path . --rendering-method gl_compatibility -s res://tools/v022_screens.gd -- --out=/workspace/shots/v022` (Xvfb :77 1280×720).
+- Exe: `--headless --export-release "Windows Desktop" build/windows/SonnayaStroyka.exe`; проверка: `--main-pack build/windows/SonnayaStroyka.exe --script res://scripts/smoke_test.gd`.
 
-## Цикл 2: сделано
-См. CHANGELOG_V0.21.md, раздел «Цикл 2». Где код:
-- Фокус HUD: `hud.gd` — `tutorial_hides_wake_tools`, `_update_tutorial_focus`, подложка подписи в `_style_clarity`.
-- Подсказка якоря: `anchor_system.gd` (`tut_anchor`).
-- Цели Сна в Яви: `objectives.gd` (флаг `"dream":true`) и `objective_panel.gd`.
-- Флора Сна: `dream_scenery.gd` — `_build_flora`, `rebuild_flora`, `flora_counts`.
-- Мать: `block_mother.gd` — `MELEE_RANGE` 2.9, `_add_shell` r ≤ MELEE_RANGE−0.5.
-- Экран загрузки: `main_menu.gd` (`_show_loading`).
-- Иконка: `assets/icon/`, `tools/gen_icon.py`, `export_presets.cfg` (`application/icon`, `modify_resources=true`).
-- Консоль: команды `dreamdecor` и `hudfocus` в `dev_console.gd`.
-- Шаблоны экспорта Windows 4.7.2 лежат в `~/.local/share/godot/export_templates/4.7.2.stable/`. Если их нет, скачать из tpz только два windows-файла, командой `python3 tools/fetch_win_templates.py` (HTTP Range).
+## Известные недочёты
+1. Exe не запускался на настоящей Windows.
+2. Руки от первого лица: инструмент не привязан к кисти. Он машет своим твином, рука — клипом модели; синхронно по времени, но не одно целое. Ходьба, прыжок и сон сделаны процедурно.
+3. Опору факелов проверяет сигнал `GameState.wake_cell_removed` (игрок, мобы, `destroy_wake_structure`, `remove_terrain_cell`). Если блок убран в обход этих функций, факел останется висеть; тогда поможет `torch drop`.
+4. Время ×4 двигает только часы суток и ночные счётчики. Таймеры, привязанные к бодрствованию (`awake_time`, рост угрозы), во Сне стоят, как и раньше.
+5. Очистка рамки не трогает закреплённые блоки и станции: их снятие не отменяется Z.
+6. Шовник после откидывания может упасть с обрыва — это честная физика.
+7. `boss_combat_sm.gd` и режим «носильщиков» блоклингов — мёртвый код после отката боссов; удалить вместе со старыми блоками smoke 13001+.
+8. Рельефа у земли Сна нет (перенос в Явь опирается на y=0).
 
-## Цикл 3: сделано
-См. CHANGELOG_V0.21.md, раздел «Цикл 3». Где код:
-- Камера боя: `scripts/boss_camera.gd` (группа `boss_camera`; подключается в `main.gd` после DreamScenery). Прозрачность меняет альфу override-материалов тела Model (TRANSPARENCY_ALPHA_DEPTH_PRE_PASS) и восстанавливает её при t=0. В Compatibility `GeometryInstance3D.transparency` визуально не работала. Пластины не трогаем: при прозрачности они превращались в кремовые квадраты.
-- Острова: `dream_scenery.gd` — `update_islands(center)`, `_build_island_at(sec)`, SECTOR=64, ISLAND_CHANCE=0.7, StaticBody слоя 1 с trimesh-коллизией. Ориентир — `landmark` (перевёрнутая башня).
-- Без спама в обучении: `game_state.gd` (`milestones_mark` при `tutorial_focus()`). Шпаргалка: `context_hints.gd` (CHEAT_TEXT, CHEAT_SECONDS).
-- Консоль: `bosscam`, `dreamdecor island`. Бот: `--nodecor`.
-- Рельеф Сна не делали: земля y=0 связана с переносом в Явь, а код пола дублируется в chunk_job и chunk_manager.
-- p99: бот 12 мин с декором — 18,95 мс, без декора (`--nodecor`) — 19,49 мс. Значит, декор Сна не причина. 40 мин: p99 18,34 мс, бенчмарк `benchmarks/v021c3_bot.json`. В 12-минутном прогоне вех «рассвет» не засчитывается в обоих режимах: так устроен бот на коротких прогонах. В 40-минутном fails=[].
-
-## Цикл 4: сделано (финал)
-См. CHANGELOG_V0.21.md, раздел «Цикл 4». Где код:
-- Пластины: `boss_camera.gd` — `apply_plate_squash`, PLATE_SHRINK, PLATE_DROP (meta `_base_y` у Plate*).
-- Острова: `dream_scenery.gd` — шейдер `shaders/dream_island.gdshader` (атлас и UV2-тайл как в terrain), `_tile_for`, `LOAD_MARGIN`, `BUILDS_PER_FRAME`, `_pending`, `SPAWN_SECTOR`. Старые острова убираются из дерева сразу (`remove_child`), иначе при повторной подгрузке имя `Island_x_z` занято.
-- Консоль: `dreamdecor home`.
-
-## Выпуск v0.21
-- `main` = `wip/v0.21`, тег `v0.21`. На Drive в папке «Сонная стройка»: «Сонная стройка v0.21.zip» (весь проект, .godot внутри, без .git), «Сонная стройка v0.21 Windows.zip» (exe с иконкой) и этот файл.
-
-## Известные недочёты (на v0.22)
-1. Exe не запускался на настоящей Windows, FPS на видеокарте не замерен. Нужна проверка владельца.
-2. Ствол дерева на островах тёмно-коричневый (тайл log_side). Можно перекрасить или взять тайл Сна.
-3. Снизу через туман острова видны тёмными размытыми силуэтами (кадр 07b).
-4. Острова грузятся с запасом, поэтому память бота выросла: 131 МБ против 115 МБ в цикле 3.
-5. Рельефа у земли Сна нет и не будет без переделки переноса. Причина — в разделе «Цикл 3».
-6. Первый кадр создания мира длится 0,6–0,9 с (его прикрывает экран загрузки). Во время игры худший кадр около 84 мс.
-7. Подходить к Матери надо строго в центр, иначе оболочка-шар уводит игрока вбок. Это честная физика, но вплотную встать сложнее.
-
-## Бета-анализ после цикла 3 (план цикла 4)
-1. Вплотную к Матери (2,8 м) её бронепластина всё ещё закрывает центр экрана. Тело стало полупрозрачным, FOV 85°. Можно уменьшить пластины вблизи или поднять камеру.
-2. У островов нет блочной текстуры, только однотонные освещённые кубы.
-3. Острова появляются и исчезают на границе тумана при смене сектора. Нужно плавное появление.
-4. Если сразу после старта смотреть вверх, острова почти не видно (кадр 03). Стоит гарантировать остров в поле зрения со старта.
-5. Exe не запускался на Windows, FPS на реальной видеокарте не замерен. Это проверка для владельца.
-6. Публикация: main fast-forward, exe, ZIP, Drive.
-
-## Бета-анализ после цикла 2 (план цикла 3)
-1. Вплотную к Матери (2,8 м) её тело по-прежнему закрывает большую часть экрана. Нужна камера боя: немного отодвинуть её или расширить FOV рядом с боссом. Это решение по дизайну.
-2. После обучения слева четыре блока подряд: осознанность, цель, карточка-шпаргалка клавиш Сна и чат. Шпаргалка дублирует цель — показывать её один раз и коротко.
-3. Во время обучения в чат сыплются «✓ Построй во Сне 5+ блоков» и прочие уведомления целей, которые дублируют прогресс обучения.
-4. Острова Сна следуют за камерой, долететь до них нельзя. Для летающего игрока это странно. Нужны дальние неподвижные острова или честная подпись «мираж».
-5. У земли Сна прежняя текстура и нет рельефа. Флора помогает, но рельефа по-прежнему нет.
-6. Экран «Загрузка мира» не снят кадром: кадры делаются после смены сцены.
-7. Exe не запускался на Windows, FPS на реальной видеокарте не замерен — это проверка для владельца.
-8. В сцене Сна висит неиспользуемая скрытая надпись «Hint», это мусор.
-9. p99 кадра в бот-прогоне 20 мс (было 18). Пересборка флоры занимает 3 мс; проверить, не она ли причина.
+## Если продолжать
+- Привязать инструмент к кисти модели (BoneAttachment не нужен, кисть — конец меша `arm-right`).

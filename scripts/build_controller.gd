@@ -36,6 +36,13 @@ func setup(p: CharacterBody3D, dream_layer: Node3D) -> void:
 	cracks = load("res://scripts/mining_cracks.gd").new()
 	add_child(cracks)
 	_ensure_hand_tools()
+	if not GameState.wake_cell_removed.is_connected(_on_wake_cell_removed):
+		GameState.wake_cell_removed.connect(_on_wake_cell_removed)
+
+
+func _on_wake_cell_removed(cell: Vector3i) -> void:
+	## v0.22: опору сломал кто угодно — игрок, моб, Мать — факел без опоры падает предметом.
+	call_deferred("drop_unsupported_torches", cell)
 
 
 func _make_ghost() -> void:
@@ -306,7 +313,6 @@ func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 
 func _finish_mine(cell: Vector3i, kind: String) -> void:
 	var mined_tool := str(GameState.get_selected_item().get("id",""))
-	drop_unsupported_torches(cell)
 	GameState.wear_tool(1)
 	Sfx.play("break_" + Mining.material(kind), get_tree().root)
 	if Mining.drops(kind,mined_tool):

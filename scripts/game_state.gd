@@ -25,6 +25,7 @@ signal player_died
 signal day_phase_changed(phase: String)
 signal heal_used(cd: float)
 signal terrain_cell_changed(cell: Vector3i)
+signal wake_cell_removed(cell: Vector3i)   # v0.22: любая поломка блока Яви (игрок, моб, босс) — проверка опоры факелов
 signal egg_taken(nest_id: String, cell: Vector3i)
 signal pillow_changed
 ## v0.11: цели/вехи, угроза глубин, открытия.
@@ -1147,6 +1148,7 @@ func mine_wake_block(cell: Vector3i) -> bool:
 		active_bed = ""
 		spawn_point = creation_spawn
 	terrain_cell_changed.emit(cell)
+	wake_cell_removed.emit(cell)
 	notify_inventory()
 	set_hint(("Добыт блок «%s»." if Mining.drops(kind,str(get_selected_item().get("id",""))) else "Блок «%s» разрушен без кирки: дропа нет.") % block_display_name(kind),false)
 	return true
@@ -1166,6 +1168,7 @@ func remove_terrain_cell_silent(cell: Vector3i, kind: String) -> bool:
 	removed_terrain[cell] = kind
 	_index_removed(cell)
 	terrain_cell_changed.emit(cell)
+	wake_cell_removed.emit(cell)
 	return true
 
 
@@ -1211,6 +1214,7 @@ func remove_terrain_cell(cell: Vector3i, kind: String) -> bool:
 		snapshot_note("collected_eggs",nid)
 		egg_taken.emit(nid, cell)
 	terrain_cell_changed.emit(cell)
+	wake_cell_removed.emit(cell)
 	set_hint("Кирка: выпал блок «%s»." % block_display_name(k), false)
 	return true
 
@@ -3284,6 +3288,7 @@ func destroy_wake_structure(c: Vector3i, respect_beacon: bool = false) -> bool:
 	var twin := _dream_twin(c, kind) # v0.18: материализованная копия → трещина во Сне
 	remove_shape(wake_blocks,c)
 	if twin: add_crack(c, kind)
+	wake_cell_removed.emit(c)
 	if active_bed == cell_key(c):
 		active_bed = ""
 		spawn_point = creation_spawn
