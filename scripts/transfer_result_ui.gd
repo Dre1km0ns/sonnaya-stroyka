@@ -29,13 +29,16 @@ func show_result(result:Dictionary,switcher:Node)->void:
 	if result.ok:
 		title.text="Черновик сна сохранён" if result.get("aborted",false) else "Пробуждение · результат переноса"
 		var spent:Dictionary=result.get("spent",{})
-		details.text="Перенесено: %d объектов\nЗаблокировано: %d · Мутаций: %d / максимум %d\nБез якоря: %d · Получено осыпи: +%d\nПотрачено: %d якорей · %d реагентов · %.0f ясности\n"%[result.transferred,result.blocked,result.mutations,result.get("cap",0),result.get("unanchored",0),result.dust,spent.get("anchors",0),spent.get("reagents",0),spent.get("clarity",0)]
+		details.text="Материализовано: %d (копий %d · перенесено объектов %d)\nМутаций дрейфа: %d / максимум %d · Осыпь: +%d\nПотрачено: якорей применено %d · %d реагентов · %.0f осознанности\n"%[result.transferred,result.get("copied",0),result.get("moved",0),result.mutations,result.get("cap",0),result.dust,spent.get("anchors",0),spent.get("reagents",0),spent.get("clarity",0)]
+		if not result.get("materials",{}).is_empty(): details.text+="Материалы Яви: %s\n"%GameState.materials_text(result.materials)
+		if int(result.get("unpaid",0))>0: details.text+="Не хватило материалов: %d блоков остались только во Сне.\n"%int(result.unpaid)
+		if not result.get("aborted",false): details.text+="Оригиналы остались во Сне (%d объектов) — Сон помнит.\n"%int(result.get("kept_in_dream",0))
 		if result.get("aborted",false): details.text+="%d объектов осталось во Сне. Якоря отменены, резерв возвращён.\n"%result.get("draft_saved",0)
 		else:
 			details.text+="Бросок мутации 7%% на блок; общий предел — 3%% структуры.\nМаяки защитили: %d (+5 осыпи за каждый предотвращённый бросок)."%result.get("protected",0)
 			if int(result.get("chest_moved",0))>0: details.text+="\nСундуки перенесли в Явь стаков: %d."%int(result.chest_moved)
-			if int(result.get("chest_returned",0))>0: details.text+="\nНезакреплённые сундуки растворились — %d стаков вернулись в инвентарь Сна."%int(result.chest_returned)
-			if int(result.transferred)==0 and int(result.get("unanchored",0))>0: details.text+="\nНичего не перенесено: в следующий раз закрепи постройку (Q) до пробуждения."
+			if int(result.get("chest_returned",0))>0: details.text+="\nВ Яви место сундука было занято — %d стаков вернулись в инвентарь Сна."%int(result.chest_returned)
+			if int(result.transferred)==0: details.text+="\nНичего не материализовано — постройки ждут во Сне. Закрепи их якорем (Q), когда будут материалы."
 		_button("Продолжить · Esc / Y",close)
 	else:
 		title.text="Перенос остановлен — ничего не потеряно" if result.get("ready",true) else "Проверяем рельеф Яви…"
@@ -44,7 +47,7 @@ func show_result(result:Dictionary,switcher:Node)->void:
 		if not result.get("ready",true): details.text+="Проверка в worker; мир на паузе. Повторяем автоматически.\n"
 		details.text+="Можно исправить конфликт во Сне или вернуться без потери черновика."
 		_button("Проверить снова",_retry)
-		var stay:=_button("Остаться во Сне",close);stay.disabled=GameState.clarity<=0
+		_button("Остаться во Сне",close)
 		_button("В Явь, сохранить черновик",func():_switcher.wake_up(true))
 func _button(text:String,callback:Callable)->Button:
 	var button:=Button.new();button.text=text;button.custom_minimum_size=Vector2(0,40);button.pressed.connect(callback);buttons.add_child(button);return button
@@ -55,9 +58,6 @@ func _process(delta:float)->void:
 	_retry_clock+=delta
 	if _retry_clock>=0.3: _retry_clock=0;_retry()
 func close()->void:
-	if not last_result.get("ok",true) and GameState.clarity<=0:
-		if is_instance_valid(_switcher): _switcher.wake_up(true)
-		return
 	panel.hide();GameState.transfer_ui_open=false;GameState.modal_closed_frame=Engine.get_process_frames();get_tree().paused=false;Input.mouse_mode=Input.MOUSE_MODE_CAPTURED
 func _input(event:InputEvent)->void:
 	if panel.visible and event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ESCAPE,KEY_Y]:

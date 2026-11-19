@@ -39,13 +39,14 @@ func _run() -> void:
 	var result: Dictionary = gs.resolve_wake()
 	_a(not gs.is_dream(), 39)
 	_a(int(result["transferred"]) == 1, 40)
-	_a(int(result["dust"]) == 1, 41)
-	_a(gs.dust == before_dust + 1, 42)
+	# v0.16: незаякоренное больше не растворяется в осыпь — Сон помнит всё.
+	_a(int(result["dust"]) == 0, 41)
+	_a(gs.dust == before_dust, 42)
 	_a(gs.wake_blocks.has(Vector3i(1, 1, 1)), 43)
-	# v0.7: при пробуждении все блоки сна исчезают (заякоренные уже перенесены).
-	_a(gs.dream_blocks.is_empty(), 45)
+	# v0.16 (было v0.7 «сон стирается»): все 10 блоков остались во Сне, отметка якоря снята.
+	_a(gs.dream_blocks.size() == 10 and not gs.dream_blocks[Vector3i(1, 1, 1)].anchored, 45)
 	gs.enter_dream()
-	_a(gs.dream_blocks.is_empty(), 47)
+	_a(gs.dream_blocks.size() == 10, 47)
 	gs.resolve_wake()
 	# Высота ячейки в яви совпадает со сном.
 	_a(gs.wake_blocks.has(Vector3i(1, 1, 1)), 50)
@@ -62,13 +63,17 @@ func _run() -> void:
 	gs.dust = 9
 	_a(not gs.craft_recipe("nail", {"is_dream": true}), 60)
 	gs.dust = 10
+	gs.nails = 0 # v0.16: гвоздь — инструмент; крафтится, только если его нет
 	_a(gs.craft_recipe("nail", {"is_dream": true}), 62)
+	gs.dust = 10
+	_a(not gs.craft_recipe("nail", {"is_dream": true}) and gs.nails == 1, 621)
 	_a(not gs.craft_recipe("nail", {"is_dream": false}), 63)
 	_a(not gs.craft_recipe("nail", {"at_workbench": true, "is_dream": true}), 64)
 	_a(gs.NAIL_CRAFT_DUST == 10, 65)
 
 	# Клин из осыпи — только во сне, не на верстаке
 	gs.dust = gs.WEDGE_CRAFT_DUST
+	gs.wedges = 0
 	var wedges_before: int = gs.wedges
 	_a(gs.craft_recipe("wedge", {"is_dream": true}), 70)
 	_a(gs.wedges == wedges_before + 1, 71)
@@ -879,7 +884,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	g2.apply_save_dict(JSON.parse_string(JSON.stringify(blob)))
 	_a(g2.is_terrain_removed((tree["logs"] as Array)[0]), 856)
 	_a(g2.is_terrain_removed(leaves[0]), 857)
-	_a(int(blob["version"]) == 10, 858)
+	_a(int(blob["version"]) == 11, 858)
 	cm.queue_free()
 	anchor.queue_free()
 	# --- Бревно → доски (верстак) ---
@@ -1060,7 +1065,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.select_anchor(G.AnchorType.NAIL)
 	_a(G.try_place_anchor(Vector3i(30, 0, 30)), 1009)
 	G.resolve_wake()
-	_a(G.dream_blocks.is_empty(), 1011)
+	_a(G.dream_blocks.size() == 2 and not G.dream_blocks[Vector3i(30, 0, 30)].anchored, 1011) # v0.16: Сон помнит
 	_a(G.wake_blocks.has(Vector3i(30, 0, 30)), 1012)
 	# --- Кровать (сон) и хилка1 → под подушку ---
 	G.enter_dream()
@@ -1499,7 +1504,7 @@ func _v08_checks() -> void:
 	var Rules: GDScript = load("res://scripts/mining_rules.gd")
 	G.reset_state()
 	G.dev_mode = false
-	_a(G.SAVE_FORMAT == 10, 8001)
+	_a(G.SAVE_FORMAT == 11, 8001)
 	for pair in [["ground",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
 		_a(is_equal_approx(Rules.hardness(pair[0]),pair[1]),8002)
 	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),3.0),8003)
@@ -1602,7 +1607,7 @@ func _v08_checks() -> void:
 	_a(not G.storage_take(c,0,true),8039)
 	G.enter_dream()
 	_a(G.storage_take(c,0,true) and G.count_item("stone")==100,8040)
-	_a(is_equal_approx(G.clarity,G.CLARITY_MAX+10.0*G.CLARITY_DRAIN_PER_SEC),8041)
+	_a(is_equal_approx(G.dream_clarity_max(),G.CLARITY_MAX+10.0*G.CLARITY_DRAIN_PER_SEC),8041) # v0.16: ловец растит предел осознанности
 	_a(G.storage_deposit(c,0,true)==0,8042)
 	G.resolve_wake()
 	# Chest roundtrip preserves worn tools and refuses mining while full.
@@ -1638,7 +1643,7 @@ func _v08_checks() -> void:
 	for i in range(11):
 		G.place_dream_block(Vector3i(i,0,0),"drift")
 	var res: Dictionary = G.resolve_wake()
-	_a(res.dust==2,8059)
+	_a(res.dust==0 and int(res.kept_in_dream)==11 and G.dream_blocks.size()==11,8059) # v0.16: незаякоренное остаётся во Сне
 	# World layers and settlement distributions from deterministic plans.
 	var CM: GDScript = load("res://scripts/chunk_manager.gd")
 	_a(CM.depth_kind(-5)=="dirt" and CM.depth_kind(-6)=="stone" and CM.depth_kind(-18)=="deep_stone" and CM.depth_kind(-31)=="bedrock",8060)
@@ -2337,7 +2342,7 @@ func _v010_transfer_checks() -> void:
 		var snapshot:Dictionary=gs.to_save_dict();var preflight:Dictionary=gs.transfer_plan()
 		_a(preflight.ok and preflight.count==n and preflight.cells.size()==n,10060)
 		var result:Dictionary=gs.resolve_wake();var first:Dictionary=gs._blocks_to_json(gs.wake_blocks)
-		_a(result.ok and result.transferred==n and result.mutations<=floori(n*0.03) and gs.dream_blocks.is_empty(),10061)
+		_a(result.ok and result.transferred==n and result.mutations<=floori(n*0.03) and gs.dream_blocks.size()==n and int(result.copied)==n,10061)
 		times.append({"blocks":n,"preflight_us":gs.last_transfer_preflight_usec,"apply_us":gs.last_transfer_apply_usec,"mutations":result.mutations})
 		gs.apply_save_dict(snapshot);var second:Dictionary=gs.resolve_wake()
 		_a(first==gs._blocks_to_json(gs.wake_blocks) and second.mutations==result.mutations,10062)
@@ -2346,12 +2351,12 @@ func _v010_transfer_checks() -> void:
 	var wallet:Dictionary=gs.pouch.duplicate();var clarity_before:float=gs.clarity
 	_a(not gs.try_place_anchor(c+Vector3i.UP) and gs.nails==3 and wallet==gs.pouch and gs.clarity==clarity_before and gs.pending_anchors.is_empty(),10063)
 	gs.remove_shape(gs.wake_blocks,c+Vector3i.UP)
-	_a(gs.try_place_anchor(c+Vector3i.UP) and gs.pending_anchors[0].cells.size()==2 and gs.pouch.reagent2==0 and gs.nails==2,10064)
-	_a(not gs.try_place_anchor(c) and gs.nails==2,10065)
+	_a(gs.try_place_anchor(c+Vector3i.UP) and gs.pending_anchors[0].cells.size()==2 and gs.pouch.reagent2==0 and gs.nails==3,10064)
+	_a(not gs.try_place_anchor(c) and gs.nails==3,10065)
 	var reserved:Dictionary=gs.to_save_dict();gs.apply_save_dict(reserved)
 	_a(gs.pending_anchors[0].receipt.wallet.reagent2==1,10066)
 	gs.wake_blocks[c+Vector3i.UP]={"kind":"stone","mutant":false};var failed:Dictionary=gs.resolve_wake()
-	_a(not failed.ok and failed.blocked==1 and gs.is_dream() and gs.dream_blocks.size()==2 and gs.nails==2 and gs.wake_blocks.size()==1,10067)
+	_a(not failed.ok and failed.blocked==1 and gs.is_dream() and gs.dream_blocks.size()==2 and gs.nails==3 and gs.wake_blocks.size()==1,10067)
 	gs.add_typed_reagent(2,100);var refund:Dictionary=gs.cancel_anchors()
 	_a(refund.reagents==1 and gs.pouch.reagent2==101 and gs.nails==3 and gs.pending_anchors.is_empty() and not gs.dream_blocks[c].anchored,10068)
 	gs.apply_save_dict(gs.to_save_dict());gs.spend_reagents(1)
@@ -2399,11 +2404,14 @@ func _v010_transfer_checks() -> void:
 	var stopped:Dictionary=scene.switcher.wake_up()
 	_a(not stopped.ok and G.is_dream() and G.transfer_ui_open and paused and ui.panel.visible,10086)
 	var key:=InputEventKey.new();key.keycode=KEY_ESCAPE;key.pressed=true;ui._input(key)
-	_a(not G.is_dream() and ui.last_result.aborted and G.dream_blocks.has(far) and G.pending_anchors.is_empty(),10087)
+	# v0.16: при нулевой осознанности Esc больше не будит силой — игрок остаётся во Сне.
+	_a(G.is_dream() and not G.transfer_ui_open and not paused and G.dream_blocks.has(far) and G.pending_anchors.size()==1,10087)
+	var ab:Dictionary=scene.switcher.wake_up(true)
+	_a(not G.is_dream() and ab.aborted and G.dream_blocks.has(far) and G.pending_anchors.is_empty() and ui.panel.visible,100870)
 	key.keycode=KEY_Y;ui._input(key);_a(not G.transfer_ui_open and not paused,10088)
 	_a(DisplayServer.get_name()=="headless" or Input.mouse_mode==Input.MOUSE_MODE_CAPTURED,100881)
 	G.remove_shape(G.wake_blocks,far+Vector3i.UP);scene.switcher.enter_dream();_a(G.try_place_anchor(far),10089)
-	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and ui.panel.visible and paused and G.dream_blocks.is_empty(),10090)
+	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and ui.panel.visible and paused and not G.dream_blocks.has(far) and not G.dream_blocks.has(far+Vector3i.UP) and int(success.moved)==1,10090) # v0.16: дверь уникальна — перенесена; площадка Сна осталась
 	ui._input(key);_a(not paused and not G.transfer_ui_open,10091)
 	var console:Node=get_first_node_in_group("dev_console")
 	for command in ["help transfer","transfer plan","transfer risk","transfer cancel"]:_a(not console.execute(command).begins_with("Ошибка"),10092)
@@ -2464,9 +2472,10 @@ func _v011_checks() -> void:
 	gs.dream_blocks[dc].anchored = true
 	gs.pending_anchors = [{"type":2,"cells":[dc],"receipt":{"dev":true}}]
 	var cr: Dictionary = gs.resolve_wake()
-	_a(cr.ok and cr.transferred == 1 and int(cr.chest_moved) == 1 and int(cr.chest_returned) == 1, 11016)
+	_a(cr.ok and cr.transferred == 1 and int(cr.chest_moved) == 1 and int(cr.chest_returned) == 0, 11016)
 	_a(str(gs.wake_blocks.get(dc,{}).get("kind","")) == "chest" and gs.world_storage.has("w:310,5,310") and int(gs.world_storage["w:310,5,310"][0].count) == 7, 11017)
-	_a(not gs.world_storage.has("d:310,5,310") and not gs.world_storage.has("d:320,5,320") and gs._inv_count(gs.inv_dream, "planks") + gs.dream_stash.size() >= 1, 11018)
+	# v0.16: незаякоренный сундук остаётся во Сне вместе с содержимым.
+	_a(not gs.world_storage.has("d:310,5,310") and gs.world_storage.has("d:320,5,320") and int(gs.world_storage["d:320,5,320"][0].count) == 4 and gs.dream_blocks.has(lost) and not gs.dream_blocks.has(dc), 11018)
 	# --- 16.3 Дом 100+ блоков с дверью и сундуком → перенос целиком, цель «Убежище» ---
 	gs.reset_state(); gs.dev_mode = false; gs.enter_dream()
 	var base := Vector3i(400, 10, 400)
@@ -2491,8 +2500,12 @@ func _v011_checks() -> void:
 		if not gs.dream_blocks[c].has("root"): roots += 1
 	_a(house_cells.size() >= 100, 11021)
 	gs.pending_anchors = [{"type":2,"cells":house_cells,"receipt":{"dev":true}}]
+	# v0.16: копия оплачивается материалами Яви — кладём их в инвентарь Яви.
+	gs.inv_wake[20] = {"id":"planks","name":"Доски","count":100}; gs.inv_wake[21] = {"id":"stone","name":"Камень","count":100}
+	var need: Dictionary = gs.materialize_cost(gs.transfer_plan().roots)
 	var hr: Dictionary = gs.resolve_wake()
-	_a(hr.ok and hr.transferred == roots and gs.dream_blocks.is_empty() and gs.wake_blocks.size() == house_cells.size() and int(hr.chest_moved) == 1, 11022)
+	_a(hr.ok and hr.transferred == roots and gs.dream_blocks.size() == house_cells.size() - 3 and gs.wake_blocks.size() == house_cells.size() and int(hr.chest_moved) == 1 and int(hr.moved) == 2, 11022)
+	_a(gs._inv_count(gs.inv_wake, "planks") == 100 - int(need.planks) and gs._inv_count(gs.inv_wake, "stone") == 100 - int(need.stone) and hr.materials == need, 110221)
 	_a(gs.wake_build_count() >= 100 and gs.wake_kind_count("door") == 1 and int(gs.world_storage["w:" + gs.cell_key(hc)][3].count) == 9, 11023)
 	gs._objectives_eval(true)
 	_a(gs.milestones.has("first_transfer") and gs.milestones.has("shelter") and gs.milestones.has("chest"), 11024)
@@ -3229,3 +3242,164 @@ func _v015_checks() -> void:
 	cf.queue_free(); cam.queue_free()
 	await process_frame
 	print("SMOKE: v0.15 hit markers / sealed+core window bar / windup pre-shadow / hurt direction / feedback idle OK")
+	await _v016_checks()
+
+
+func _v016_checks() -> void:
+	## v0.16 «Сон помнит»: постоянный Сон, осознанность из Яви, отпечатки, материализация-копия, ремонт.
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	gs.reset_state(); gs.dev_mode = false
+	# 1) Без таймера: время во Сне не тратит осознанность; вход в Сон её не восполняет.
+	gs.clarity = 40.0; gs.enter_dream()
+	gs.drain_clarity(1000.0)
+	_a(gs.is_dream() and is_equal_approx(gs.clarity, 40.0), 16001)
+	# 2) Постоянство: 20 блоков без якоря переживают пробуждение и сейв.
+	for i in range(20): gs.place_dream_block(Vector3i(i, 3, 0), "drift")
+	var r0: Dictionary = gs.resolve_wake()
+	_a(r0.ok and int(r0.transferred) == 0 and gs.dream_blocks.size() == 20 and int(r0.kept_in_dream) == 20, 16002)
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.dream_blocks.size() == 20 and is_equal_approx(gs.clarity, 40.0) and int(sv.version) == 11, 16003)
+	# 3) Осознанность копится в Яви: бодрствование, пережитая ночь (только если ночь прожита в Яви), убийство.
+	gs.dev_mode = false; gs.clarity = 10.0
+	gs._lucid_tick(8.0)
+	_a(is_equal_approx(gs.clarity, 10.0 + 8.0 * gs.LUCID_AWAKE_PER_SEC), 16004)
+	var c0: float = gs.clarity
+	gs._on_night_edge(true); gs.night_awake = 20.0; gs._on_night_edge(false)
+	_a(is_equal_approx(gs.clarity, c0) and gs.nights_survived == 0, 16005)   # проспал ночь во Сне — бонуса нет
+	gs._on_night_edge(true); gs.night_awake = gs.LUCID_NIGHT_AWAKE_MIN + 1.0; gs._on_night_edge(false)
+	_a(is_equal_approx(gs.clarity, c0 + gs.LUCID_NIGHT) and gs.nights_survived == 1, 16006)
+	var c1: float = gs.clarity
+	gs.reward_kill(false, "")
+	_a(gs.clarity > c1 and gs.clarity <= c1 + gs.LUCID_KILL + 0.001, 16007)
+	gs.clarity = gs.dream_clarity_max() - 1.0; gs.gain_lucidity(500.0)
+	_a(is_equal_approx(gs.clarity, gs.dream_clarity_max()), 16008)
+	# 4) Отпечатки: первый материал в Яви → палитра Сна; во Сне отпечаток не берётся.
+	gs.reset_state(); gs.dev_mode = false; gs.clarity = 50.0
+	_a(gs.dream_palette() == ["drift"] and not gs.has_imprint("stone"), 16010)
+	gs.add_item_count("stone", 3)
+	_a(gs.has_imprint("stone") and is_equal_approx(gs.clarity, 50.0 + gs.LUCID_IMPRINT) and gs.milestones.has("imprint"), 16011)
+	gs.add_item_count("stone", 3)
+	_a(is_equal_approx(gs.clarity, 50.0 + gs.LUCID_IMPRINT), 16012)   # повторный — без бонуса
+	gs.enter_dream(); gs.add_item_count("log", 1)
+	_a(not gs.has_imprint("log") and gs.dream_palette() == ["drift", "stone"], 16013)
+	_a(gs.cycle_palette(1) == "stone" and gs.cycle_palette(1) == "drift" and gs.cycle_palette(-1) == "stone", 16014)
+	# 5) Материализация-копия: цена — материалы Яви; не хватает → якорь не ставится и ничего не списано.
+	var base := Vector3i(600, 6, 600)
+	for x in range(3):
+		for z in range(2): gs.place_dream_block(base + Vector3i(x, 0, z), "stone")
+	for x in range(4): gs.place_dream_block(base + Vector3i(x, 1, 0), "drift")
+	gs.inv_wake[20] = {}; gs.inv_wake[21] = {}
+	for i in range(gs.inv_wake.size()):
+		if str(gs.inv_wake[i].get("id", "")) == "stone": gs.inv_wake[i] = {}
+	gs.inv_wake[20] = {"id": "stone", "name": "Камень", "count": 4}
+	gs.pouch.reagent1 = 10; gs.clarity = 60.0; gs.wedges = 1
+	gs.select_anchor(gs.AnchorType.WEDGE)
+	var pv: Dictionary = gs.anchor_preview(base + Vector3i(1, 0, 0))
+	_a(not pv.ok and int(pv.missing.get("stone", 0)) == 2 and int(pv.materials.get("stone", 0)) == 6, 16020)
+	_a(not gs.try_place_anchor(base + Vector3i(1, 0, 0)) and gs.pouch.reagent1 == 10 and is_equal_approx(gs.clarity, 60.0) and gs.pending_anchors.is_empty(), 16021)
+	gs.inv_wake[21] = {"id": "stone", "name": "Камень", "count": 2}
+	var wedges0: int = gs.wedges
+	_a(gs.try_place_anchor(base + Vector3i(1, 0, 0)) and gs.wedges == wedges0 and gs.pouch.reagent1 == 10 - gs.WEDGE_COST_REAGENTS, 16022)   # якорь — инструмент
+	var rw: Dictionary = gs.resolve_wake()
+	_a(rw.ok and int(rw.transferred) == 10 and int(rw.copied) == 10 and gs.dream_blocks.size() == 10 and gs._inv_count(gs.inv_wake, "stone") == 0, 16023)
+	var stone_ok := true
+	for x in range(3):
+		for z in range(2):
+			if str(gs.wake_blocks.get(base + Vector3i(x, 0, z), {}).get("kind", "")) != "stone" or gs.wake_blocks[base + Vector3i(x, 0, z)].get("mutant", false): stone_ok = false
+	_a(stone_ok and gs.milestones.has("palette_copy"), 16024)
+	# мутации не трогают настоящие материалы: 10000 «камней» с иммунитетом палитры → 0 мутаций
+	var TP: GDScript = load("res://scripts/transfer_plan.gd"); var src := {}; var rts: Array = []
+	for i in range(2000): var cc := Vector3i(i % 50, 1, i / 50); src[cc] = {"kind": "stone" if i % 2 == 0 else "drift"}; rts.append(cc)
+	var mu: Dictionary = TP.mutations(src, rts, [], 777, gs.NO_MUTATION_KINDS + gs.IMPRINT_KINDS)
+	var only_drift := true
+	for cc in mu.cells:
+		if src[cc].kind != "drift": only_drift = false
+	_a(only_drift and mu.eligible == 1000 and mu.cells.size() > 0, 16025)
+	# 6) Ремонт из Сна: в Яви сломали 2 камня → тот же клин материализует только их.
+	gs.wake_blocks.erase(base); gs.wake_blocks.erase(base + Vector3i(2, 0, 1))
+	gs.enter_dream()
+	var pr: Dictionary = gs.anchor_preview(base + Vector3i(1, 0, 0))
+	_a(pr.new_roots.size() == 2 and int(pr.same) == 8 and int(pr.missing.get("stone", 0)) == 2, 16030)
+	gs.inv_wake[22] = {"id": "stone", "name": "Камень", "count": 5}
+	_a(gs.try_place_anchor(base + Vector3i(1, 0, 0)), 16031)
+	var rr: Dictionary = gs.resolve_wake()
+	_a(int(rr.transferred) == 2 and gs.wake_blocks.has(base) and gs.wake_blocks.has(base + Vector3i(2, 0, 1)) and gs._inv_count(gs.inv_wake, "stone") == 3, 16032)
+	# 7) Занятая в Яви клетка пропускается, а не блокирует весь якорь.
+	gs.enter_dream()
+	var b2 := Vector3i(640, 6, 640)
+	for x in range(3): gs.place_dream_block(b2 + Vector3i(x, 0, 0), "drift")
+	gs.wake_blocks[b2] = {"kind": "dirt", "mutant": false}
+	var ps: Dictionary = gs.anchor_preview(b2 + Vector3i(1, 0, 0))
+	_a(ps.ok and int(ps.skipped) == 1 and ps.new_roots.size() == 2, 16040)
+	_a(gs.try_place_anchor(b2 + Vector3i(1, 0, 0)), 16041)
+	var rs: Dictionary = gs.resolve_wake()
+	_a(int(rs.transferred) == 2 and str(gs.wake_blocks[b2].kind) == "dirt" and gs.dream_blocks.has(b2), 16042)
+	# 8) Уникальные объекты переносятся (нет дюпа станций), обычные — копируются.
+	gs.enter_dream()
+	var wb := Vector3i(660, 6, 660)
+	gs.place_dream_block(wb, "workbench"); gs.place_dream_block(wb + Vector3i.RIGHT, "drift")
+	gs.select_anchor(gs.AnchorType.NAIL); gs.nails = 1; gs.pouch.reagent1 = 20; gs.clarity = 80.0
+	_a(gs.try_place_anchor(wb) and gs.try_place_anchor(wb + Vector3i.RIGHT), 16050)
+	var ru: Dictionary = gs.resolve_wake()
+	_a(int(ru.moved) == 1 and int(ru.copied) == 1 and not gs.dream_blocks.has(wb) and gs.dream_blocks.has(wb + Vector3i.RIGHT) and gs.wake_kind_count("workbench") == 1 and gs.nails == 1, 16051)
+	# 9) Материал пропал между якорем и пробуждением — блок остаётся только во Сне, ничего не ломается.
+	gs.enter_dream(); gs.add_item_count("stone", 0)
+	var b3 := Vector3i(680, 6, 680)
+	gs.place_dream_block(b3, "stone"); gs.place_dream_block(b3 + Vector3i.RIGHT, "stone")
+	gs.inv_wake[23] = {"id": "stone", "name": "Камень", "count": 0}
+	for i in range(gs.inv_wake.size()):
+		if str(gs.inv_wake[i].get("id", "")) == "stone": gs.inv_wake[i] = {}
+	gs.inv_wake[23] = {"id": "stone", "name": "Камень", "count": 2}
+	gs.select_anchor(gs.AnchorType.WEDGE); gs.pouch.reagent1 = 20; gs.clarity = 80.0
+	_a(gs.try_place_anchor(b3), 16060)
+	gs.inv_wake[23] = {"id": "stone", "name": "Камень", "count": 1}
+	var rp: Dictionary = gs.resolve_wake()
+	_a(int(rp.transferred) == 1 and int(rp.unpaid) == 1 and gs._inv_count(gs.inv_wake, "stone") == 0 and gs.dream_blocks.has(b3) and gs.dream_blocks.has(b3 + Vector3i.RIGHT), 16061)
+	# 10) Отмена якорей возвращает резерв (реагенты, осознанность), сам якорь не тратился.
+	gs.enter_dream(); gs.pouch.reagent1 = 5; gs.clarity = 30.0; gs.select_anchor(gs.AnchorType.NAIL)
+	gs.place_dream_block(Vector3i(700, 6, 700), "drift")
+	_a(gs.try_place_anchor(Vector3i(700, 6, 700)) and gs.pouch.reagent1 == 4 and is_equal_approx(gs.clarity, 27.0), 16070)
+	var rf: Dictionary = gs.cancel_anchors()
+	_a(gs.pouch.reagent1 == 5 and is_equal_approx(gs.clarity, 30.0) and gs.nails == 1 and int(rf.anchors) == 1, 16071)
+	# 11) Миграция сейва v0.15 (формат 10): отпечатки из инвентаря/построек/сундуков Яви, якоря остаются.
+	var old: Dictionary = gs.to_save_dict()
+	old.version = 10; old.erase("imprints"); old.erase("dream_material"); old.nails = 0
+	old.item_slots = [{"id": "log", "name": "Бревно", "count": 5}, {"id": "pickaxe", "name": "Кирка", "count": 1}]
+	old.wake_blocks = {"1,2,3": {"kind": "planks"}}
+	old.world_storage = {"w:9,9,9": [{"id": "sand", "count": 3}], "d:8,8,8": [{"id": "deep_stone", "count": 3}]}
+	old.clarity = 9999.0
+	gs.reset_state(); gs.apply_save_dict(JSON.parse_string(JSON.stringify(old)))
+	_a(gs.has_imprint("log") and gs.has_imprint("planks") and gs.has_imprint("sand") and not gs.has_imprint("deep_stone") and not gs.imprints.has("pickaxe"), 16080)
+	_a(gs.nails == 1 and gs.milestones.has("imprint") and gs.clarity <= gs.dream_clarity_max() and gs.dream_material == "drift", 16081)
+	var f091: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/v091_save.json"))
+	gs.reset_state(); gs.apply_save_dict(f091)
+	_a(gs.dream_palette().size() >= 1 and gs.nails >= 1, 16082)
+	# 12) Рецепты якорей: крафтятся, только если инструмента нет.
+	gs.reset_state(); gs.dev_mode = false; gs.enter_dream(); gs.dust = 500
+	_a(not gs.recipe_available(gs.find_recipe("nail")) and gs.wedges == 1 and not gs.recipe_available(gs.find_recipe("wedge")) and gs.recipe_available(gs.find_recipe("anchor3")), 16090)
+	gs.queue_free(); await process_frame
+	# 13) Сцена: ЛКМ во Сне ставит материал палитры; HUD показывает «Осознанность», а не таймер.
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v016 scene", "", "1606", 1606, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	await process_frame
+	scene.player.set_physics_process(false)
+	G.add_item_count("planks", 7)
+	scene.switcher.enter_dream()
+	G.dream_material = "planks"
+	for i in range(G.inv_dream.size()): G.inv_dream[i] = {}
+	G.select_item_slot(0)
+	var cell := Vector3i(30, 10, 30)
+	scene.build._place_at(cell)
+	_a(str(G.dream_blocks.get(cell, {}).get("kind", "")) == "planks", 16100)
+	var cap: Label = scene.get_node("HUD").get_node_or_null("Root/ClarityCaption")
+	G.clarity_changed.emit(G.clarity, G.dream_clarity_max())
+	_a(cap != null and cap.text.begins_with("Осознанность") and cap.text.contains("Доски") and cap.text.contains("в Яви: 7"), 16101)
+	for i in range(30): await process_frame
+	_a(G.is_dream(), 16102)   # без таймера никто не будит
+	scene.switcher.show_result_ui = false
+	var wr: Dictionary = scene.switcher.wake_up()
+	_a(wr.ok and not G.is_dream() and G.dream_blocks.has(cell), 16103)
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.16 persistent dream / lucidity from wake / imprints palette / copy materialization + cost / repair / skip conflicts / unique move / migration OK")

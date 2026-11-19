@@ -1,6 +1,6 @@
 extends RefCounted
 ## Pure-data preflight. No scene access, mutation, resource spending or partial writes.
-const BLOCKS := ["bedrock","drift","mouth","workbench","hill","ruin","ground","log","leaves","planks","stone","deep_stone","dirt","sand","nest","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","mossy_ruin","torch","beacon"]
+const BLOCKS := ["lumen","lumen_cold","lamp","strut","bedrock","drift","mouth","workbench","hill","ruin","ground","log","leaves","planks","stone","deep_stone","dirt","sand","nest","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","mossy_ruin","torch","beacon"]
 static func root_at(source:Dictionary,c:Vector3i)->Vector3i:
 	if not source.get(c,{}).has("root"): return c
 	var a:PackedStringArray=str(source[c].root).split(",")
@@ -35,7 +35,7 @@ static func build(source:Dictionary,target:Dictionary,roots:Array,natural:Dictio
 				for area in protected_areas:
 					if area.intersects(AABB(Vector3(cell),Vector3.ONE)): reason="зона появления игрока";break
 			if reason!="": conflicts.append("%s: %s"%[cell,reason]);blocked[c]=true
-	return {"ok":ready and conflicts.is_empty(),"ready":ready,"roots":roots,"cells":cells,"count":roots.size(),"blocked":blocked.size(),"conflicts":conflicts,"cap":floori(roots.size()*0.03)}
+	return {"ok":ready and conflicts.is_empty(),"ready":ready,"roots":roots,"cells":cells,"count":roots.size(),"blocked":blocked.size(),"blocked_roots":blocked,"conflicts":conflicts,"cap":floori(roots.size()*0.03)}
 static func mutations(source:Dictionary,roots:Array,beacons:Array,seed:int,immune:Array)->Dictionary:
 	var rng:=RandomNumberGenerator.new();rng.seed=seed
 	var candidates:Array[Vector3i]=[];var protected_count:=0;var eligible:=0

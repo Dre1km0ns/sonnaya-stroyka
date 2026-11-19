@@ -45,6 +45,7 @@ const BINDABLE := [
 	["blueprint_show", "Архив Снов: показать контур (во сне)", "key", KEY_N],
 	["pillow_check", "Под подушку (у кровати)", "key", KEY_Y],
 	["toggle_fly", "Полёт во сне", "key", KEY_V],
+	["dream_palette", "Сон: материал палитры (Shift — назад)", "key", KEY_T],
 	["toggle_debug", "Отладка / FPS", "key", KEY_F3],
 	["quick_save", "Быстрое сохранение", "key", KEY_F5],
 	["quick_load", "Быстрая загрузка", "key", KEY_F9],

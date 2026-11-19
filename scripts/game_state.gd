@@ -56,6 +56,19 @@ const DUST_PER_KILL_MIN := 5
 const DUST_PER_KILL_MAX := 8
 const DUST_PER_BOSS_KILL := 200
 const DUST_PER_ANACONDA_KILL := 300
+# --- v0.16: Сон — главный мир (DREAM_CORE_PLAN.md) ---
+# Осознанность (бывшая «ясность») больше не таймер: копится в Яви, тратится во Сне.
+const LUCID_AWAKE_PER_SEC := 0.25
+const LUCID_NIGHT := 25.0
+const LUCID_NIGHT_AWAKE_MIN := 60.0   # столько секунд ночи нужно провести в Яви, чтобы ночь считалась пережитой
+const LUCID_IMPRINT := 8.0
+const LUCID_KILL := 2.0
+const LUCID_MOTHER := 50.0
+const LUCID_ANACONDA := 60.0
+## Отпечатки: материал, полученный в Яви хоть раз, бесконечен в палитре Сна; копия в Явь стоит 1 такой же материал.
+const IMPRINT_KINDS: Array[String] = ["dirt","ground","hill","sand","stone","deep_stone","log","leaves","planks","ruin","mossy_ruin","torch","lumen","lumen_cold","lamp","strut"]
+## Уникальные объекты (станции, мебель, маяк) не копируются, а переносятся — иначе дюп.
+const UNIQUE_KINDS: Array[String] = ["workbench","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","beacon"]
 ## v0.11: усталость от фарма обычных мобов: −12% за каждое убийство за последние 240 с, минимум 20%.
 const KILL_FATIGUE_WINDOW := 240.0
 const KILL_FATIGUE_STEP := 0.12
@@ -82,7 +95,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 10
+const SAVE_FORMAT := 11 # v0.16: постоянный Сон, отпечатки, осознанность
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -172,6 +185,12 @@ var flowing_water: Dictionary = {}
 var _snapshot_indices: Dictionary = {}
 var snapshot_index_usec := 0
 var dream_blocks: Dictionary = {}
+var imprints: Dictionary = {}          # v0.16: kind -> true
+var dream_material := "drift"          # v0.16: текущий материал палитры Сна
+var night_awake := 0.0                 # v0.16: секунд текущей ночи, проведённых в Яви
+var nights_survived := 0
+var _loading_save := false
+var last_lucid_gain := {"amount": 0.0, "why": ""}
 ## Блоки яви: ключ Vector3i → словарь {kind, mutant}
 var wake_blocks: Dictionary = {}
 ## Ожидающие якоря: массив словарей {type, origin, cells}
@@ -350,6 +369,10 @@ func reset_state() -> void:
 	dream_blocks = {}
 	wake_blocks = {}
 	pending_anchors = []
+	imprints = {}
+	dream_material = "drift"
+	night_awake = 0.0
+	nights_survived = 0
 	selected_anchor = AnchorType.NAIL
 	last_hint = ""
 	awake_time = 0.0
@@ -502,6 +525,8 @@ func add_item_count(id: String, count: int) -> int:
 	_ensure_inventory()
 	if id == "" or count <= 0:
 		return 0
+	if current_world == World.WAKE and not _loading_save and IMPRINT_KINDS.has(id):
+		learn_imprint(id)
 	if ItemDB.is_special(id):
 		_add_special(id, count)
 		return count
@@ -922,6 +947,8 @@ func recipe_available(rec: Dictionary, ctx: Dictionary = {}) -> bool:
 		return false
 	if rec.get("unlock", "") == "heart_structure" and not heart_structure and not dev_mode:
 		return false
+	if str(rec.get("gives", "")) in ["nails", "wedges", "anchors3"] and special_count(str(rec.get("id", ""))) > 0 and not dev_mode:
+		return false # v0.16: якоря — инструменты, крафтятся один раз
 	var where := str(rec.get("where", "anywhere"))
 	var dreaming := bool(ctx.get("is_dream", is_dream()))
 	var station_id := str(ctx.get("station", ""))
@@ -1253,6 +1280,7 @@ func notify_night_from_time() -> void:
 	if n != _night_flag:
 		_night_flag = n
 		night_changed.emit(n)
+		_on_night_edge(n)
 	var ph := day_phase()
 	if ph != _phase:
 		var first := _phase == ""
@@ -1271,6 +1299,8 @@ func chat(text: String, color: Color = Color(1, 1, 1)) -> void:
 # --- HP игрока (v0.6) ---
 
 func _process(delta: float) -> void:
+	if not is_dream() and not paused and not dev_mode:
+		_lucid_tick(delta)
 	if not is_dream() and not paused:
 		_mouth_t -= delta
 		if _mouth_t <= 0:
@@ -1887,15 +1917,122 @@ func spend_clarity(amount: float) -> bool:
 	return true
 
 
-func drain_clarity(delta: float) -> void:
-	if not is_dream():
+func drain_clarity(_delta: float) -> void:
+	## v0.16: осознанность больше не тает со временем — у Сна нет таймера и принудительного пробуждения.
+	pass
+
+
+# --- v0.16: осознанность, отпечатки, палитра Сна ---
+
+func gain_lucidity(amount: float, why: String = "", silent: bool = false) -> float:
+	var before := clarity
+	clarity = minf(dream_clarity_max(), clarity + maxf(0.0, amount))
+	var got := clarity - before
+	if got > 0.0:
+		last_lucid_gain = {"amount": got, "why": why}
+		clarity_changed.emit(clarity, dream_clarity_max())
+		if not silent and why != "" and got >= 1.0:
+			toast.emit("Осознанность +%d · %s" % [roundi(got), why])
+	return got
+
+
+func _lucid_tick(delta: float) -> void:
+	## Явь кормит Сон: бодрствование и пережитые ночи.
+	if clarity < dream_clarity_max():
+		clarity = minf(dream_clarity_max(), clarity + LUCID_AWAKE_PER_SEC * delta)
+		_lucid_emit_t -= delta
+		if _lucid_emit_t <= 0.0:
+			_lucid_emit_t = 1.0
+			clarity_changed.emit(clarity, dream_clarity_max())
+	if is_night():
+		night_awake += delta
+
+
+var _lucid_emit_t := 0.0
+
+
+func _on_night_edge(now_night: bool) -> void:
+	if now_night:
+		night_awake = 0.0
 		return
-	if dev_mode:
-		return
-	clarity = maxf(0.0, clarity - CLARITY_DRAIN_PER_SEC * delta)
+	if night_awake >= LUCID_NIGHT_AWAKE_MIN:
+		nights_survived += 1
+		gain_lucidity(LUCID_NIGHT, "ночь пережита в Яви")
+		chat("Ночь пережита. Сон стал яснее: осознанность +%d." % int(LUCID_NIGHT), Color(0.75, 0.85, 1.0))
+	night_awake = 0.0
+
+
+func has_imprint(kind: String) -> bool:
+	return kind == "drift" or imprints.has(kind) or (dev_mode and IMPRINT_KINDS.has(kind))
+
+
+func learn_imprint(kind: String, silent: bool = false) -> bool:
+	if not IMPRINT_KINDS.has(kind) or imprints.has(kind):
+		return false
+	imprints[kind] = true
+	if not silent:
+		gain_lucidity(LUCID_IMPRINT, "", true)
+		toast.emit("Отпечаток: %s — теперь бесконечен во Сне" % block_display_name(kind))
+		chat("Новый отпечаток: «%s». Во Сне он бесконечен (T — палитра), копия в Явь стоит 1 штуку. Осознанность +%d." % [block_display_name(kind), int(LUCID_IMPRINT)], Color(0.75, 0.85, 1.0))
+		milestones_mark("imprint")
+	return true
+
+
+func dream_palette() -> Array[String]:
+	var out: Array[String] = ["drift"]
+	for k in IMPRINT_KINDS:
+		if has_imprint(k): out.append(k)
+	return out
+
+
+func cycle_palette(step: int = 1) -> String:
+	var pal := dream_palette()
+	var i := pal.find(dream_material)
+	dream_material = pal[posmod((i if i >= 0 else 0) + step, pal.size())]
+	set_hint("Материал Сна: %s%s · T / Shift+T — сменить" % [block_display_name(dream_material), palette_stock_text(dream_material)], false)
 	clarity_changed.emit(clarity, dream_clarity_max())
-	if clarity <= 0.0:
-		set_hint("Ясность иссякла — принудительное пробуждение!")
+	return dream_material
+
+
+func palette_stock_text(kind: String) -> String:
+	if kind == "drift": return " (бесплатно, может мутировать)"
+	return " (в Яви: %d)" % wake_stock(kind)
+
+
+func wake_stock(kind: String) -> int:
+	if dev_mode: return INF_COUNT
+	return _inv_count(inv_wake, kind)
+
+
+func materialize_cost(roots: Array) -> Dictionary:
+	## Цена копии: 1 материал Яви за блок из палитры отпечатков. Дрейф и уникальные объекты — бесплатно.
+	var need := {}
+	for c in roots:
+		var kind := str(dream_blocks.get(c, {}).get("kind", ""))
+		if IMPRINT_KINDS.has(kind): need[kind] = int(need.get(kind, 0)) + 1
+	return need
+
+
+func missing_materials(need: Dictionary) -> Dictionary:
+	var miss := {}
+	if dev_mode: return miss
+	for k in need:
+		var have := _inv_count(inv_wake, str(k))
+		if have < int(need[k]): miss[k] = int(need[k]) - have
+	return miss
+
+
+func materials_text(d: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	for k in d: parts.append("%s ×%d" % [block_display_name(str(k)), int(d[k])])
+	return ", ".join(parts)
+
+
+func same_in_wake(c: Vector3i) -> bool:
+	## Этот блок Сна уже стоит в Яви тем же материалом (материализован ранее) — ремонт его пропускает.
+	var d: Dictionary = dream_blocks.get(c, {})
+	var w: Dictionary = wake_blocks.get(c, {})
+	return not d.is_empty() and not w.is_empty() and str(w.get("kind", "")) == str(d.get("kind", "")) and not bool(w.get("mutant", false))
 
 
 func craft_nail_from_dust() -> bool:
@@ -1922,16 +2059,15 @@ func select_anchor(t: AnchorType) -> void:
 	selected_anchor = t
 	anchor_selected.emit(int(t))
 	notify_inventory()
-	if t == AnchorType.NAIL:
-		set_hint("Выбран Гвоздь (1 блок). Q — заякорить. C — меню крафта (%d осыпи)." % NAIL_CRAFT_DUST)
-	elif t == AnchorType.WEDGE:
-		set_hint("Выбран Клин (~%dx%dx%d). Q — заякорить. C — меню крафта (%d осыпи)." % [
-			WEDGE_SIZE, WEDGE_SIZE, WEDGE_SIZE, WEDGE_CRAFT_DUST
-		])
+	# v0.16: якорь — инструмент. Если его нет — подсказываем, сколько стоит один раз скрафтить.
+	var names := ["Гвоздь (1 блок)", "Клин (~%dx%dx%d)" % [WEDGE_SIZE, WEDGE_SIZE, WEDGE_SIZE], "Якорь3 (~%dx%dx%d)" % [ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_SIZE]]
+	var ids := ["nail", "wedge", "anchor3"]
+	var craft := [NAIL_CRAFT_DUST, WEDGE_CRAFT_DUST, ANCHOR3_CRAFT_DUST]
+	var cost := anchor_cost(int(t))
+	if dev_mode or special_count(ids[int(t)]) > 0:
+		set_hint("Выбран %s. Q — материализовать (%d р. + %d осознанности)." % [names[int(t)], int(cost.reagents), int(cost.clarity)])
 	else:
-		set_hint("Выбран Якорь3 (~%dx%dx%d). Q — заякорить. C — меню крафта (%d осыпи)." % [
-			ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_CRAFT_DUST
-		])
+		set_hint("%s ещё нет: C — скрафтить один раз (%d осыпи), дальше он твой навсегда." % [names[int(t)], craft[int(t)]])
 
 
 func cycle_anchor(delta: int = 1) -> void:
@@ -1984,16 +2120,36 @@ func anchor_preview(origin:Vector3i) -> Dictionary:
 				for z in range(origin.z-half,origin.z-half+size):
 					var c:=Vector3i(x,y,z)
 					if dream_blocks.has(c): selected.append(c)
-	var local:=TransferPlan.roots_for(dream_blocks,selected);var new_roots:Array[Vector3i]=[];var already:=0
+	var local:=TransferPlan.roots_for(dream_blocks,selected);var new_roots:Array[Vector3i]=[];var already:=0;var same:=0
 	for c in local:
 		if dream_blocks[c].get("anchored",false): already+=1
+		elif same_in_wake(c): same+=1 # v0.16: уже стоит в Яви — ремонт пропускает
 		else: new_roots.append(c)
-	var all_cells:Array=[]
-	for anchor in pending_anchors: all_cells.append_array(anchor.get("cells",[]))
-	all_cells.append_array(new_roots)
+	var pending_cells:Array=[]
+	for anchor in pending_anchors: pending_cells.append_array(anchor.get("cells",[]))
+	var all_cells:Array=pending_cells.duplicate();all_cells.append_array(new_roots)
 	var plan:=_make_transfer_plan(TransferPlan.roots_for(dream_blocks,all_cells))
-	plan.new_roots=new_roots;plan.local_count=local.size();plan.already=already;plan.cost=anchor_cost(t);plan.affordable=can_afford_anchor(selected_anchor)
+	# v0.16: блок, место которого в Яви занято чем-то другим, пропускается, а не блокирует весь якорь.
+	# Обычно конфликтов нет — план строится один раз; пересборка только при пропусках.
+	var skipped:=0
+	if plan.ready and not plan.blocked_roots.is_empty():
+		var keep:Array[Vector3i]=[]
+		for c in new_roots:
+			if plan.blocked_roots.has(c): skipped+=1
+			else: keep.append(c)
+		if skipped>0:
+			new_roots=keep
+			all_cells=pending_cells.duplicate();all_cells.append_array(new_roots)
+			plan=_make_transfer_plan(TransferPlan.roots_for(dream_blocks,all_cells))
+	plan.new_roots=new_roots;plan.local_count=local.size();plan.already=already;plan.same=same;plan.skipped=skipped
+	plan.cost=anchor_cost(t);plan.affordable=can_afford_anchor(selected_anchor)
+	plan.materials=materialize_cost(plan.roots);plan.missing=missing_materials(plan.materials)
 	if new_roots.is_empty(): plan.ok=false
+	if not plan.missing.is_empty(): plan.ok=false
+	var drift:=0
+	for c in plan.roots:
+		if str(dream_blocks[c].get("kind",""))=="drift": drift+=1
+	plan.drift=drift
 	return plan
 
 func try_place_anchor(origin:Vector3i) -> bool:
@@ -2001,13 +2157,18 @@ func try_place_anchor(origin:Vector3i) -> bool:
 	var plan:=anchor_preview(origin)
 	if not plan.ready: set_hint("Проверяем рельеф Яви… подождите и нажмите Q снова.",false);return false
 	if not plan.ok:
-		set_hint("Якорь: "+(str(plan.conflicts[0]) if not plan.conflicts.is_empty() else "нет новых блоков в зоне."),false);return false
-	if not plan.affordable: set_hint("Не хватает ресурсов/ясности для якоря.");return false
+		var why:="нет новых блоков в зоне."
+		if not plan.missing.is_empty(): why="не хватает в Яви: "+materials_text(plan.missing)+". Добудь и возвращайся."
+		elif not plan.conflicts.is_empty(): why=str(plan.conflicts[0])
+		elif plan.same>0: why="всё в зоне уже стоит в Яви (%d) — чинить нечего."%plan.same
+		elif plan.skipped>0: why="все %d блоков зоны заняты в Яви чем-то другим."%plan.skipped
+		set_hint("Якорь: "+why,false);return false
+	if not plan.affordable: set_hint("Не хватает реагентов или осознанности для якоря. Осознанность копится в Яви.");return false
 	# All validation precedes every deduction. Record the exact reservation for safe cancellation.
 	var cost:Dictionary=plan.cost;var before:=pouch.duplicate(true);var receipt:Dictionary={"dev":dev_mode,"wallet":{},"special":cost.special,"clarity":cost.clarity}
 	begin_inventory_batch()
 	if not dev_mode:
-		_add_special(cost.special,-1);spend_reagents(cost.reagents,false);spend_clarity(cost.clarity)
+		spend_reagents(cost.reagents,false);spend_clarity(cost.clarity) # v0.16: якорь — инструмент, не расходуется
 		for id in ["reagent1","reagent2","reagent3"]: receipt.wallet[id]=int(before[id])-int(pouch[id])
 	var cells:Array[Vector3i]=[]
 	for c in plan.new_roots:
@@ -2015,7 +2176,11 @@ func try_place_anchor(origin:Vector3i) -> bool:
 	pending_anchors.append({"type":selected_anchor,"origin":origin,"cells":cells,"receipt":receipt})
 	milestones_mark("first_anchor")
 	placed_cells_changed.emit(true,cells);notify_inventory();end_inventory_batch()
-	set_hint("%s: закреплено %d объектов / %d ячеек. Ресурсы зарезервированы; отмена возвращает их."%[ItemDB.display_name(cost.special),plan.new_roots.size(),cells.size()],false);return true
+	var extra:=""
+	if not plan.materials.is_empty(): extra+=" · материалы Яви: "+materials_text(plan.materials)
+	if plan.same>0: extra+=" · уже в Яви: %d"%plan.same
+	if plan.skipped>0: extra+=" · занято в Яви: %d"%plan.skipped
+	set_hint("%s: закреплено %d объектов%s. Отмена возвращает резерв."%[ItemDB.display_name(cost.special),plan.new_roots.size(),extra],false);return true
 
 func cancel_anchors() -> Dictionary:
 	var refunded:Dictionary={"anchors":0,"reagents":0,"clarity":0.0}
@@ -2023,7 +2188,7 @@ func cancel_anchors() -> Dictionary:
 	for anchor in pending_anchors:
 		var receipt:Dictionary=anchor.get("receipt",{})
 		if receipt.get("dev",dev_mode): continue
-		var cost:=anchor_cost(int(anchor.get("type",0)));_add_special(cost.special,1);refunded.anchors+=1
+		var cost:=anchor_cost(int(anchor.get("type",0)));refunded.anchors+=1 # v0.16: сам якорь не тратился — возвращаем только резерв
 		var wallet:Dictionary=receipt.get("wallet",{"reagent1":cost.reagents})
 		for id in ["reagent1","reagent2","reagent3"]:
 			var count:=clampi(int(wallet.get(id,0)),0,int(cost.reagents));pouch[id]=int(pouch[id])+count;refunded.reagents+=count
@@ -2050,11 +2215,12 @@ func enter_dream() -> void:
 		if dream_stash.size() < before:
 			chat("Вещи из растворившегося сундука Сна вернулись в инвентарь Сна.", Color(0.75, 0.85, 1.0))
 	milestones_mark("first_dream")
-	clarity = dream_clarity_max()
+	# v0.16: осознанность не восстанавливается входом в Сон — её приносят из Яви.
 	awake_time = 0.0
+	if not has_imprint(dream_material): dream_material = "drift"
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
-	set_hint("Сон. ЛКМ — блок, ПКМ — снять, R — сменить якорь, Q — заякорить, C — меню крафта, F — проснуться.",false)
+	set_hint("Сон помнит всё построенное. ЛКМ — блок (%s), T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
 
 
 func resolve_wake(abort_transfer:bool=false) -> Dictionary:
@@ -2071,6 +2237,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 		var cost:=anchor_cost(int(anchor.get("type",0)));spent.anchors+=1;spent.reagents+=cost.reagents;spent.clarity+=cost.clarity
 	var storage_report:Dictionary={"moved":0,"returned":0}
 	var refunded:Dictionary={};var mutation:Dictionary={"cells":[],"protected":0,"cap":0};var transferred:=0;var dust_gained:=0
+	var copied:=0;var materials_spent:Dictionary={};var unpaid_count:=0;var moved_count:=0
 	if abort_transfer:
 		refunded=cancel_anchors();spent={"anchors":0,"reagents":0,"clarity":0.0}
 	else:
@@ -2079,27 +2246,54 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 			if wake_blocks[c].get("kind","")=="beacon": beacons.append(c)
 		for c in plan.roots:
 			if dream_blocks[c].get("kind","")=="beacon": beacons.append(c)
-		mutation=TransferPlan.mutations(dream_blocks,plan.roots,beacons,world_seed_dream^hash(plan.roots)^(dream_exit_count*1103515245),NO_MUTATION_KINDS)
+		# v0.16: мутирует только дрейф — блоки из настоящих материалов стабильны.
+		mutation=TransferPlan.mutations(dream_blocks,plan.roots,beacons,world_seed_dream^hash(plan.roots)^(dream_exit_count*1103515245),NO_MUTATION_KINDS+IMPRINT_KINDS)
 		if heart_structure: mutation.cells=[] # v0.11.1: стабилизация Сердца структуры — перенос без мутаций
-		var next_wake:=wake_blocks.duplicate();var changed:Array=[]
+		# v0.16: материализация — КОПИЯ. Оригинал остаётся во Сне. Цена — материалы Яви (1 за блок палитры).
+		var stock:Dictionary={};var paid_roots:Array=[];var mat_spent:Dictionary={};var unpaid:=0
 		for c in plan.roots:
-			var data:Dictionary=dream_blocks[c].duplicate(true);data.erase("anchored")
+			var kind:=str(dream_blocks[c].get("kind",""))
+			if IMPRINT_KINDS.has(kind) and not dev_mode:
+				if not stock.has(kind): stock[kind]=_inv_count(inv_wake,kind)
+				if int(stock[kind])<=0: unpaid+=1;continue
+				stock[kind]=int(stock[kind])-1;mat_spent[kind]=int(mat_spent.get(kind,0))+1
+			paid_roots.append(c)
+		var next_wake:=wake_blocks.duplicate();var changed:Array=[];var dream_changed:Array=[];var moved_roots:Array=[];var torch_copied:=false;var real_copy:=false
+		for c in paid_roots:
+			var src:Dictionary=dream_blocks[c];var kind2:=str(src.get("kind",""))
+			var data:Dictionary=src.duplicate(true);data.erase("anchored")
 			data.mutant=c in mutation.cells
 			if data.mutant: data.kind="mouth"
 			next_wake[c]=data;changed.append(c)
-			for cell in TransferPlan.footprint(c,data):
-				if cell!=c: next_wake[cell]=dream_blocks[cell].duplicate(true);changed.append(cell)
-		wake_blocks=next_wake;transferred=plan.count
+			var fp:=TransferPlan.footprint(c,src)
+			for cell in fp:
+				if cell!=c:
+					var part:Dictionary=dream_blocks[cell].duplicate(true);part.erase("anchored");next_wake[cell]=part;changed.append(cell)
+			if UNIQUE_KINDS.has(kind2):
+				moved_roots.append(c)
+				for cell in fp: dream_blocks.erase(cell);dream_changed.append(cell)
+			else:
+				copied+=1
+				if kind2=="torch": torch_copied=true
+				if kind2!="drift": real_copy=true
+		wake_blocks=next_wake;transferred=paid_roots.size()
+		for c in dream_blocks:
+			if dream_blocks[c].get("anchored",false): dream_blocks[c].anchored=false;dream_changed.append(c)
 		placed_cells_changed.emit(false,changed)
-		dust_gained=int(maxi(0,root_count-transferred)/5)+int(mutation.protected)*5;pouch.dust=int(pouch.dust)+dust_gained
-		pending_anchors.clear();dream_blocks.clear()
-		storage_report=_resolve_dream_storage(plan.roots)
+		if not dream_changed.is_empty(): placed_cells_changed.emit(true,dream_changed)
+		for k in mat_spent: _inv_take(inv_wake,str(k),int(mat_spent[k]))
+		materials_spent=mat_spent;unpaid_count=unpaid;moved_count=moved_roots.size()
+		if torch_copied: mark_torches_dirty()
+		dust_gained=int(mutation.protected)*5;pouch.dust=int(pouch.dust)+dust_gained
+		pending_anchors.clear()
+		storage_report=_resolve_dream_storage(moved_roots)
 		if transferred>0: _transfers_done+=1;milestones_mark("first_transfer")
-	current_world=World.WAKE;_bind_inventory();dream_exit_count+=1;clarity=dream_clarity_max()
+		if real_copy: milestones_mark("palette_copy")
+	current_world=World.WAKE;_bind_inventory();dream_exit_count+=1 # v0.16: осознанность не сбрасывается
 	clarity_changed.emit(clarity,dream_clarity_max());notify_inventory();world_changed.emit(false)
 	wake_resolved.emit(transferred,dust_gained,mutation.cells.size());last_transfer_apply_usec=Time.get_ticks_usec()-started
-	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0 if abort_transfer else maxi(0,root_count-transferred),"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
-	set_hint("Пробуждение: перенесено %d, мутаций %d, осыпи +%d%s"%[transferred,mutation.cells.size(),dust_gained," · черновик сохранён, ресурсы возвращены" if abort_transfer else ""],false)
+	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0,"kept_in_dream":root_count-moved_count,"copied":copied,"moved":moved_count,"materials":materials_spent,"unpaid":unpaid_count,"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
+	set_hint("Пробуждение: материализовано %d (копий %d, перенесено объектов %d), мутаций %d%s. Сон сохранил всё построенное."%[transferred,copied,moved_count,mutation.cells.size()," · резерв якорей возвращён" if abort_transfer else ""],false)
 	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
 		chat("Под подушкой лежат зелья (%d). Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
 	return result
@@ -2172,6 +2366,8 @@ func reward_kill(is_boss: bool = false, who: String = "") -> int:
 		kill_log.append(_clock)
 	if not dev_mode:
 		add_item_count("dust", amount)
+		if not is_dream():
+			gain_lucidity((LUCID_ANACONDA if who == "Анаконда" else LUCID_MOTHER) if is_boss else LUCID_KILL * kill_fatigue_mult(), "", true)
 	var prefix := (who + " повержен: ") if who != "" else ""
 	set_hint("%s+%d осыпи%s" % [prefix, amount, note], is_boss)
 	toast.emit("%s+%d осыпи%s" % [prefix, amount, note])
@@ -2249,6 +2445,10 @@ func to_save_dict() -> Dictionary:
 		"world_seed_dream": str(world_seed_dream),
 		"wake_blocks": _blocks_to_json(wake_blocks),
 		"dream_blocks": _blocks_to_json(dream_blocks),
+		"imprints": imprints.keys(),
+		"dream_material": dream_material,
+		"night_awake": night_awake,
+		"nights_survived": nights_survived,
 		"pending_anchors": _anchors_to_json(pending_anchors),
 		"removed_terrain": _cells_kind_to_json(removed_terrain),
 		"removed_dream_terrain":_cells_kind_to_json(removed_dream_terrain),
@@ -2267,6 +2467,7 @@ static func _seed_val(v: Variant, fallback: int) -> int:
 
 
 func apply_save_dict(data: Dictionary) -> void:
+	_loading_save = true
 	armor = [{},{},{},{}]
 	var saved_armor: Array = data.get("armor",[])
 	for i in range(mini(4,saved_armor.size())):
@@ -2421,6 +2622,8 @@ func apply_save_dict(data: Dictionary) -> void:
 	if fmt < 10:
 		_migrate_v010(data)
 	migrate_lanterns() # v0.11.1: «Фонарь глубин» удалён — в любых сейвах превращается в факелы.
+	_load_v016(data, fmt)
+	_loading_save = false
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
 	current_world = World.DREAM if w == "dream" else World.WAKE
@@ -2844,9 +3047,22 @@ func _give_items(inv: Array, items: Array) -> Array:
 	return rest
 
 
+static func _inv_take(inv: Array, id: String, n: int) -> int:
+	## v0.16: списать n штук из конкретного инвентаря (материалы Яви при материализации из Сна).
+	var left := n
+	for i in range(inv.size() - 1, -1, -1):
+		if left <= 0: break
+		if str(inv[i].get("id", "")) != id: continue
+		var take := mini(left, int(inv[i].get("count", 0)))
+		inv[i]["count"] = int(inv[i]["count"]) - take
+		left -= take
+		if int(inv[i]["count"]) <= 0: inv[i] = {}
+	return n - left
+
+
 func _resolve_dream_storage(transferred_roots: Array) -> Dictionary:
 	## Пробуждение: заякоренные сундуки Сна переносят содержимое в Явь (d:→w:),
-	## содержимое растворившихся сундуков возвращается в инвентарь Сна (излишек — в резерв).
+	## v0.16: незаякоренные сундуки Сна остаются во Сне вместе с содержимым; возврат — только если место в Яви занято.
 	var moved := 0
 	var returned := 0
 	var roots := {}
@@ -2865,6 +3081,7 @@ func _resolve_dream_storage(transferred_roots: Array) -> Dictionary:
 				moved += items.size()
 				world_storage.erase(key)
 				continue
+		if not roots.has(ck): continue # v0.16: сундук остался во Сне — содержимое тоже остаётся
 		world_storage.erase(key)
 		if items.is_empty(): continue
 		returned += items.size()
@@ -3236,3 +3453,36 @@ func migrate_lanterns() -> int:
 		if typeof(world_storage[k]) == TYPE_ARRAY:
 			n += _lanterns_to_torches(world_storage[k])
 	return n
+
+
+# --- v0.16: загрузка и миграция «постоянного Сна» ---
+
+func _load_v016(data: Dictionary, fmt: int) -> void:
+	imprints = {}
+	for k in data.get("imprints", []):
+		if IMPRINT_KINDS.has(str(k)): imprints[str(k)] = true
+	night_awake = maxf(0.0, float(data.get("night_awake", 0.0)))
+	nights_survived = maxi(0, int(data.get("nights_survived", 0)))
+	if fmt < 11:
+		migrate_v016()
+	dream_material = str(data.get("dream_material", "drift"))
+	if not has_imprint(dream_material): dream_material = "drift"
+	clarity = clampf(clarity, 0.0, dream_clarity_max())
+
+
+func migrate_v016() -> int:
+	## Сейвы до v0.16: отпечатки выводятся из всего, что у игрока уже было в Яви
+	## (инвентарь Яви, сундуки Яви, построенное в Яви). Якоря, которые были (≥1), остаются инструментами.
+	var n := 0
+	var seen := {}
+	for sl in inv_wake: seen[str(sl.get("id", ""))] = true
+	for key in world_storage.keys():
+		if str(key).begins_with("w:") and typeof(world_storage[key]) == TYPE_ARRAY:
+			for sl in world_storage[key]: seen[str(sl.get("id", ""))] = true
+	for c in wake_blocks: seen[str(wake_blocks[c].get("kind", ""))] = true
+	for k in seen:
+		if learn_imprint(str(k), true): n += 1
+	if n > 0: milestones_mark("imprint", true)
+	nails = maxi(nails, 1)
+	return n
+

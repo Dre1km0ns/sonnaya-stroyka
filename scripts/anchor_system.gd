@@ -39,9 +39,10 @@ func _update_preview()->void:
 	if cell==_last_cell and t==_last_anchor and not _dirty and last_preview.get("ready",true):return
 	_last_cell=cell;_last_anchor=t;_dirty=false;last_preview=GameState.anchor_preview(cell)
 	var p:=last_preview;var cost:Dictionary=p.cost
-	var status:="Q — закрепить" if p.ok and p.affordable else ("Проверка рельефа Яви…" if not p.ready else ("Недостаточно ресурсов/ясности" if not p.affordable else "Нет новых блоков"))
+	var status:="Q — закрепить" if p.ok and p.affordable else ("Проверка рельефа Яви…" if not p.ready else ("Недостаточно реагентов/осознанности" if not p.affordable else ("Не хватает в Яви: "+GameState.materials_text(p.missing) if not p.missing.is_empty() else ("Всё уже стоит в Яви" if p.same>0 and p.new_roots.is_empty() else "Нет новых блоков"))))
 	if not p.conflicts.is_empty():status="Конфликт: "+str(p.conflicts[0])
-	info.text="ЯКОРЬ · %s\nВ зоне: %d · новых: %d · закреплено: %d\nВесь перенос: %d объектов / %d ячеек\nЦена: 1 %s + %d р. + %.0f ясности\nНестабильность: 7%% бросок · максимум %d (3%%)\n%s"%[GameState.ItemDB.display_name(cost.special),p.local_count,p.new_roots.size(),p.already,p.count,p.cells.size(),GameState.ItemDB.display_name(cost.special),cost.reagents,cost.clarity,p.cap,status]
+	var mats:String=GameState.materials_text(p.materials) if not p.materials.is_empty() else "—"
+	info.text="ЯКОРЬ · %s (инструмент)\nВ зоне: %d · новых: %d · закреплено: %d · уже в Яви: %d · занято: %d\nВся материализация: %d объектов · материалы Яви: %s\nЦена якоря: %d р. + %.0f осознанности\nДрейф в плане: %d (нестабилен: 7%% бросок, максимум %d) · материалы не мутируют\n%s"%[GameState.ItemDB.display_name(cost.special),p.local_count,p.new_roots.size(),p.already,p.same,p.skipped,p.count,mats,cost.reagents,cost.clarity,int(p.get("drift",0)),mini(p.cap,int(p.get("drift",0))),status]
 	var mesh:=ImmediateMesh.new();var mat:=StandardMaterial3D.new();mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;mat.vertex_color_use_as_albedo=true;mat.no_depth_test=true
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES,mat)
 	var size:=1 if t==0 else (GameState.WEDGE_SIZE if t==1 else GameState.ANCHOR3_SIZE);var half:=int(size/2)

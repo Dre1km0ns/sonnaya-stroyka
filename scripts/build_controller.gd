@@ -146,13 +146,16 @@ func _try_place() -> void:
 
 
 func _place_at(cell: Vector3i) -> void:
-	var kind := "drift"
+	# v0.16: без предмета в руке ставится материал палитры Сна (отпечаток) — бесконечно и бесплатно.
+	var kind: String = GameState.dream_material if GameState.has_imprint(GameState.dream_material) else "drift"
+	var from_palette := true
 	for item_kind in DREAM_ITEM_BLOCKS:
 		if GameState.selected_is(item_kind):
 			if not GameState.consume_item(item_kind, 1):
 				GameState.set_hint("Нет «%s» в инвентаре сна." % GameState.block_display_name(item_kind))
 				return
 			kind = item_kind
+			from_palette = false
 			break
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
@@ -161,11 +164,11 @@ func _place_at(cell: Vector3i) -> void:
 		if kind == "drift" and GameState.heart_structure and Input.is_action_pressed("sprint"):
 			placed_cells.append_array(mass_place_row(cell, facing))
 		dream_voxels.sync_cells(placed_cells)
-		if kind != "drift":
-			GameState.set_hint("%s [%d,%d,%d]. Заякорь гвоздём, чтобы унести в явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])
+		if not from_palette:
+			GameState.set_hint("%s [%d,%d,%d]. Заякорь, чтобы унести в Явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])
 		else:
-			GameState.set_hint("Дрейф-блок [%d,%d,%d]" % [cell.x, cell.y, cell.z], false)
-	elif kind != "drift":
+			GameState.set_hint("%s [%d,%d,%d]%s" % [GameState.block_display_name(kind), cell.x, cell.y, cell.z, GameState.palette_stock_text(kind)], false)
+	elif not from_palette:
 		GameState.add_item_count(kind, 1)
 
 

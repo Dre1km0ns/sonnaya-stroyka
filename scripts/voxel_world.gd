@@ -24,6 +24,7 @@ var mesh_rebuild_count := 0
 var cells_changed := 0
 var flush_usec := 0
 static var _shapes: Dictionary = {}
+const ECHO_TINT := Color(1.0, 0.8, 0.42)
 func _ready() -> void:
 	add_to_group("voxel_world")
 	GameState.world_changed.connect(_on_world)
@@ -149,6 +150,8 @@ func _build_placed_chunk(ck: Vector2i) -> void:
 			var nb: Vector3i = c+FACE_OFS[i]
 			if _data.has(nb) and not NONSOLID.has(_data[nb].get("kind","")): mask|=1<<i
 		var tint := Color(0.6,1,0.85) if is_dream_layer and d.get("anchored",false) else Color.WHITE
+		# v0.16: во Сне блоки, уже стоящие в Яви тем же материалом, чуть золотятся — видно, что материализовано.
+		if is_dream_layer and tint == Color.WHITE and GameState.wake_blocks.has(c) and str(GameState.wake_blocks[c].get("kind","")) == str(d.get("kind","")): tint = ECHO_TINT
 		if mask==63: continue
 		var tiles: Array = tiles_by_kind.get(kind,[])
 		if tiles.is_empty():

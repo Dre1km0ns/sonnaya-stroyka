@@ -32,13 +32,11 @@ func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wa
 
 func _process(delta: float) -> void:
 	if GameState.transfer_ui_open: return
-	if GameState.is_dream():
-		GameState.drain_clarity(delta)
-		if GameState.clarity <= 0.0:
-			wake_up()
-			return
+	# v0.16: у Сна нет таймера — просыпаешься сам (F или кровать).
 	if GameState.ui_blocked():
 		return
+	if GameState.is_dream() and InputMap.has_action("dream_palette") and Input.is_action_just_pressed("dream_palette"):
+		GameState.cycle_palette(-1 if Input.is_action_pressed("sprint") else 1)
 	if Input.is_action_just_pressed("wake_up") and GameState.is_dream():
 		wake_up()
 	if Input.is_action_just_pressed("interact"):

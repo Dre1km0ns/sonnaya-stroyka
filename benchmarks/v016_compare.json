@@ -1,0 +1,42 @@
+{
+ "enter_dream_ms": [
+  0.22,
+  0.243
+ ],
+ "place_5000_ms": [
+  10.956,
+  11.214
+ ],
+ "anchor_preview_wedge_us": [
+  248.96,
+  325.26
+ ],
+ "dream_sync_5000_ms": [
+  8.348,
+  8.239
+ ],
+ "save_ms": [
+  20.715,
+  21.112
+ ],
+ "save_bytes": [
+  354923,
+  355000
+ ],
+ "load_ms": [
+  16.412,
+  16.424
+ ],
+ "wake_anchor3_ms": [
+  4.52,
+  4.041
+ ],
+ "dream_left_after_wake": [
+  0,
+  5000
+ ],
+ "transferred": [
+  162,
+  162
+ ]
+}

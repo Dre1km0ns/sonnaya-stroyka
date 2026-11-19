@@ -487,14 +487,14 @@ func _on_world(is_dream: bool) -> void:
 func _on_clarity(value: float, max_value: float) -> void:
 	clarity_bar.max_value = max_value
 	clarity_bar.value = value
-	# v0.11: ясность — это время. Показываем остаток и цену выбранного якоря в секундах.
+	# v0.11→v0.16: подпись полосы осознанности.
 	var cap := get_node_or_null("Root/ClarityCaption") as Label
 	if cap:
-		var secs := int(value / GameState.CLARITY_DRAIN_PER_SEC)
+		# v0.16: осознанность — ресурс, а не таймер. Подпись: запас, цена якоря, материал палитры и его запас в Яви.
 		var cost: Dictionary = GameState.anchor_cost(int(GameState.selected_anchor))
-		var cs := float(cost.clarity) / GameState.CLARITY_DRAIN_PER_SEC
-		cap.text = "Ясность ≈ %d:%02d  ·  %s −%d (≈%d с)" % [secs / 60, secs % 60, ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), int(cs)]
-		cap.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if secs <= 20 else Color(0.85, 0.85, 1.0))
+		var mat: String = GameState.dream_material
+		cap.text = "Осознанность %d/%d  ·  %s −%d  ·  T: %s%s" % [int(value), int(max_value), ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), GameState.block_display_name(mat), GameState.palette_stock_text(mat)]
+		cap.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if value < float(cost.clarity) else Color(0.85, 0.85, 1.0))
 
 
 func _refresh_inv() -> void:

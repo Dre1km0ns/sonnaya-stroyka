@@ -335,7 +335,7 @@ func _update_seed_info() -> void:
 	if t == "":
 		_seed_info.text = "Сид задаёт рельеф, холмы, озёра, руины, места и типы реагентов и мир сна. Один сид — один и тот же мир."
 	elif t == str(GameState.DEV_SEED):
-		_seed_info.text = "Сид разработчика: все ресурсы, предметы, якоря и маяки бесконечны (∞), ясность во сне не тратится."
+		_seed_info.text = "Сид разработчика: все ресурсы, предметы, якоря и маяки бесконечны (∞), осознанность во сне не тратится."
 		_seed_info.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
 		return
 	elif t.is_valid_int():
