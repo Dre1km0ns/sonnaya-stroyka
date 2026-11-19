@@ -21,6 +21,7 @@ var saves := 0
 var loads := 0
 var nights := 0
 var _was_night := false
+var worst: Array = [] # v0.21 c2: самые долгие кадры с контекстом [мкс, игровая минута, после какой вехи]
 
 
 func _init() -> void:
@@ -32,7 +33,13 @@ func _init() -> void:
 func _frame() -> void:
 	await process_frame
 	var now := Time.get_ticks_usec()
-	if _last_us > 0: frame_us.append(now - _last_us)
+	if _last_us > 0:
+		var dt := now - _last_us
+		frame_us.append(dt)
+		if dt > 150000 or (worst.size() < 8 and dt > 50000):
+			worst.append([dt / 1000, snappedf(game_t / 60.0, 0.01), str(log.back().get("id", "")) if not log.is_empty() else "старт"])
+			worst.sort_custom(func(a, b): return a[0] > b[0])
+			if worst.size() > 12: worst.resize(12)
 	_last_us = now
 	game_t += 1.0 / 60.0
 	if gs != null:
@@ -256,7 +263,8 @@ func _go() -> void:
 		"frames": arr.size(), "frame_ms_p50": snappedf(pct.call(0.5), 0.01), "frame_ms_p95": snappedf(pct.call(0.95), 0.01), "frame_ms_p99": snappedf(pct.call(0.99), 0.01), "frame_ms_max": snappedf(float(arr.back()) / 1000.0, 0.01),
 		"tutorial_minutes": snappedf(tut_min, 0.01), "tutorial_step_seconds": gs.tutorial_times, "nights": nights, "saves": saves, "loads": loads,
 		"dream_blocks": gs.dream_blocks.size(), "wake_blocks": gs.wake_blocks.size(), "milestones": gs.milestones.keys(), "trials": gs.trials_run, "requests": gs.requests_done,
-		"static_mem_mb": snappedf(OS.get_static_memory_usage() / 1048576.0, 0.1), "fails": fails, "log": log}
+		"static_mem_mb": snappedf(OS.get_static_memory_usage() / 1048576.0, 0.1), "fails": fails, "log": log, "worst_frames": worst,
+		"frame_ms_max_ingame": worst.filter(func(w): return float(w[1]) > 0.1).map(func(w): return int(w[0])).max() if not worst.is_empty() else 0}
 	var f := FileAccess.open("res://benchmarks/v020_bot.json", FileAccess.WRITE)
 	f.store_string(JSON.stringify(res, "  ")); f.close()
 	print("BOT RESULT ", JSON.stringify(res.duplicate().merged({"log": log.size()}, true)))

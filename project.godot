@@ -9,7 +9,7 @@ config/custom_user_dir_name="sonnaya_stroyka"
 config/description="Dual-world sandbox: build in Dream, anchor what survives into Wake."
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://assets/icon/icon_256.png"
 
 [autoload]
 GameSettings="*res://scripts/game_settings.gd"

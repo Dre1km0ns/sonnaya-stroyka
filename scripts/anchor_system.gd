@@ -21,11 +21,16 @@ func _process(delta:float)->void:
 	var active:=is_instance_valid(player) and GameState.is_dream() and not GameState.ui_blocked()
 	# v0.21: во время обучения рамка и справка якоря появляются только на шаге «якорь».
 	if active and GameState.tutorial_focus() and GameState.tutorial_step_id()!="anchor": active=false
-	preview.visible=active;info.visible=active and int(last_preview.get("local_count",0))>0
+	var tut_anchor:=active and GameState.tutorial_focus() and GameState.tutorial_step_id()=="anchor"
+	var has_target:=int(last_preview.get("local_count",0))>0
+	preview.visible=active;info.visible=active and (has_target or tut_anchor)
+	# v0.21 c2: на шаге обучения «якорь» справка видна сразу — с подсказкой, куда навестись.
+	if tut_anchor and not has_target:info.text="ЯКОРЬ · наведись прицелом на верстак\nРамка покажет, что закрепится. Потом Q."
 	if not active:return
 	_timer-=delta
 	if _timer<=0:
 		_timer=0.15;_update_preview()
+		if tut_anchor and int(last_preview.get("local_count",0))==0:info.text="ЯКОРЬ · наведись прицелом на верстак\nРамка покажет, что закрепится. Потом Q."
 	if Input.is_action_just_pressed("anchor_place"): _try_anchor()
 func _target_cell()->Vector3i:
 	var aim:Dictionary=player.get_look_ray()

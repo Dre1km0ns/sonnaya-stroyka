@@ -52,6 +52,7 @@ var death_menu: Control
 
 
 func _ready() -> void:
+	add_to_group("hud") # v0.21 c2: для консоли (hudfocus) и смоука
 	var menu_script: GDScript = load("res://scripts/craft_menu.gd")
 	var menu: Control = menu_script.new()
 	$Root.add_child(menu)
@@ -502,9 +503,14 @@ func _style_clarity() -> void:
 	var cap := get_node_or_null("Root/ClarityCaption") as Label
 	if cap:
 		cap.offset_top = 82; cap.offset_right = 330; cap.offset_bottom = 120
-		cap.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		cap.autowrap_mode = TextServer.AUTOWRAP_OFF # подложка по размеру текста (reset_size после смены текста)
 		cap.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 		cap.add_theme_constant_override("outline_size", 3)
+		# v0.21 c2: подложка — на фоне светлых островов Сна подпись читалась плохо.
+		var cbg := StyleBoxFlat.new(); cbg.bg_color = Color(0.06, 0.04, 0.12, 0.72); cbg.set_corner_radius_all(4)
+		cbg.content_margin_left = 6; cbg.content_margin_right = 6; cbg.content_margin_top = 2; cbg.content_margin_bottom = 3
+		cap.add_theme_stylebox_override("normal", cbg)
+		cap.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 
 
 func _on_clarity(value: float, max_value: float) -> void:
@@ -516,8 +522,35 @@ func _on_clarity(value: float, max_value: float) -> void:
 		# v0.16: осознанность — ресурс, а не таймер. Подпись: запас, цена якоря, материал палитры и его запас в Яви.
 		var cost: Dictionary = GameState.anchor_cost(int(GameState.selected_anchor))
 		var mat: String = GameState.dream_material
-		cap.text = "Осознанность %d/%d · %s −%d\nT: %s%s" % [int(value), int(max_value), ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), GameState.block_display_name(mat), GameState.palette_stock_text(mat)]
+		if tutorial_hides_wake_tools():
+			# v0.21 c2: до шага «якорь» цена якоря и палитра — лишний шум.
+			cap.text = "Осознанность %d/%d" % [int(value), int(max_value)]
+		else:
+			cap.text = "Осознанность %d/%d · %s −%d\nT: %s%s" % [int(value), int(max_value), ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), GameState.block_display_name(mat), GameState.palette_stock_text(mat)]
 		cap.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if value < float(cost.clarity) else Color(0.85, 0.85, 1.0))
+		cap.reset_size()
+
+
+## v0.21 c2: пока обучение не дошло до якоря, колонка Гвоздь/Клин/Якорь3/Маяк и цена якоря скрыты.
+func tutorial_hides_wake_tools() -> bool:
+	return GameState.tutorial_focus() and not (GameState.tutorial_step_id() in ["anchor", "wake"])
+
+
+var _focus_t := 0.0
+var _focus_last := -1
+
+func _update_tutorial_focus(delta: float) -> void:
+	_focus_t -= delta
+	if _focus_t > 0.0:
+		return
+	_focus_t = 0.2
+	var hide := tutorial_hides_wake_tools()
+	var bar := get_node_or_null("Root/SpecialBar") as Control
+	if bar:
+		bar.visible = not hide
+	if int(hide) != _focus_last:
+		_focus_last = int(hide)
+		_on_clarity(clarity_bar.value, clarity_bar.max_value)
 
 
 func _refresh_inv() -> void:
@@ -615,6 +648,7 @@ func _process(delta: float) -> void:
 		_update_phase_label()
 	_update_heal_indicator()
 	_update_bed_prompt()
+	_update_tutorial_focus(delta)
 	_debug_t += delta
 	if _debug_label.visible and _debug_t > 0.25:
 		_debug_t = 0.0

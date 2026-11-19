@@ -95,6 +95,8 @@ func _build_mesh() -> void:
 	tag.position = Vector3(0, 1.95, 0)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.modulate = colr.lightened(0.35)
+	tag.pixel_size = 0.004; tag.outline_size = 8 # v0.21 c2: компактнее, видна 2–22 м
+	tag.visibility_range_begin = 2.0; tag.visibility_range_end = 22.0
 	add_child(tag)
 	var col := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()

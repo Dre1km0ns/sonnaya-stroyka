@@ -15,6 +15,15 @@ var island_count := 0
 var cube_count := 0
 var _seed := 0
 var _cam: Camera3D
+## v0.21 c2: «флора Сна» на земле — кристаллы, кочки, светящиеся пятна (MultiMesh, без физики).
+const FLORA_R := 34
+const FLORA_SNAP := 8
+var flora: Array[MultiMeshInstance3D] = []
+var flora_counts := [0, 0, 0]
+var _flora_center := Vector2i(2147483647, 0)
+var _chunks: Node = null
+var _flora_dirty := false
+var _flora_t := 0.0
 
 
 func _ready() -> void:
@@ -27,8 +36,12 @@ func _ready() -> void:
 	dream_sky.radiance_size = Sky.RADIANCE_SIZE_32
 	_build_islands()
 	_build_motes()
+	_build_flora()
 	apply_palette()
 	GameState.world_changed.connect(func(_d: bool) -> void: apply_palette())
+	# постройка поверх флоры — пересобрать (не чаще 2 раз в секунду)
+	GameState.placed_cells_changed.connect(func(dream, _cells) -> void:
+		if bool(dream): _flora_dirty = true)
 
 
 func apply_palette() -> void:
@@ -42,7 +55,7 @@ func apply_palette() -> void:
 		(islands.material_override as StandardMaterial3D).albedo_color = Color(1, 1, 1).lerp(hor.lightened(0.2), 0.35)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not GameState.is_dream():
 		return
 	if _cam == null or not is_instance_valid(_cam):
@@ -53,6 +66,13 @@ func _process(_delta: float) -> void:
 	islands.global_position = _cam.global_position
 	islands.scale = Vector3.ONE * k
 	motes.global_position = _cam.global_position
+	var fc := Vector2i(floori(_cam.global_position.x / FLORA_SNAP), floori(_cam.global_position.z / FLORA_SNAP))
+	_flora_t -= delta
+	if _flora_dirty and _flora_t <= 0.0:
+		_flora_dirty = false; _flora_t = 0.5; _flora_center = Vector2i(2147483647, 0)
+	if fc != _flora_center:
+		_flora_center = fc
+		rebuild_flora(Vector2i(fc.x * FLORA_SNAP, fc.y * FLORA_SNAP))
 
 
 func _rng(i: int) -> RandomNumberGenerator:
@@ -62,7 +82,8 @@ func _rng(i: int) -> RandomNumberGenerator:
 func _build_islands() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var grass := Color(0.62, 0.52, 0.95); var rock := Color(0.30, 0.24, 0.46); var glow := Color(0.85, 1.0, 0.95)
+	# v0.21 c2: светлее — на фоне неба острова читались тёмными силуэтами.
+	var grass := Color(0.82, 0.72, 1.0); var rock := Color(0.50, 0.42, 0.70); var glow := Color(0.85, 1.0, 0.95)
 	for i in range(ISLANDS):
 		var r := _rng(i)
 		var ang := TAU * (float(i) + r.randf_range(-0.3, 0.3)) / float(ISLANDS)
@@ -75,7 +96,7 @@ func _build_islands() -> void:
 			for x in range(-rad, rad + 1):
 				for z in range(-rad, rad + 1):
 					if Vector2(x, z).length() > rr + r.randf_range(-0.4, 0.3): continue
-					var col := grass if y == 0 else rock.lerp(Color(0.18, 0.14, 0.3), float(y) / float(depth))
+					var col := grass if y == 0 else rock.lerp(Color(0.32, 0.26, 0.5), float(y) / float(depth))
 					_cube(st, c + Vector3(x, -y, z), col)
 		# ориентир на части островов: кристаллический шпиль или дерево Сна
 		if i % 4 == 0:
@@ -154,3 +175,76 @@ func _build_motes() -> void:
 	g.add_point(0.3, Color(0.85, 0.95, 1.0, 0.9)); g.add_point(0.7, Color(1.0, 0.85, 1.0, 0.8))
 	motes.color_ramp = g
 	add_child(motes)
+
+
+func _flora_mat(unshaded: bool, alpha: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	if unshaded: m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if alpha < 1.0:
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_color = Color(1, 1, 1, alpha)
+	return m
+
+
+func _build_flora() -> void:
+	var crystal := PrismMesh.new(); crystal.size = Vector3(0.22, 0.95, 0.22); crystal.material = _flora_mat(true, 1.0)
+	var tuft := BoxMesh.new(); tuft.size = Vector3(0.42, 0.18, 0.42); tuft.material = _flora_mat(false, 1.0)
+	var patch := PlaneMesh.new(); patch.size = Vector2(1.0, 1.0); patch.material = _flora_mat(true, 0.3)
+	var names := ["FloraCrystals", "FloraTufts", "FloraPatches"]
+	var meshes: Array[Mesh] = [crystal, tuft, patch]
+	for i in range(3):
+		var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_colors = true; mm.mesh = meshes[i]
+		var mi := MultiMeshInstance3D.new(); mi.name = names[i]; mi.multimesh = mm
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi); flora.append(mi)
+
+
+static func _h(x: int, z: int, salt: int) -> float:
+	var n := (x * 73856093) ^ (z * 19349663) ^ (salt * 83492791)
+	n = (n ^ (n >> 13)) * 1274126177
+	return float(posmod(n ^ (n >> 16), 100000)) / 100000.0
+
+
+## Пересобрать флору вокруг точки (x,z). Детерминированно от клетки; пропускает озёра, руины, постройки игрока.
+func rebuild_flora(center: Vector2i) -> void:
+	if _chunks == null:
+		_chunks = get_parent().get_node_or_null("DreamChunks") if get_parent() else null
+	var lists := [[], [], []]
+	for x in range(center.x - FLORA_R, center.x + FLORA_R):
+		for z in range(center.y - FLORA_R, center.y + FLORA_R):
+			var r := _h(x, z, _seed)
+			var kind := 0 if r < 0.022 else (1 if r < 0.075 else (2 if r < 0.11 else -1))
+			if kind < 0: continue
+			var h := 0
+			if _chunks:
+				if _chunks.has_method("chunk_has_ruin") and _chunks.chunk_has_ruin(Vector2i(floori(x / 16.0), floori(z / 16.0))): continue
+				if _chunks.has_method("is_world_in_lake") and _chunks.is_world_in_lake(Vector3(x, 0, z)): continue
+				if _chunks.has_method("height_at"): h = int(_chunks.height_at(x, z))
+			if GameState.dream_blocks.has(Vector3i(x, h, z)) or GameState.dream_blocks.has(Vector3i(x, h + 1, z)): continue
+			lists[kind].append(Vector3(x, h, z))
+	for i in range(3):
+		var mm: MultiMesh = flora[i].multimesh
+		var pts: Array = lists[i]
+		mm.instance_count = pts.size()
+		flora_counts[i] = pts.size()
+		for j in range(pts.size()):
+			var p: Vector3 = pts[j]
+			var a := _h(int(p.x), int(p.z), 7); var b := _h(int(p.x), int(p.z), 11)
+			var t := Transform3D()
+			var col := Color.WHITE
+			if i == 0:
+				t.basis = Basis(Vector3.UP, a * TAU) * Basis(Vector3.RIGHT, (b - 0.5) * 0.5)
+				t.basis = t.basis.scaled(Vector3.ONE * (0.7 + b * 0.9))
+				t.origin = p + Vector3(0.2 + a * 0.6, 0.42, 0.2 + b * 0.6)
+				col = Color(0.55, 0.95, 1.0).lerp(Color(1.0, 0.65, 0.95), b)
+			elif i == 1:
+				t.basis = Basis(Vector3.UP, a * TAU)
+				t.origin = p + Vector3(0.5, 0.09, 0.5)
+				col = Color(0.62, 0.5, 0.92).lerp(Color(0.48, 0.72, 0.9), a)
+			else:
+				t.basis = Basis(Vector3.UP, a * TAU).scaled(Vector3(0.6 + a * 0.7, 1.0, 0.6 + b * 0.7))
+				t.origin = p + Vector3(0.5, 0.025, 0.5)
+				col = Color(0.78, 0.6, 1.0).lerp(Color(0.62, 0.85, 1.0), b)
+			mm.set_instance_transform(j, t)
+			mm.set_instance_color(j, col)

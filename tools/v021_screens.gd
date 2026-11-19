@@ -1,6 +1,6 @@
 extends SceneTree
 ## Кадры v0.21 (цикл 1). DISPLAY=:77 godot --path . --rendering-method gl_compatibility -s res://tools/v021_screens.gd
-const OUT := "/workspace/shots/v021c1/"
+var OUT := "/workspace/shots/v021c2/" # --out=<папка>
 var gs; var main; var player
 func _init() -> void: call_deferred("_go")
 func _wait(n: int) -> void:
@@ -19,6 +19,8 @@ func _press(action: String) -> void:
 	e = InputEventAction.new(); e.action = action; e.pressed = false; Input.parse_input_event(e)
 	await process_frame
 func _go() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--out="): OUT = a.substr(6).trim_suffix("/") + "/"
 	DirAccess.make_dir_recursive_absolute(OUT)
 	root.get_node("GameSettings").dream_start = true
 	change_scene_to_file("res://scenes/main_menu.tscn")
@@ -38,6 +40,8 @@ func _go() -> void:
 	await _shot("03_dream_sky_islands.png")
 	_look(p0 + Vector3(0, 6, 0), -1.0, 0.05); await _wait(20)
 	await _shot("04_dream_horizon.png")
+	_look(p0 + Vector3(6, 1.7, 6), 0.8, -0.25); await _wait(20)
+	await _shot("04b_dream_ground_flora.png")
 	# шаги: полёт, блоки
 	gs.tutorial_event("fly")
 	var base := Vector3i(floori(p0.x) - 2, floori(p0.y), floori(p0.z) - 4)
@@ -55,6 +59,8 @@ func _go() -> void:
 	_look(Vector3(wcell.x + 0.5, wcell.y + 1.6, wcell.z + 3.5), 0.0, -0.35); await _wait(20)
 	print("STEP ", gs.tutorial_step_id())
 	await _shot("06_anchor_step_compact_panel.png")
+	_look(Vector3(wcell.x + 0.5, wcell.y + 3.0, wcell.z + 6.5), 2.6, 0.5); await _wait(20)
+	await _shot("06b_anchor_step_no_target_hint.png")
 	gs.skip_tutorial(); await _wait(10)
 	await _press("hotbar_1")
 	_look(Vector3(wcell.x + 0.5, wcell.y + 1.2, wcell.z + 2.5), 0.0, -0.4); await _wait(20)
@@ -79,7 +85,9 @@ func _go() -> void:
 		await _shot("11_mother_mid.png")
 		print("SHELL r=", m.shell_radius())
 		# честная проверка оболочки: физика игрока включена, игрок идёт прямо в Мать 2.5 с
-		m.set_physics_process(false)
+		# детерминированно: Мать в обычной стойке (не «пересборка», где её коллизия честно выключена)
+		m.set_physics_process(false); m.state = m.S.IDLE; m.collision_layer = 16; m._shell.collision_layer = 64
+		m.global_position = mp
 		_look(mp + Vector3(0, 0.2, 5.0), 0.0, 0.1)
 		player.set_physics_process(true); player.flying = false
 		Input.action_press("move_forward")
@@ -88,7 +96,13 @@ func _go() -> void:
 		var dd := Vector2(player.global_position.x - mp.x, player.global_position.z - mp.z).length()
 		print("WALK-IN distance to Mother center = %.2f (shell %.2f + capsule 0.4; melee %.1f)" % [dd, m.shell_radius(), m.MELEE_RANGE])
 		await _shot("12_walked_into_mother.png")
+		# меч с этой дистанции достаёт?
+		print(con.execute("give sword 1"))
+		for i in range(gs.HOTBAR_SIZE):
+			if str(gs.get_slot(i).get("id", "")) == "sword": gs.selected_slot = i
+		main.build._try_sword()
+		print("SWORD from walk-in distance: hits=%d" % main.build.last_sword_hits)
 		player.set_physics_process(false)
 	print(con.execute("kill all"))
 	await _wait(10)
-	quit()
+	root.get_node("GameSettings").safe_quit(0)

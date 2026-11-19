@@ -88,6 +88,9 @@ func refresh() -> void:
 	_stage.text = "ЦЕЛЬ · этап %d · вех %d/%d" % [int(cur.get("stage", 0)), done, Objectives.LIST.size()]
 	_title.text = ("★ " if cur.get("big", false) else "▸ ") + str(cur.get("title", ""))
 	_how.text = str(cur.get("how", ""))
+	# v0.21 c2: цель Сна, а игрок в Яви — сначала подсказываем, как уснуть (раньше «R — Клин…» в Яви сбивало).
+	if bool(cur.get("dream", false)) and not GameState.is_dream():
+		_how.text = "Это делается во Сне: ляг на кровать (E). " + _how.text
 	_next.text = ("Дальше: ★ " + str(big.title)) if not big.is_empty() else ""
 	_next.visible = _next.text != ""
 	var show_threat := not GameState.is_dream() and GameState.deep_threat >= 25.0 and not GameState.boss_alive

@@ -32,7 +32,7 @@ const CORE_TIME := 2.6               # оглушение + усиленное �
 const CORE_LONG_TIME := 4.5          # фаза III: долгое открытие ядра после кирпичного дождя
 const MELEE_WINDUP := 0.45
 const MELEE_DAMAGE := 18
-const MELEE_RANGE := 2.4
+const MELEE_RANGE := 2.9 # v0.21 c2: было 2.4; оболочка держит игрока ~1 м от тела — удар Матери должен доставать
 const GUARD_TIME := 1.6
 const HEART_OPEN_CD := 11.0          # фаза III: периодическое открытие сердца
 const COLLAPSE_WINDUP := 1.6
@@ -626,8 +626,10 @@ func _add_shell() -> void:
 	var r := HIT_RADIUS + 0.45
 	if model:
 		var bb: AABB = _Vis._combined_aabb(model)
-		r = maxf(r, maxf(bb.size.x, bb.size.z) * 0.5 * model.scale.x + 0.05)
-	r = minf(r, MELEE_RANGE - 0.55) # ближний удар Матери (2.4 м от центра) должен доставать до игрока
+		r = maxf(r, maxf(bb.size.x, bb.size.z) * 0.5 * model.scale.x + 0.6)
+	# v0.21 c2: ~0.6 м зазора до тела — вплотную модель закрывала весь экран. Игрок (капсула 0.4) стоит в 2.8 м от центра,
+	# удар Матери (2.9 м) достаёт, меч игрока (2.6 м до поверхности хитбокса) тоже.
+	r = minf(r, MELEE_RANGE - 0.5)
 	_shell = StaticBody3D.new(); _shell.name = "PersonalSpace"
 	_shell.collision_layer = 64; _shell.collision_mask = 0
 	var cs := CollisionShape3D.new(); var cyl := CylinderShape3D.new()

@@ -483,7 +483,21 @@ func _start_world(meta: Dictionary) -> void:
 		WorldStore.meta_seed(meta), bool(meta.get("peaceful", false)))
 	GameState.tutorial_enabled = bool(meta.get("tutorial_enabled", true))
 	WorldStore.touch(folder)
+	# v0.21 c2: первая генерация мира занимает 1–2 с — раньше всё это время висело замёрзшее меню.
+	_show_loading("Загрузка мира «%s»…" % str(meta.get("name", "Мир")))
+	await get_tree().process_frame
+	await get_tree().process_frame
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+
+func _show_loading(text: String) -> void:
+	var layer := CanvasLayer.new(); layer.name = "Loading"; layer.layer = 50; add_child(layer)
+	var bg := ColorRect.new(); bg.color = Color(0.05, 0.04, 0.1, 0.94); bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(bg)
+	var l := Label.new(); l.text = text; l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 30); l.add_theme_color_override("font_color", Color(0.85, 0.8, 1.0))
+	layer.add_child(l)
 
 
 func _open_settings() -> void:

@@ -3944,12 +3944,36 @@ func _v021_checks() -> void:
 	_a(G.tutorial_focus() and op != null and not op.visible and anc != null and not anc.info.visible and not anc.preview.visible, 21010)
 	var tools: Node = scene.get_tree().get_first_node_in_group("dream_tools")
 	if tools: _a(not tools.status_text().contains("отмена"), 21011)
+	# v0.21 c2: до шага «якорь» колонка Гвоздь/Клин/Якорь3/Маяк и цена якоря скрыты
+	var hud: Node = scene.get_tree().get_first_node_in_group("hud")
+	hud._focus_t = 0.0; for i in range(3): await process_frame
+	var cap := hud.get_node("Root/ClarityCaption") as Label
+	_a(not (hud.get_node("Root/SpecialBar") as Control).visible and cap.text.begins_with("Осознанность") and not cap.text.contains("гвоздь"), 21030)
+	var sc: Node = scene.get_tree().get_first_node_in_group("dream_scenery")
+	sc.rebuild_flora(Vector2i(0, 0))
+	_a(sc.flora_counts[0] > 0 and sc.flora_counts[1] > 0 and sc.flora_counts[2] > 0 and sc.island_count == 12, 21034)
+	var fl_before: int = sc.flora_counts[0] + sc.flora_counts[1] + sc.flora_counts[2]
+	# флора не лезет в постройки: на клетке с блоком игрока её нет
+	var occupied_ok := true
+	for i in range(3):
+		var mm: MultiMesh = sc.flora[i].multimesh
+		for j in range(mm.instance_count):
+			var o: Vector3 = mm.get_instance_transform(j).origin
+			if G.dream_blocks.has(Vector3i(floori(o.x), 0, floori(o.z))): occupied_ok = false
+	_a(occupied_ok and fl_before > 50, 21035)
 	# шаг «якорь» показывает рамку якоря; после обучения панель целей возвращается
 	for id in ["fly", "build", "frame", "trial", "workbench"]: G.tutorial_early[id] = true
 	G.tutorial_event("fly")
 	_a(G.tutorial_step_id() == "anchor", 21012)
 	for i in range(3): await process_frame
 	_a(anc.preview.visible, 21013)
+	hud._focus_t = 0.0; for i in range(3): await process_frame
+	_a((hud.get_node("Root/SpecialBar") as Control).visible and cap.text.contains("−"), 21031)
+	# шаг «якорь» без цели под прицелом — справка с подсказкой, куда навестись
+	anc.last_preview = {"local_count": 0}
+	scene.player.global_position = Vector3(0, 60, 0); scene.player.get_node("CameraPivot").rotation.x = 1.4
+	anc._timer = 0.0; for i in range(3): await process_frame
+	_a(anc.info.visible and anc.info.text.contains("наведись"), 21032)
 	G.skip_tutorial()
 	for i in range(3): await process_frame
 	_a(not G.tutorial_focus() and op.visible, 21014)
@@ -3970,7 +3994,21 @@ func _v021_checks() -> void:
 	if not bad.is_empty(): print("CONSOLE BAD ", bad)
 	_a(G.clarity > 0.0 and G.dream_zones.has("stone_garden") and G.has_imprint("stone") and G.dream_cracks.is_empty() and G.frame_points == 0, 21021)
 	_a(con.execute("clarity 25") == "Осознанность: 25 / %.0f" % G.dream_clarity_max() and is_equal_approx(G.clarity, 25.0), 21022)
+	_a(con.execute("dreamdecor").contains("кристаллов") and con.execute("dreamdecor off").contains("спрятан") and not sc.visible and con.execute("dreamdecor on").contains("показан") and sc.visible, 21036)
+	_a(con.execute("hudfocus").contains("Обучение") and con.execute("help dreamdecor").contains("dreamdecor"), 21037)
 	scene.switcher.show_result_ui = false
 	scene.switcher.wake_up()
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	# цели Сна не советуют «R — Клин» в Яви; Мать держит дистанцию, её удар достаёт
+	var Obj: GDScript = load("res://scripts/objectives.gd")
+	var fa: Dictionary = {}
+	for o in Obj.LIST: if str(o.id) == "first_anchor": fa = o
+	_a(bool(fa.get("dream", false)) and not str(fa.how).contains("выбрать Клин"), 21038)
+	var BM: GDScript = load("res://scripts/block_mother.gd")
+	_a(is_equal_approx(float(BM.MELEE_RANGE), 2.9), 21039)
+	# иконка .exe и окна
+	var ep := ConfigFile.new(); var has_ep := ep.load("res://export_presets.cfg") == OK # в .pck пресетов нет
+	_a(FileAccess.file_exists("res://assets/icon/icon.ico") and (not has_ep or str(ep.get_value("preset.0.options", "application/icon", "")) == "res://assets/icon/icon.ico" and bool(ep.get_value("preset.0.options", "application/modify_resources", false))) and str(ProjectSettings.get_setting("application/config/icon")) == "res://assets/icon/icon_256.png", 21040)
+	_a(root.get_node("GameSettings").has_method("safe_quit"), 21041)
+	print("SMOKE: v0.21 c2: wake tools hidden in tutorial / caption / anchor hint / dream flora / decor+hudfocus console / dream objectives / mother distance / exe icon OK")
 	print("SMOKE: v0.21 c1: tutorial focus HUD / starter slot 5 / hp bars / music guard / unique uids / opaque settings / camp sign / dream console OK")

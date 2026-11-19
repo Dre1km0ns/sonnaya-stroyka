@@ -39,6 +39,8 @@ func _ready() -> void:
 	tag.pixel_size = 0.004
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.modulate = Color(1.0, 0.85, 0.7)
+	# v0.21 c2: единые правила 3D-надписей — контур, видна 1.5–30 м (вплотную не закрывает экран, через туман не висит)
+	tag.outline_size = 8; tag.visibility_range_begin = 1.5; tag.visibility_range_end = 30.0
 	add_child(tag)
 
 

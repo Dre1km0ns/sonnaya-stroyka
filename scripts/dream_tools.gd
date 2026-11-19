@@ -36,8 +36,10 @@ func _ready() -> void:
 	_layer.layer = 4
 	add_child(_layer)
 	_label = Label.new()
-	_label.anchor_left = 0.0; _label.anchor_top = 1.0; _label.anchor_bottom = 1.0
-	_label.offset_left = 16; _label.offset_top = -150; _label.offset_bottom = -118
+	# v0.21 c2: справа внизу — слева строка налезала на чат и уведомления целей
+	_label.anchor_left = 1.0; _label.anchor_right = 1.0; _label.anchor_top = 1.0; _label.anchor_bottom = 1.0
+	_label.offset_left = -420; _label.offset_right = -16; _label.offset_top = -46; _label.offset_bottom = -18
+	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_label.add_theme_font_size_override("font_size", 15)
 	_label.add_theme_color_override("font_color", Color(0.78, 0.9, 1.0))
 	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))

@@ -56,6 +56,8 @@ const COMMAND_HELP := {
 "blueprint":"Архив Снов (B/N/P/O, v0.17): список, сохранить рамку, показать N, вставить под прицелом, повернуть, стереть все. Пример: blueprint list; blueprint save; blueprint show 1; blueprint paste; blueprint rotate; blueprint clear",
 "undo":"Отмена/возврат правок Сна (Z/U), N раз. Пример: undo 5; undo redo 2",
 "mirror":"Зеркало Сна (X): переключить ось у игрока или выключить. Пример: mirror; mirror off",
+"dreamdecor":"Декор Сна v0.21: острова, флора на земле (кристаллы, кочки, пятна света), пылинки. status — счётчики; rebuild — пересобрать флору вокруг; off/on — спрятать/показать весь декор (для сравнения и замера FPS). Пример: dreamdecor; dreamdecor rebuild; dreamdecor off",
+"hudfocus":"Фокус HUD обучения v0.21: что сейчас скрыто (цели, якорная панель, колонка Гвоздь/Клин/Якорь3/Маяк, цена якоря). Пример: hudfocus",
 }
 var history: Array[String] = []
 var history_index := 0
@@ -165,7 +167,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 			all.append("setblock "+id)
 			all.append("fill "+id)
 			all.append("hardness "+id)
-	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off"]: all.append(command)
+	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","hudfocus"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -548,7 +550,7 @@ func _v010_command(a: PackedStringArray) -> String:
 			if where in ["sawmill","sawmill_plus"]: ctx={"station":"sawmill","upgraded":true}
 			if where=="alchemy": ctx={"station":"alchemy"}
 			return "Крафт: "+str(GameState.craft_recipe(a[1],ctx))
-		"clarity","imprint","palette","frame","dreamfill","crack","nightmare","garden","request","trial","tutorial","blueprint","undo","mirror":
+		"clarity","imprint","palette","frame","dreamfill","crack","nightmare","garden","request","trial","tutorial","blueprint","undo","mirror","dreamdecor","hudfocus":
 			return _dream_cmd(a, _player())
 	return "Ошибка: неизвестная команда. help — список."
 
@@ -701,4 +703,20 @@ func _dream_cmd(a: PackedStringArray, p: Node3D) -> String:
 			if sub == "off": G.mirror_axis = 0; return "Зеркало выключено."
 			var ax := G.cycle_mirror(Vector3i(p.global_position.floor()) if p else Vector3i.ZERO)
 			return ["Зеркало выключено.", "Зеркало по X", "Зеркало по Z"][ax]
+		"dreamdecor":
+			var sc := get_tree().get_first_node_in_group("dream_scenery")
+			if sc == null: return "Ошибка: декора Сна нет в сцене."
+			if sub == "off" or sub == "on":
+				sc.visible = sub == "on"
+				return "Декор Сна: %s." % ("показан" if sc.visible else "спрятан")
+			if sub == "rebuild":
+				var cam := get_viewport().get_camera_3d()
+				var c := Vector3i(cam.global_position.floor()) if cam else Vector3i.ZERO
+				sc.rebuild_flora(Vector2i(c.x, c.z))
+			elif sub != "" and sub != "status": return "Ошибка: dreamdecor [status|rebuild|off|on]"
+			return "Декор Сна: %s · островов %d (кубов %d) · флора: кристаллов %d, кочек %d, пятен %d · пылинок %d" % ["виден" if sc.visible else "спрятан", sc.island_count, sc.cube_count, sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2], sc.motes.amount]
+		"hudfocus":
+			var hud := get_tree().get_first_node_in_group("hud")
+			var hide_tools: bool = hud.tutorial_hides_wake_tools() if hud and hud.has_method("tutorial_hides_wake_tools") else false
+			return "Обучение: %s (шаг «%s») · цели и подсказки Сна скрыты: %s · колонка якорей и цена скрыты: %s" % ["идёт" if G.tutorial_active else "нет", G.tutorial_step_id(), "да" if G.tutorial_focus() else "нет", "да" if hide_tools else "нет"]
 	return "Ошибка: неизвестная команда Сна."
