@@ -3874,6 +3874,11 @@ func _v020_checks() -> void:
 	G.run_trial()
 	var view: Node = scene.get_tree().get_first_node_in_group("dream_trial_view")
 	_a(view.sounds.has("trial_start"), 20043)
+	var kbm: Node = load("res://scripts/keybind_menu.gd").new(); scene.add_child(kbm)
+	await process_frame; await process_frame
+	var hid: bool = not tut.panel.visible
+	kbm.queue_free(); await process_frame; await process_frame
+	_a(hid and tut.panel.visible, 20045)   # под меню панель обучения прячется, после — возвращается
 	var e := InputEventAction.new(); e.action = "tutorial_skip"; e.pressed = true; Input.parse_input_event(e)
 	await process_frame; await process_frame
 	e = InputEventAction.new(); e.action = "tutorial_skip"; e.pressed = false; Input.parse_input_event(e)

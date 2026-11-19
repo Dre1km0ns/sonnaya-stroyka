@@ -9,6 +9,7 @@ var _rows: Dictionary = {}
 
 
 func _ready() -> void:
+	add_to_group("modal_menu") # v0.20: панель обучения прячется под меню
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = UiTheme.make()
 	mouse_filter = Control.MOUSE_FILTER_STOP

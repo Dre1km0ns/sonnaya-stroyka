@@ -15,6 +15,7 @@ var _fly_from := Vector3.INF
 
 func _ready() -> void:
 	name = "DreamTutorial"
+	process_mode = Node.PROCESS_MODE_ALWAYS # прятать панель и под паузой
 	layer = 6
 	add_to_group("dream_tutorial")
 	panel = PanelContainer.new()
@@ -60,8 +61,17 @@ func refresh() -> void:
 	dots.text = marks + "  ·  F1 — пропустить обучение"
 
 
+func menus_open() -> bool:
+	return GameState.paused or GameState.inventory_open or GameState.craft_menu_open or GameState.storage_open \
+		or GameState.transfer_ui_open or GameState.death_open or GameState.pillow_open \
+		or not get_tree().get_nodes_in_group("modal_menu").is_empty()
+
+
 func _process(_delta: float) -> void:
 	if not GameState.tutorial_active:
+		return
+	panel.visible = not menus_open() and not GameState.tutorial_current().is_empty()
+	if not panel.visible:
 		return
 	if Input.is_action_just_pressed("tutorial_skip"):
 		GameState.skip_tutorial(); GameState.set_hint("Обучение пропущено. Цели — на панели слева.", false)

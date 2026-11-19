@@ -52,9 +52,10 @@ func _go() -> void:
 	await _wait(45)
 	await _shot("06_tutorial_trial_running.png")
 	var kb = load("res://scripts/keybind_menu.gd").new()
-	main.get_node("HUD").add_child(kb) if main.has_node("HUD") else main.add_child(kb)
+	if main.has_node("HUD"): main.get_node("HUD").add_child(kb)
+	else: main.add_child(kb)
 	await _wait(5)
-	var sc: ScrollContainer = kb.find_child("*", true, false) as ScrollContainer
+	var sc: ScrollContainer = null
 	for n in kb.find_children("*", "ScrollContainer", true, false): sc = n
 	var hdr: Control = kb.find_child("Section_dream_palette", true, false)
 	await _wait(3)
