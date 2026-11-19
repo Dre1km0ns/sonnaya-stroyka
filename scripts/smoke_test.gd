@@ -3995,6 +3995,8 @@ func _v021_checks() -> void:
 	_a(G.clarity > 0.0 and G.dream_zones.has("stone_garden") and G.has_imprint("stone") and G.dream_cracks.is_empty() and G.frame_points == 0, 21021)
 	_a(con.execute("clarity 25") == "Осознанность: 25 / %.0f" % G.dream_clarity_max() and is_equal_approx(G.clarity, 25.0), 21022)
 	_a(con.execute("dreamdecor").contains("кристаллов") and con.execute("dreamdecor off").contains("спрятан") and not sc.visible and con.execute("dreamdecor on").contains("показан") and sc.visible, 21036)
+	var rb: String = con.execute("dreamdecor rebuild"); print("SMOKE flora: ", rb)
+	_a(rb.contains("мс"), 21042)
 	_a(con.execute("hudfocus").contains("Обучение") and con.execute("help dreamdecor").contains("dreamdecor"), 21037)
 	scene.switcher.show_result_ui = false
 	scene.switcher.wake_up()

@@ -712,7 +712,9 @@ func _dream_cmd(a: PackedStringArray, p: Node3D) -> String:
 			if sub == "rebuild":
 				var cam := get_viewport().get_camera_3d()
 				var c := Vector3i(cam.global_position.floor()) if cam else Vector3i.ZERO
+				var t0 := Time.get_ticks_usec()
 				sc.rebuild_flora(Vector2i(c.x, c.z))
+				return "Флора пересобрана за %.1f мс · кристаллов %d, кочек %d, пятен %d" % [(Time.get_ticks_usec() - t0) / 1000.0, sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2]]
 			elif sub != "" and sub != "status": return "Ошибка: dreamdecor [status|rebuild|off|on]"
 			return "Декор Сна: %s · островов %d (кубов %d) · флора: кристаллов %d, кочек %d, пятен %d · пылинок %d" % ["виден" if sc.visible else "спрятан", sc.island_count, sc.cube_count, sc.flora_counts[0], sc.flora_counts[1], sc.flora_counts[2], sc.motes.amount]
 		"hudfocus":
