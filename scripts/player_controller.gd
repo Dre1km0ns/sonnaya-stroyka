@@ -46,7 +46,7 @@ func _ready() -> void:
 		mouse_sens = MOUSE_SENS_DEFAULT * float(gsets.mouse_sensitivity)
 		gsets.settings_changed.connect(func() -> void:
 			mouse_sens = MOUSE_SENS_DEFAULT * float(gsets.mouse_sensitivity))
-	collision_mask = 1 | 4 | 16
+	collision_mask = 1 | 4 | 16 | 64 # v0.21: 64 — оболочка боссов (камера не заходит внутрь модели)
 	GameState.world_changed.connect(_on_world_changed)
 
 

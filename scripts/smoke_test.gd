@@ -3551,7 +3551,7 @@ func _v017_checks() -> void:
 	scene.build._place_at(Vector3i(42, 10, 40))
 	_a(G.dream_blocks.has(Vector3i(42, 10, 40)) and G.dream_blocks.has(Vector3i(38, 10, 40)) and G.undo_size() == 1, 17051)
 	await process_frame
-	_a(tools.status_text().contains("Зеркало X") and tools.status_text().contains("Отмена 1"), 17052)
+	_a(tools.status_text().contains("Зеркало X") and tools.status_text().contains("отмена (1)"), 17052)
 	G.frame_mark(Vector3i(40, 12, 40)); G.frame_mark(Vector3i(41, 13, 41))
 	await process_frame
 	_a(tools._lines.visible and tools.status_text().contains("Рамка 2×2×2"), 17053)
@@ -3797,12 +3797,12 @@ func _v020_checks() -> void:
 	gs.enter_dream()
 	_a(Sfx.count("res://assets/audio/sfx_dream_enter.ogg") > 0 and Sfx._stream("res://assets/audio/sfx_dream_enter.ogg") != null, 20003)
 	var B := Vector3i(200, 5, 200)
-	_a(gs.place_dream_block(B, "workbench", 0) and gs.tutorial_done.has("workbench") and str(gs.tutorial_current().id) == "fly", 20004)   # шаги в любом порядке
+	_a(gs.place_dream_block(B, "workbench", 0) and not gs.tutorial_done.has("workbench") and gs.tutorial_early.has("workbench") and str(gs.tutorial_current().id) == "fly", 20004)   # v0.21: строго по порядку, раннее действие запомнено
 	gs.tutorial_event("fly")
 	for i in range(5): gs.place_dream_block(B + Vector3i(4 + i, 0, 0), "drift")
 	_a(gs.tutorial_done.has("build") and str(gs.tutorial_current().id) == "frame", 20005)
 	gs.tutorial_event("bogus"); gs.tutorial_event("fly")
-	_a(gs.tutorial_done.size() == 3, 20006)
+	_a(gs.tutorial_done.size() == 2 and not gs.tutorial_done.has("workbench"), 20006)
 	Sfx.played.clear()   # журнал звуков ограничен 64 записями — считаем с нуля
 	gs.frame_mark(B + Vector3i(-8, 0, -8)); gs.frame_mark(B + Vector3i(-6, 1, -6))
 	_a(gs.dream_fill("drift") > 0 and gs.tutorial_done.has("frame") and Sfx.count("res://assets/audio/sfx_dream_fill.ogg") == 1, 20007)
@@ -3887,4 +3887,90 @@ func _v020_checks() -> void:
 	scene.switcher.show_result_ui = false
 	scene.switcher.wake_up()
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
-	print("SMOKE: v0.20 beta path: tutorial any-order / gift once / anchor+wake finishes / save v15 + v14 migration / dream sfx + tone / keybind sections / how-to / scene start in dream OK")
+	print("SMOKE: v0.20 beta path: tutorial strict order + early credit / gift once / anchor+wake finishes / save v15 + v14 migration / dream sfx + tone / keybind sections / how-to / scene start in dream OK")
+	await _v021_checks()
+
+
+
+func _v021_checks() -> void:
+	## v0.21 цикл 1: фокус обучения, стартовый слот, табличка лагеря, HP-полоски, оболочка Матери,
+	## музыка вне дерева, уникальные UID, непрозрачные настройки, команды консоли для систем Сна.
+	var G: Node = root.get_node("GameState")
+	# стартовый набор Сна: слот 1 пуст (пустая рука = дрейф), верстак в слоте 5
+	G.reset_state(); G.enter_dream()
+	_a(str(G.inv_dream[0].get("id", "")) == "" and str(G.inv_dream[4].get("id", "")) == "workbench", 21000)
+	G.current_world = G.World.WAKE; G.reset_state()
+	# HP-полоска: вблизи не видна, у боссов не дублируется
+	var Vis: GDScript = load("res://scripts/enemy_visuals.gd")
+	var mob := Node3D.new(); root.add_child(mob); Vis.attach_hp_bar(mob, 2.0); Vis.update_hp_bar(mob, 10, 20)
+	var bg := mob.get_node("HPBar/BG") as GeometryInstance3D
+	_a(mob.get_node("HPBar").visible and is_equal_approx(bg.visibility_range_begin, 3.0), 21001)
+	var boss := Node3D.new(); boss.add_to_group("boss"); root.add_child(boss); Vis.attach_hp_bar(boss, 2.0); Vis.update_hp_bar(boss, 10, 20)
+	_a(not boss.get_node("HPBar").visible, 21002)
+	mob.queue_free(); boss.queue_free()
+	# музыка: кроссфейд вне дерева сцены не играет и не падает
+	var mc: Node = load("res://scripts/music_controller.gd").new()
+	mc.crossfade_to("wake"); mc.free()
+	_a(true, 21003)
+	# уникальные UID импорта (были дубли strut/planks, lumen/lamp)
+	var uids := {}; var dup := ""
+	for d in ["res://assets/icons/", "res://assets/textures/", "res://assets/audio/"]:
+		for f in DirAccess.get_files_at(d):
+			if not f.ends_with(".import"): continue
+			var cfg := ConfigFile.new(); cfg.load(d + f)
+			var u := str(cfg.get_value("remap", "uid", ""))
+			if u == "": continue
+			if uids.has(u): dup = f + " = " + str(uids[u])
+			uids[u] = f
+	_a(dup == "", 21004)
+	if dup != "": print("DUP UID ", dup)
+	# настройки: непрозрачная панель
+	var sm: Control = load("res://scripts/settings_menu.gd").new(); root.add_child(sm); await process_frame
+	var opaque := false
+	for pc in sm.find_children("*", "PanelContainer", true, false):
+		var sb := (pc as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+		if sb and sb.bg_color.a >= 0.99: opaque = true
+	_a(opaque, 21005)
+	sm.queue_free(); await process_frame
+	# сцена: старт во Сне — только панель обучения; табличка лагеря постоянного размера; оболочка Матери
+	G.begin_world("v021 scene", "", "2121", 2121, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	await process_frame
+	scene.player.set_physics_process(false)
+	scene.start_in_dream()
+	for i in range(6): await process_frame
+	var op: Control = scene.get_tree().get_first_node_in_group("objective_panel")
+	var anc: Node = scene.get_tree().get_first_node_in_group("anchor_preview")
+	_a(G.tutorial_focus() and op != null and not op.visible and anc != null and not anc.info.visible and not anc.preview.visible, 21010)
+	var tools: Node = scene.get_tree().get_first_node_in_group("dream_tools")
+	if tools: _a(not tools.status_text().contains("отмена"), 21011)
+	# шаг «якорь» показывает рамку якоря; после обучения панель целей возвращается
+	for id in ["fly", "build", "frame", "trial", "workbench"]: G.tutorial_early[id] = true
+	G.tutorial_event("fly")
+	_a(G.tutorial_step_id() == "anchor", 21012)
+	for i in range(3): await process_frame
+	_a(anc.preview.visible, 21013)
+	G.skip_tutorial()
+	for i in range(3): await process_frame
+	_a(not G.tutorial_focus() and op.visible, 21014)
+	var sign := scene.find_child("CampSign", true, false) as Label3D
+	_a(sign == null or (sign.fixed_size and sign.no_depth_test and sign.visibility_range_begin > 0.0), 21015)
+	# консоль DevSeed: команды систем Сна известны и отвечают без «неизвестная команда»
+	G.dev_mode = true; G.world_seed = G.DEV_SEED
+	var con: Node = scene.get_tree().get_first_node_in_group("dev_console")
+	var bad: Array = []
+	for cmd in ["clarity", "clarity 40", "clarity max", "imprint all", "imprint list", "palette stone", "palette", "frame here 2", "frame show",
+			"dreamfill", "trial run", "trial last", "trial grade", "blueprint save", "blueprint list", "blueprint show 1", "blueprint rotate",
+			"blueprint paste", "undo 2", "undo redo 1", "mirror", "mirror off", "crack add 2", "crack list", "nightmare now", "nightmare last",
+			"crack patch", "crack clear", "garden list", "garden stone", "request", "request new", "request fill", "tutorial", "tutorial start",
+			"tutorial next", "tutorial step build", "tutorial skip", "dreamfill clear", "frame clear", "help clarity", "help blueprint"]:
+		var out: String = con.execute(cmd)
+		if out.contains("неизвестная") or out.contains("такой команды нет") or out == "": bad.append(cmd + " → " + out)
+	_a(bad.is_empty(), 21020)
+	if not bad.is_empty(): print("CONSOLE BAD ", bad)
+	_a(G.clarity > 0.0 and G.dream_zones.has("stone_garden") and G.has_imprint("stone") and G.dream_cracks.is_empty() and G.frame_points == 0, 21021)
+	_a(con.execute("clarity 25") == "Осознанность: 25 / %.0f" % G.dream_clarity_max() and is_equal_approx(G.clarity, 25.0), 21022)
+	scene.switcher.show_result_ui = false
+	scene.switcher.wake_up()
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.21 c1: tutorial focus HUD / starter slot 5 / hp bars / music guard / unique uids / opaque settings / camp sign / dream console OK")

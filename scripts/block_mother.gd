@@ -103,6 +103,7 @@ const REWARD_R3 := 3
 const REWARD_R2 := 2
 
 var plates: Array = []          # [{dur, broken, node, spot}]
+var _shell: StaticBody3D = null  # v0.21: «личное пространство» — игрок не заходит внутрь модели (камера не проваливается)
 var open_plate := -1
 var plate_log := {"opened": 0, "broken": 0, "closed": 0, "restored": 0, "carriers": 0, "carriers_killed": 0, "bounces": 0, "cover": 0, "reassemble_telegraph": 0}
 var damage_by_weapon := {}
@@ -216,6 +217,7 @@ func _ready() -> void:
 	col.shape = shape
 	col.position = Vector3(0, BODY_HEIGHT * 0.5, 0)
 	add_child(col)
+	_add_shell()
 	if GameState and GameState.has_method("set_boss_alive"):
 		GameState.set_boss_alive(true)
 	if GameState.has_signal("world_changed"):
@@ -618,7 +620,28 @@ func _player() -> CharacterBody3D:
 	return get_tree().get_first_node_in_group("player") as CharacterBody3D
 
 
+func _add_shell() -> void:
+	## Слой 64 видит только игрок (маска игрока), лучи меча/добычи его не видят — урон и хитбокс не меняются.
+	var model := get_node_or_null("Model") as Node3D
+	var r := HIT_RADIUS + 0.45
+	if model:
+		var bb: AABB = _Vis._combined_aabb(model)
+		r = maxf(r, maxf(bb.size.x, bb.size.z) * 0.5 * model.scale.x + 0.05)
+	r = minf(r, MELEE_RANGE - 0.55) # ближний удар Матери (2.4 м от центра) должен доставать до игрока
+	_shell = StaticBody3D.new(); _shell.name = "PersonalSpace"
+	_shell.collision_layer = 64; _shell.collision_mask = 0
+	var cs := CollisionShape3D.new(); var cyl := CylinderShape3D.new()
+	cyl.radius = r; cyl.height = MODEL_HEIGHT; cs.shape = cyl; cs.position = Vector3(0, MODEL_HEIGHT * 0.5, 0)
+	_shell.add_child(cs); add_child(_shell)
+
+
+func shell_radius() -> float:
+	if _shell == null: return 0.0
+	return ((_shell.get_child(0) as CollisionShape3D).shape as CylinderShape3D).radius
+
+
 func _physics_process(delta: float) -> void:
+	if _shell: _shell.collision_layer = 64 if collision_layer != 0 and state != S.DEAD else 0
 	if frozen or state == S.DEAD or state == S.LEAVING:
 		return
 	combat.tick(delta)

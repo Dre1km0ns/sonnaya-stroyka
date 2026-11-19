@@ -99,6 +99,8 @@ func _on_boss(_alive: bool) -> void:
 
 
 func _play_immediate(key: String) -> void:
+	if not is_inside_tree() or _cur == null or not _cur.is_inside_tree():
+		return
 	var stream: AudioStream = _load_stream(_path_for(key))
 	if stream == null:
 		return
@@ -109,6 +111,9 @@ func _play_immediate(key: String) -> void:
 
 
 func crossfade_to(key: String) -> void:
+	# v0.21: при выходе в меню босс уходит из дерева раньше музыки — не играть вне дерева сцены.
+	if not is_inside_tree() or _cur == null or not _cur.is_inside_tree():
+		return
 	if key == _want and _cur.playing:
 		return
 	var stream: AudioStream = _load_stream(_path_for(key))

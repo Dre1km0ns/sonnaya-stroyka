@@ -70,7 +70,7 @@ func _mk(sz: int, col: Color) -> Label:
 
 
 func _process(delta: float) -> void:
-	visible = not GameState.ui_blocked() and not GameState.transfer_ui_open
+	visible = not GameState.ui_blocked() and not GameState.transfer_ui_open and not GameState.tutorial_focus()
 	_flash = maxf(0.0, _flash - delta)
 	modulate = Color(1, 1, 1).lerp(Color(1.4, 1.4, 0.9), clampf(_flash, 0.0, 1.0))
 	_t -= delta
@@ -103,7 +103,7 @@ func refresh() -> void:
 	if not GameState.dream_cracks.is_empty():
 		_next.visible = true
 		_next.text += ("\n" if _next.text != "" else "") + "Трещин во Сне: %d — залатай до рассвета (заякорь постройку снова)" % GameState.dream_cracks.size()
-	if GameState.is_dream() and GameState.archive_unlocked():
+	if GameState.is_dream() and GameState.archive_unlocked() and not GameState.blueprints.is_empty():
 		_next.visible = true
 		_next.text += ("\n" if _next.text != "" else "") + "Архив Снов %d/%d: K — рамка, B — сохранить, N — выбрать, P — вставить, O — поворот · Z/U — отмена/возврат, L — заливка, X — зеркало" % [GameState.blueprints.size(), GameState.blueprint_cap()]
 	if str(cur.get("id", "")) != _last_id:

@@ -181,6 +181,8 @@ static func attach_hp_bar(parent: Node3D, height: float) -> void:
 	bmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	bg.material_override = bmat
+	# v0.21: вблизи полоска не раздувается на пол-экрана — ближе 3 м её не видно (у боссов есть верхняя полоса).
+	bg.visibility_range_begin = 3.0
 	root.add_child(bg)
 	var fill := MeshInstance3D.new()
 	fill.name = "Fill"
@@ -192,6 +194,7 @@ static func attach_hp_bar(parent: Node3D, height: float) -> void:
 	fmat.albedo_color = Color(0.86, 0.18, 0.16)
 	fmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	fill.material_override = fmat
+	fill.visibility_range_begin = 3.0
 	fill.position = Vector3(0, 0, 0.012)
 	root.add_child(fill)
 	parent.add_child(root)
@@ -207,7 +210,9 @@ static func update_hp_bar(parent: Node3D, hp: int, max_hp: int) -> void:
 	fill.position.x = (r - 1.0) * 0.5
 	var root: Node3D = parent.get_node_or_null("HPBar") as Node3D
 	if root:
-		root.visible = hp > 0
+		# v0.21: у боссов своя полоса сверху экрана — над головой не дублируем (раньше 2.3 м красного прямоугольника).
+		var boss := parent.is_in_group("boss") or (parent.get_parent() != null and parent.get_parent().is_in_group("boss"))
+		root.visible = hp > 0 and not boss
 
 
 static func _is_night() -> bool:

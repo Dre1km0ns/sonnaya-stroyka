@@ -42,6 +42,20 @@ const COMMAND_HELP := {
 "setblock":"Один блок/air под прицелом либо XYZ. Пример: setblock door 10 5 10",
 "fill":"Область или радиус вокруг игрока (≤4096 клеток, радиус ≤7). Пример: fill planks 10 5 10 19 5 19; fill air 2",
 "door":"Открыть/повернуть под прицелом или XYZ. Пример: door toggle; door rotate 10 5 10",
+"clarity":"Осознанность Сна (v0.16): показать, задать число или max. Пример: clarity; clarity 25; clarity max",
+"imprint":"Отпечатки материалов (v0.16): список, выучить один или все. Пример: imprint list; imprint stone; imprint all",
+"palette":"Материал палитры Сна (T): показать или выбрать. Пример: palette; palette stone",
+"frame":"Рамка Сна (K): углы по XYZ, у игрока, показать или снять. Пример: frame 0 5 0 6 8 6; frame here 3; frame show; frame clear",
+"dreamfill":"Залить/очистить рамку Сна (L / Shift+L). Пример: dreamfill; dreamfill stone; dreamfill clear",
+"crack":"Трещины Сна (v0.18): список, добавить под прицелом/у игрока N штук, залатать, убрать. Пример: crack list; crack add 3; crack patch; crack clear",
+"nightmare":"Ночь кошмаров у трещин сейчас (как на рассвете) и итог прошлой. Пример: nightmare now; nightmare last",
+"garden":"Сады Сна (v0.18): список, открыть сад, сбросить. Пример: garden list; garden stone; garden light; garden reset",
+"request":"Просьба Сна (J): показать, новая, выдать нужное в Явь, исполнить. Пример: request; request new; request fill; request offer",
+"trial":"Испытание фантомами (M, v0.19) для текущей рамки: run, last — итог, grade — оценка без запуска. Пример: trial run; trial last; trial grade",
+"tutorial":"Обучение во Сне (v0.20): статус, старт заново, пропуск, засчитать шаг. Пример: tutorial; tutorial start; tutorial skip; tutorial next; tutorial step frame",
+"blueprint":"Архив Снов (B/N/P/O, v0.17): список, сохранить рамку, показать N, вставить под прицелом, повернуть, стереть все. Пример: blueprint list; blueprint save; blueprint show 1; blueprint paste; blueprint rotate; blueprint clear",
+"undo":"Отмена/возврат правок Сна (Z/U), N раз. Пример: undo 5; undo redo 2",
+"mirror":"Зеркало Сна (X): переключить ось у игрока или выключить. Пример: mirror; mirror off",
 }
 var history: Array[String] = []
 var history_index := 0
@@ -151,6 +165,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 			all.append("setblock "+id)
 			all.append("fill "+id)
 			all.append("hardness "+id)
+	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -533,4 +548,157 @@ func _v010_command(a: PackedStringArray) -> String:
 			if where in ["sawmill","sawmill_plus"]: ctx={"station":"sawmill","upgraded":true}
 			if where=="alchemy": ctx={"station":"alchemy"}
 			return "Крафт: "+str(GameState.craft_recipe(a[1],ctx))
+		"clarity","imprint","palette","frame","dreamfill","crack","nightmare","garden","request","trial","tutorial","blueprint","undo","mirror":
+			return _dream_cmd(a, _player())
 	return "Ошибка: неизвестная команда. help — список."
+
+
+## v0.21: команды для систем Сна v0.16–v0.20 (осознанность, отпечатки, рамка, трещины, кошмары, сады,
+## просьбы, испытание, обучение, Архив Снов, отмена, зеркало).
+func _need_dream() -> String:
+	return "" if GameState.is_dream() else "Ошибка: команда работает во Сне; сначала world dream."
+func _aim_cell(p: Node3D) -> Vector3i:
+	if p and p.has_method("get_look_ray"):
+		var aim: Dictionary = p.get_look_ray()
+		if aim.get("hit", false): return GameState.ray_cell(aim)
+	return Vector3i(p.global_position.floor()) if p else Vector3i.ZERO
+func _xyz(a: PackedStringArray, from: int) -> Variant:
+	if a.size() < from + 3: return null
+	for i in range(from, from + 3):
+		if not a[i].is_valid_int(): return null
+	return Vector3i(int(a[from]), int(a[from + 1]), int(a[from + 2]))
+func _dream_cmd(a: PackedStringArray, p: Node3D) -> String:
+	var G := GameState
+	var sub := a[1] if a.size() > 1 else ""
+	match a[0]:
+		"clarity":
+			if sub == "max": G.clarity = G.dream_clarity_max()
+			elif sub.is_valid_float(): G.clarity = clampf(float(sub), 0.0, G.dream_clarity_max())
+			elif sub != "": return "Ошибка: clarity [число|max]"
+			G.clarity_changed.emit(G.clarity, G.dream_clarity_max())
+			return "Осознанность: %.0f / %.0f" % [G.clarity, G.dream_clarity_max()]
+		"imprint":
+			if sub == "" or sub == "list":
+				var have: Array = G.IMPRINT_KINDS.filter(func(k): return G.has_imprint(k))
+				return "Отпечатки %d/%d: %s" % [have.size(), G.IMPRINT_KINDS.size(), ", ".join(have) if not have.is_empty() else "—"]
+			if sub == "all":
+				var n := 0
+				for k in G.IMPRINT_KINDS: if G.learn_imprint(k, true): n += 1
+				return "Выучено новых отпечатков: %d (все %d)" % [n, G.IMPRINT_KINDS.size()]
+			if not G.IMPRINT_KINDS.has(sub): return "Ошибка: нет такого отпечатка. Есть: " + ", ".join(G.IMPRINT_KINDS)
+			return "Отпечаток «%s»: %s" % [G.block_display_name(sub), "выучен" if G.learn_imprint(sub, true) else "уже был"]
+		"palette":
+			if sub == "": return "Палитра: %s · доступно: %s" % [G.dream_material, ", ".join(G.dream_palette())]
+			if not G.dream_palette().has(sub): return "Ошибка: «%s» нет в палитре (сначала imprint %s)." % [sub, sub]
+			G.dream_material = sub; G.clarity_changed.emit(G.clarity, G.dream_clarity_max())
+			return "Материал палитры: " + G.block_display_name(sub)
+		"frame":
+			var e := _need_dream(); if e != "": return e
+			if sub == "clear": G.frame_points = 0; return "Рамка снята."
+			if sub == "show" or sub == "":
+				return "Рамка: нет." if not G.frame_complete() else "Рамка %s (%d клеток) %s–%s" % [G.frame_dims_text(), G.frame_volume(), G.frame_box()[0], G.frame_box()[1]]
+			if sub == "here":
+				var r := clampi(int(a[2]) if a.size() > 2 and a[2].is_valid_int() else 2, 0, 20)
+				var c := Vector3i(p.global_position.floor()) if p else Vector3i.ZERO
+				G.frame_points = 0; G.frame_mark(c - Vector3i(r, 1, r)); G.frame_mark(c + Vector3i(r, r, r))
+				return "Рамка %s у игрока." % G.frame_dims_text()
+			var lo: Variant = _xyz(a, 1); var hi: Variant = _xyz(a, 4)
+			if lo == null or hi == null: return "Ошибка: frame x1 y1 z1 x2 y2 z2 | here N | show | clear"
+			G.frame_points = 0; G.frame_mark(lo); G.frame_mark(hi)
+			return "Рамка %s (%d клеток)." % [G.frame_dims_text(), G.frame_volume()]
+		"dreamfill":
+			var e2 := _need_dream(); if e2 != "": return e2
+			if not G.frame_complete(): return "Ошибка: сначала рамка (frame ... или K, K)."
+			if sub == "clear": return "Очищено клеток: %d" % G.dream_clear()
+			if sub != "" and not G.dream_palette().has(sub): return "Ошибка: «%s» нет в палитре." % sub
+			return "Залито клеток: %d" % G.dream_fill(sub)
+		"crack":
+			if sub == "" or sub == "list":
+				return "Трещин: %d/%d%s" % [G.dream_cracks.size(), G.CRACK_MAX, (" · " + ", ".join(G.dream_cracks.keys().slice(0, 8))) if not G.dream_cracks.is_empty() else ""]
+			if sub == "clear": G.dream_cracks.clear(); G.cracks_changed.emit(); return "Трещины убраны (без награды)."
+			if sub == "patch": return "Залатано трещин: %d" % G.patch_cracks()
+			if sub == "add":
+				var n := clampi(int(a[2]) if a.size() > 2 and a[2].is_valid_int() else 1, 1, 64)
+				var at := Vector3(p.global_position) if p else Vector3.ZERO
+				var cells: Array = G.dream_blocks.keys().filter(func(c): return not G.dream_blocks[c].has("root"))
+				cells.sort_custom(func(x, y): return Vector3(x).distance_squared_to(at) < Vector3(y).distance_squared_to(at))
+				var added := 0
+				for c in cells:
+					if added >= n: break
+					if G.add_crack(c, str(G.dream_blocks[c].get("kind", "drift"))): added += 1
+				return "Добавлено трещин: %d (всего %d). Ближайшие блоки Сна к игроку." % [added, G.dream_cracks.size()] if added > 0 else "Ошибка: рядом нет блоков Сна для трещин."
+			return "Ошибка: crack list|add N|patch|clear"
+		"nightmare":
+			if sub == "last": return "Прошлая ночь кошмаров: " + str(G.last_nightmare)
+			var r2: Dictionary = G.nightmare_tick()
+			return "Кошмары: сгрызено %d блоков дрейфа, защищено светом/маяком %d, трещин %d." % [int(r2.get("eaten", 0)), int(r2.get("guarded", 0)), int(r2.get("cracks", 0))]
+		"garden":
+			if sub == "" or sub == "list":
+				var rows: Array = []
+				for id in G.ZONES: rows.append("%s (%s)%s" % [id, G.ZONES[id].name, " — открыт" if G.dream_zones.has(id) else ""])
+				return "Сады Сна: " + "; ".join(rows)
+			if sub == "reset": G.dream_zones.clear(); G.world_changed.emit(G.is_dream()); return "Сады сброшены (отпечатки остаются)."
+			var id2 := {"stone": "stone_garden", "light": "light_garden"}.get(sub, sub) as String
+			if not G.ZONES.has(id2): return "Ошибка: garden stone|light|list|reset"
+			var ok := G.unlock_zone(id2)
+			G.world_changed.emit(G.is_dream())
+			return ("Открыт " if ok else "Уже открыт ") + str(G.ZONES[id2].name)
+		"request":
+			G.ensure_request()
+			if sub == "new": G.dream_request = {}; G.ensure_request()
+			elif sub == "fill":
+				G._give_items(G.inv_wake, [{"id": str(G.dream_request.kind), "name": G.block_display_name(str(G.dream_request.kind)), "count": int(G.dream_request.n)}]); G.notify_inventory()
+			elif sub == "offer":
+				var e3 := _need_dream(); if e3 != "": return e3
+				return "Просьба исполнена (+осознанность, Архив больше)." if G.offer_request() else "Не исполнена: " + G.request_text()
+			elif sub != "": return "Ошибка: request [new|fill|offer]"
+			return G.request_text()
+		"trial":
+			if sub == "last": return "Последнее испытание: " + (str(G.last_trial) if not G.last_trial.is_empty() else "ещё не было")
+			if sub == "grade": return "Оценка рамки: " + (G.trial_grade_for_frame() if G.trial_grade_for_frame() != "" else "не испытана")
+			var e4 := _need_dream(); if e4 != "": return e4
+			var t: Dictionary = G.run_trial()
+			if t.is_empty(): return "Ошибка: нужна рамка (frame here 3 или K, K)."
+			return "Испытание: %s · оценка %s · фантомов %s" % ["выдержала" if t.get("held", false) else "провал", str(t.get("grade", "?")), str(t.get("total", t.get("phantoms", "?")))]
+		"tutorial":
+			if sub == "start": G.start_tutorial(); return "Обучение начато: " + str(G.tutorial_current().get("title", ""))
+			if sub == "skip": G.skip_tutorial(); return "Обучение пропущено."
+			if sub == "next" or sub == "step":
+				var id3: String = a[2] if sub == "step" and a.size() > 2 else G.tutorial_step_id()
+				if id3 == "": return "Обучение не активно (tutorial start)."
+				G.tutorial_event(id3)
+			elif sub != "": return "Ошибка: tutorial [start|skip|next|step id]"
+			if not G.tutorial_active: return "Обучение: не активно · пройдено %d/%d" % [G.tutorial_done.size(), G.TUTORIAL.size()]
+			return "Обучение %d/%d — %s (id %s) · заранее сделано: %s" % [G.tutorial_index() + 1, G.TUTORIAL.size(), G.tutorial_current().title, G.tutorial_step_id(), ", ".join(G.tutorial_early.keys()) if not G.tutorial_early.is_empty() else "—"]
+		"blueprint":
+			if sub == "" or sub == "list":
+				var names: Array = G.blueprints.map(func(b): return str(b.name))
+				return "Архив Снов %d/%d: %s" % [G.blueprints.size(), G.blueprint_cap(), ", ".join(names) if not names.is_empty() else "пусто"]
+			if sub == "clear": G.blueprints.clear(); G.blueprint_shown = -1; return "Архив Снов очищен."
+			var e5 := _need_dream(); if e5 != "": return e5
+			if sub == "save": return "Чертёж сохранён." if G.save_blueprint() else "Ошибка: чертёж не сохранён (нет постройки/архив полон)."
+			if sub == "show":
+				if a.size() > 2 and a[2].is_valid_int(): G.blueprint_shown = clampi(int(a[2]) - 1, -1, G.blueprints.size() - 1)
+				else: G.cycle_blueprint()
+				return "Показан чертёж: %d" % (G.blueprint_shown + 1)
+			if sub == "rotate": return "Поворот: %d°" % (G.rotate_paste(1) * 90)
+			if sub == "paste":
+				if G.blueprint_shown < 0: return "Ошибка: сначала blueprint show N."
+				return "Вставлено блоков: %d" % G.paste_blueprint(_aim_cell(p))
+			return "Ошибка: blueprint list|save|show N|rotate|paste|clear"
+		"undo":
+			var e6 := _need_dream(); if e6 != "": return e6
+			var redo := sub == "redo"
+			var cnt_s: String = a[2] if redo and a.size() > 2 else sub
+			var cnt := clampi(int(cnt_s) if cnt_s.is_valid_int() else 1, 1, 200)
+			var done := 0
+			for i in range(cnt):
+				if (G.dream_redo() if redo else G.dream_undo()) <= 0: break
+				done += 1
+			return "%s: %d · осталось отмен %d, возвратов %d" % ["Возврат" if redo else "Отмена", done, G.undo_size(), G.redo_size()]
+		"mirror":
+			var e7 := _need_dream(); if e7 != "": return e7
+			if sub == "off": G.mirror_axis = 0; return "Зеркало выключено."
+			var ax := G.cycle_mirror(Vector3i(p.global_position.floor()) if p else Vector3i.ZERO)
+			return ["Зеркало выключено.", "Зеркало по X", "Зеркало по Z"][ax]
+	return "Ошибка: неизвестная команда Сна."

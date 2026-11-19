@@ -46,11 +46,12 @@ func _process(delta: float) -> void:
 					text += "\nПКМ — открыть / закрыть"
 				else:
 					text += "\nЛКМ — добыча; без кирки камень не выпадает"
-			elif col.has_meta("terrain_chunk"):
+			elif col.has_meta("terrain_chunk") and not GameState.is_dream(): # v0.21: подсказка добычи — только в Яви
 				text = "Добыча\nУдерживай ЛКМ: кирка или пустая рука. Камень рукой — без дропа."
 		# v0.11: обучение ведёт панель целей (objective_panel.gd); здесь — только контекст под прицелом.
-		if text == "" and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2:
+		if text == "" and not GameState.tutorial_focus() and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2:
 			text = "Сон помнит всё построенное.\nT — материал, Z/U — отмена/возврат, K+L — рамка и заливка, X — зеркало.\nQ — материализовать копию в Явь, F — проснуться."
+	_place_below_objectives()
 	if text == _last:
 		return
 	_last = text
@@ -60,5 +61,15 @@ func _process(delta: float) -> void:
 		if _tween:
 			_tween.kill()
 		position.x = -280
+		_place_below_objectives()
 		_tween = create_tween()
 		_tween.tween_property(self,"position:x",10.0,0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+func _place_below_objectives() -> void:
+	## v0.21: карточка контекста встаёт под панель целей — панели больше не наезжают друг на друга.
+	var y := 136.0
+	var op := get_tree().get_first_node_in_group("objective_panel") as Control
+	if op and op.visible:
+		y = op.position.y + op.size.y + 8.0
+	position.y = y

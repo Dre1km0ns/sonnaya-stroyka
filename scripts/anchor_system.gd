@@ -19,7 +19,9 @@ func setup(p:CharacterBody3D,dream_layer:Node3D)->void:
 	GameState.anchor_selected.connect(func(_type):_dirty=true)
 func _process(delta:float)->void:
 	var active:=is_instance_valid(player) and GameState.is_dream() and not GameState.ui_blocked()
-	preview.visible=active;info.visible=active
+	# v0.21: во время обучения рамка и справка якоря появляются только на шаге «якорь».
+	if active and GameState.tutorial_focus() and GameState.tutorial_step_id()!="anchor": active=false
+	preview.visible=active;info.visible=active and int(last_preview.get("local_count",0))>0
 	if not active:return
 	_timer-=delta
 	if _timer<=0:
@@ -42,7 +44,9 @@ func _update_preview()->void:
 	var status:="Q — закрепить" if p.ok and p.affordable else ("Проверка рельефа Яви…" if not p.ready else ("Недостаточно реагентов/осознанности" if not p.affordable else ("Не хватает в Яви: "+GameState.materials_text(p.missing) if not p.missing.is_empty() else ("Всё уже стоит в Яви" if p.same>0 and p.new_roots.is_empty() else "Нет новых блоков"))))
 	if not p.conflicts.is_empty():status="Конфликт: "+str(p.conflicts[0])
 	var mats:String=GameState.materials_text(p.materials) if not p.materials.is_empty() else "—"
-	info.text="ЯКОРЬ · %s (инструмент)\nВ зоне: %d · новых: %d · закреплено: %d · уже в Яви: %d · занято: %d\nВся материализация: %d объектов · материалы Яви: %s\nЦена якоря: %d р. + %.0f осознанности\nДрейф в плане: %d (нестабилен: 7%% бросок, максимум %d) · материалы не мутируют\n%s"%[GameState.ItemDB.display_name(cost.special),p.local_count,p.new_roots.size(),p.already,p.same,p.skipped,p.count,mats,cost.reagents,cost.clarity,int(p.get("drift",0)),mini(p.cap,int(p.get("drift",0))),status]
+	# v0.21: компактная справка — 3–4 строки вместо шести.
+	var drift_line:="" if int(p.get("drift",0))==0 else "\nДрейф: %d бл. — может мутировать (до %d)"%[int(p.get("drift",0)),mini(p.cap,int(p.get("drift",0)))]
+	info.text="ЯКОРЬ · %s · новых %d · закреплено %d\nЦена: %d реаг. + %.0f осознанности · Явь: %s%s\n%s"%[GameState.ItemDB.display_name(cost.special),p.new_roots.size(),p.already,cost.reagents,cost.clarity,mats,drift_line,status]
 	var mesh:=ImmediateMesh.new();var mat:=StandardMaterial3D.new();mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;mat.vertex_color_use_as_albedo=true;mat.no_depth_test=true
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES,mat)
 	var size:=1 if t==0 else (GameState.WEDGE_SIZE if t==1 else GameState.ANCHOR3_SIZE);var half:=int(size/2)

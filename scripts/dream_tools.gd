@@ -111,7 +111,9 @@ func status_text() -> String:
 	if GameState.mirror_axis != 0: parts.append("Зеркало %s" % ("X" if GameState.mirror_axis == 1 else "Z"))
 	if GameState.blueprint_shown >= 0 and GameState.blueprint_shown < GameState.blueprints.size():
 		parts.append("Чертёж «%s» %d°" % [GameState.blueprints[GameState.blueprint_shown].name, GameState.paste_rot * 90])
-	parts.append("Отмена %d · Возврат %d" % [GameState.undo_size(), GameState.redo_size()])
+	if GameState.undo_size() > 0 or GameState.redo_size() > 0: # v0.21: пустой счётчик не занимает экран
+		if not GameState.tutorial_focus() or GameState.tutorial_step_id() == "build":
+			parts.append("Z — отмена (%d) · U — возврат (%d)" % [GameState.undo_size(), GameState.redo_size()])
 	return "  ·  ".join(parts)
 
 

@@ -22,7 +22,7 @@ func _gs() -> Node:
 
 func _build() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.02, 0.06, 0.5)
+	dim.color = Color(0.02, 0.02, 0.06, 0.72) # v0.21: плотнее — меню паузы не просвечивает
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(dim)
 	var center := CenterContainer.new()
@@ -30,6 +30,11 @@ func _build() -> void:
 	add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(640, 0)
+	var solid := StyleBoxFlat.new() # v0.21: непрозрачная панель настроек
+	solid.bg_color = Color(0.10, 0.09, 0.14, 1.0); solid.border_color = Color(0.40, 0.36, 0.50)
+	solid.set_border_width_all(2); solid.set_corner_radius_all(10)
+	solid.content_margin_left = 26; solid.content_margin_right = 26; solid.content_margin_top = 20; solid.content_margin_bottom = 20
+	panel.add_theme_stylebox_override("panel", solid)
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)

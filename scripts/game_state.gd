@@ -376,7 +376,7 @@ func reset_state() -> void:
 	_undo = []; _redo = []; frame_points = 0; mirror_axis = 0; paste_rot = 0; paste_origin_set = false; _bp_seq = 0
 	dream_cracks = {}; dream_zones = []; dream_request = {}; requests_done = 0; nightmare_eaten = 0; cracks_patched = 0
 	tested_regions = []; last_trial = {}; trials_run = 0
-	tutorial_active = false; tutorial_done = {}; tutorial_gift = false; tutorial_started_msec = 0; tutorial_times = {}
+	tutorial_active = false; tutorial_done = {}; tutorial_early = {}; tutorial_gift = false; tutorial_started_msec = 0; tutorial_times = {}
 	selected_anchor = AnchorType.NAIL
 	last_hint = ""
 	awake_time = 0.0
@@ -2217,7 +2217,11 @@ func enter_dream() -> void:
 	if not starter_kit_given:
 		# v0.11: первый Сон — «идея верстака» в инвентаре Сна: первая постройка с пользой гарантирована.
 		starter_kit_given = true
-		if _give_items(inv_dream, [{"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}]).is_empty():
+		# v0.21: идея верстака — в слот 5, слот 1 пустой: пустая рука ставит бесплатный дрейф (шаг 2 обучения).
+		var put := false
+		if inv_dream.size() > 4 and str(inv_dream[4].get("id", "")) == "":
+			inv_dream[4] = {"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}; put = true; notify_inventory()
+		if put or _give_items(inv_dream, [{"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}]).is_empty():
 			chat("Во сне ты вспомнил, как выглядит верстак. Поставь его (слот хотбара) и закрепи якорем.", Color(0.75, 0.85, 1.0))
 	if not dream_stash.is_empty():
 		var before := dream_stash.size()
@@ -2232,7 +2236,8 @@ func enter_dream() -> void:
 	if not has_imprint(dream_material): dream_material = "drift"
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
-	set_hint("Сон помнит всё построенное. ЛКМ — блок (%s), T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
+	if not tutorial_focus(): # v0.21: во время обучения клавиши вводит только его панель
+		set_hint("Сон помнит всё построенное. ЛКМ — блок (%s), T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
 
 
 func resolve_wake(abort_transfer:bool=false) -> Dictionary:
@@ -2424,6 +2429,7 @@ func to_save_dict() -> Dictionary:
 		"trials_run": trials_run,
 		"tutorial_active": tutorial_active,
 		"tutorial_done": tutorial_done.keys(),
+		"tutorial_early": tutorial_early.keys(),
 		"tutorial_gift": tutorial_gift,
 		"starter_kit_given": starter_kit_given,
 		"starter_camp_built": starter_camp_built,
@@ -4186,18 +4192,19 @@ func _load_v019(data: Dictionary) -> void:
 signal tutorial_changed
 
 const TUTORIAL := [
-	{"id": "fly", "title": "Лети", "how": "Во Сне ты летаешь: WASD, Пробел — вверх, Ctrl — вниз (V — выключить полёт). Отлети на 8 блоков."},
-	{"id": "build", "title": "Поставь 5 блоков", "how": "ЛКМ — блок дрейфа: он бесплатный, Сон создаёт его из ничего. ПКМ — снять, Z — отменить правку."},
-	{"id": "frame", "title": "Рамка и заливка", "how": "K — первый угол рамки, K — второй угол (под прицелом), L — залить рамку. Так стену строят за секунду."},
-	{"id": "trial", "title": "Испытай фантомами", "how": "Не снимая рамку, нажми M: фантомы осаждают копию постройки. Дыры и дрейф — слабые места, свет сжигает фантомов. Сон не пострадает."},
-	{"id": "workbench", "title": "Поставь верстак", "how": "В хотбаре Сна лежит идея верстака. Выбери её цифрой и поставь ЛКМ."},
-	{"id": "anchor", "title": "Закрепи якорем", "how": "R — выбрать Клин (зона 5×5×5), наведись на верстак, Q — закрепить. На первый якорь Сон подарил 3 реагента."},
-	{"id": "wake", "title": "Проснись", "how": "F — проснуться. Закреплённое появится в Яви копией, а оригинал останется во Сне. Сон помнит всё."},
+	{"id": "fly", "title": "Лети", "how": "Во Сне ты летаешь. Пробел — вверх, Ctrl — вниз, WASD — вперёд и вбок. Отлети на 8 блоков."},
+	{"id": "build", "title": "Поставь 5 блоков", "how": "Пустая рука (слот 1) ставит блок дрейфа — он бесплатный. ЛКМ — поставить, ПКМ — снять. Поставь 5 блоков."},
+	{"id": "frame", "title": "Рамка и заливка", "how": "Наведись на блок: K — первый угол рамки, ещё раз K — второй угол. Потом L — залить рамку целиком."},
+	{"id": "trial", "title": "Испытай фантомами", "how": "M — испытание: фантомы атакуют копию постройки в рамке. Дыры и дрейф — слабые места. Сон не пострадает."},
+	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ЛКМ — поставить его."},
+	{"id": "anchor", "title": "Закрепи якорем", "how": "Наведись на верстак и нажми Q — закрепить его якорем. Реагенты на первый якорь Сон подарил."},
+	{"id": "wake", "title": "Проснись", "how": "F — проснуться. Закреплённый верстак появится в Яви копией, а оригинал останется во Сне."},
 ]
 const TUTORIAL_GIFT_REAGENTS := 3
 
 var tutorial_active := false
 var tutorial_done: Dictionary = {}
+var tutorial_early: Dictionary = {} # v0.21: действия, сделанные раньше своего шага — засчитаются, когда до него дойдёт очередь
 var tutorial_gift := false
 var tutorial_started_msec := 0
 var tutorial_times: Dictionary = {} # id -> секунды от старта обучения (не сохраняется: для бота/телеметрии)
@@ -4210,6 +4217,7 @@ func _sfx_host() -> Node:
 func start_tutorial() -> void:
 	tutorial_active = true
 	tutorial_done = {}
+	tutorial_early = {}
 	tutorial_times = {}
 	tutorial_started_msec = Time.get_ticks_msec()
 	give_tutorial_gift()
@@ -4230,24 +4238,52 @@ func tutorial_current() -> Dictionary:
 	return {}
 
 
+func tutorial_focus() -> bool:
+	## v0.21: пока идёт обучение, на экране только его панель — цели, справка якоря и подсказки Сна ждут.
+	return tutorial_active and not tutorial_current().is_empty()
+
+
+func tutorial_step_id() -> String:
+	return str(tutorial_current().get("id", ""))
+
+
 func tutorial_index() -> int:
 	return tutorial_done.size()
 
 
 func tutorial_event(id: String) -> void:
+	## v0.21: шаги идут строго по порядку. Действие раньше своего шага запоминается
+	## и засчитывается, когда до шага дойдёт очередь (панель не перескакивает 2 → 4).
 	if not tutorial_active or tutorial_done.has(id): return
 	var known := false
 	for t in TUTORIAL:
 		if t.id == id: known = true
 	if not known: return
+	if id != tutorial_step_id():
+		tutorial_early[id] = true
+		return
+	_tutorial_complete(id)
+	while tutorial_active and (tutorial_early.has(tutorial_step_id()) or _tutorial_already_met(tutorial_step_id())):
+		_tutorial_complete(tutorial_step_id())
+	Sfx.play("tutorial_step", _sfx_host())
+	tutorial_changed.emit()
+
+
+func _tutorial_already_met(id: String) -> bool:
+	if id == "workbench": # верстак уже стоит во Сне (например, поставлен до шага и сейв перезагружен)
+		for c in dream_blocks:
+			if str(dream_blocks[c].get("kind", "")) == "workbench": return true
+	return false
+
+
+func _tutorial_complete(id: String) -> void:
 	tutorial_done[id] = true
+	tutorial_early.erase(id)
 	tutorial_times[id] = (Time.get_ticks_msec() - tutorial_started_msec) / 1000.0
 	if tutorial_done.size() >= TUTORIAL.size():
 		tutorial_active = false
 		milestones_mark("tutorial", true)
 		chat("Обучение пройдено. Дальше — цели слева: добывай в Яви отпечатки материалов, проектируй во Сне, испытывай и материализуй.", Color(0.85, 0.75, 1.0))
-	Sfx.play("tutorial_step", _sfx_host())
-	tutorial_changed.emit()
 
 
 func skip_tutorial() -> void:
@@ -4260,6 +4296,8 @@ func _load_v020(data: Dictionary) -> void:
 	tutorial_active = bool(data.get("tutorial_active", false))
 	tutorial_done = {}
 	for id in data.get("tutorial_done", []): tutorial_done[str(id)] = true
+	tutorial_early = {}
+	for id in data.get("tutorial_early", []): tutorial_early[str(id)] = true
 	tutorial_gift = bool(data.get("tutorial_gift", false))
 	tutorial_times = {}
 	tutorial_started_msec = Time.get_ticks_msec()

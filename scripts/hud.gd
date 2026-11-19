@@ -56,6 +56,7 @@ func _ready() -> void:
 	var menu: Control = menu_script.new()
 	$Root.add_child(menu)
 	inv_label.visible = false
+	_style_clarity()
 	_build_hotbar()
 	_build_special_bar()
 	_build_labels()
@@ -476,12 +477,34 @@ func set_debug(mode: String="toggle") -> bool:
 func _on_world(is_dream: bool) -> void:
 	world_label.text = "СОН" if is_dream else "ЯВЬ"
 	world_label.modulate = Color(0.75, 0.7, 1.0) if is_dream else Color(0.9, 0.8, 0.6)
+	# v0.21: обводка и тень — заголовок читается и на светлом небе Яви.
+	world_label.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.08, 1.0))
+	world_label.add_theme_constant_override("outline_size", 8)
+	world_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	world_label.add_theme_constant_override("shadow_offset_x", 2)
+	world_label.add_theme_constant_override("shadow_offset_y", 2)
 	clarity_bar.visible = is_dream
 	var cap := get_node_or_null("Root/ClarityCaption")
 	if cap:
 		cap.visible = is_dream
 	# v0.7: у сна и яви разные инвентари — хотбар перерисовываем при смене мира.
 	_refresh_inv()
+
+
+func _style_clarity() -> void:
+	## v0.21: у полосы осознанности не было заливки (серый прямоугольник при 100/100).
+	var fill := StyleBoxFlat.new(); fill.bg_color = Color(0.68, 0.55, 1.0); fill.set_corner_radius_all(4)
+	var bg := StyleBoxFlat.new(); bg.bg_color = Color(0.08, 0.06, 0.14, 0.85); bg.set_corner_radius_all(4)
+	bg.border_color = Color(0.45, 0.4, 0.7, 0.9); bg.set_border_width_all(1)
+	clarity_bar.add_theme_stylebox_override("fill", fill)
+	clarity_bar.add_theme_stylebox_override("background", bg)
+	clarity_bar.offset_bottom = clarity_bar.offset_top + 14
+	var cap := get_node_or_null("Root/ClarityCaption") as Label
+	if cap:
+		cap.offset_top = 82; cap.offset_right = 330; cap.offset_bottom = 120
+		cap.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		cap.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		cap.add_theme_constant_override("outline_size", 3)
 
 
 func _on_clarity(value: float, max_value: float) -> void:
@@ -493,7 +516,7 @@ func _on_clarity(value: float, max_value: float) -> void:
 		# v0.16: осознанность — ресурс, а не таймер. Подпись: запас, цена якоря, материал палитры и его запас в Яви.
 		var cost: Dictionary = GameState.anchor_cost(int(GameState.selected_anchor))
 		var mat: String = GameState.dream_material
-		cap.text = "Осознанность %d/%d  ·  %s −%d  ·  T: %s%s" % [int(value), int(max_value), ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), GameState.block_display_name(mat), GameState.palette_stock_text(mat)]
+		cap.text = "Осознанность %d/%d · %s −%d\nT: %s%s" % [int(value), int(max_value), ["гвоздь","клин","якорь3"][int(GameState.selected_anchor)], int(cost.clarity), GameState.block_display_name(mat), GameState.palette_stock_text(mat)]
 		cap.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if value < float(cost.clarity) else Color(0.85, 0.85, 1.0))
 
 
@@ -601,7 +624,7 @@ func _process(delta: float) -> void:
 	var bosses: Array = get_tree().get_nodes_in_group("boss") if get_tree() else []
 	var live: Node = null
 	for b in bosses:
-		if is_instance_valid(b) and int(b.get("hp")) > 0:
+		if is_instance_valid(b) and b.get("hp") != null and int(b.get("hp")) > 0:
 			live = b
 			break
 	if live == null:

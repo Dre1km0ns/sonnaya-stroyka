@@ -1419,11 +1419,19 @@ func _camp_label() -> void:
 	var l := Label3D.new()
 	l.name = "CampSign"
 	l.text = "Разрушенный лагерь сновидца\nЛяг на кровать — во Сне можно построить невозможное"
-	l.font_size = 48
-	l.pixel_size = 0.011
+	# v0.21: табличка постоянного экранного размера, поверх стен и только издалека —
+	# раньше она резалась стенами лагеря и вблизи раздувалась поверх HUD.
+	l.font_size = 40
+	l.fixed_size = true
+	l.pixel_size = 0.0011
+	l.no_depth_test = true
+	l.render_priority = 10
+	l.outline_render_priority = 9
+	l.visibility_range_begin = 6.0
+	l.visibility_range_end = 60.0
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.modulate = Color(1.0, 0.95, 0.8, 1.0)
 	l.outline_modulate = Color(0.05, 0.04, 0.1, 1.0)
 	l.outline_size = 14
-	l.position = Vector3(0.5, float(wake_chunks.height_at(0, -8)) + 3.6, -7.5)
+	l.position = Vector3(0.5, float(wake_chunks.height_at(0, -8)) + 5.0, -7.5)
 	wake_world.add_child(l)
