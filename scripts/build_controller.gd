@@ -147,16 +147,20 @@ func _try_place() -> void:
 
 func _place_at(cell: Vector3i) -> void:
 	# v0.16: без предмета в руке ставится материал палитры Сна (отпечаток) — бесконечно и бесплатно.
-	var kind: String = GameState.dream_material if GameState.has_imprint(GameState.dream_material) else "drift"
+	# v0.22: палитра — только из пустого слота 1 (HUD показывает в нём материал и ∞); другие пустые слоты ничего не ставят.
+	var kind: String = GameState.dream_palette_kind()
 	var from_palette := true
-	for item_kind in DREAM_ITEM_BLOCKS:
-		if GameState.selected_is(item_kind):
-			if not GameState.consume_item(item_kind, 1):
-				GameState.set_hint("Нет «%s» в инвентаре сна." % GameState.block_display_name(item_kind))
-				return
-			kind = item_kind
-			from_palette = false
-			break
+	var sel_id := str(GameState.get_selected_item().get("id", ""))
+	if DREAM_ITEM_BLOCKS.has(sel_id):
+		if not GameState.consume_item(sel_id, 1):
+			GameState.set_hint("Нет «%s» в инвентаре Сна." % GameState.block_display_name(sel_id))
+			return
+		kind = sel_id
+		from_palette = false
+	elif not GameState.palette_slot_active():
+		if sel_id == "":
+			GameState.set_hint("Слот пуст. Материал Сна ставится из слота 1.", false)
+		return
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var facing := posmod(roundi(atan2(-forward.x,-forward.z)/(PI/2.0)),4)
 	var placed_cells: Array = []
@@ -169,9 +173,9 @@ func _place_at(cell: Vector3i) -> void:
 			placed_cells.append_array(mass_place_row(cell, facing))
 		dream_voxels.sync_cells(placed_cells)
 		if not from_palette:
-			GameState.set_hint("%s [%d,%d,%d]. Заякорь, чтобы унести в Явь." % [GameState.block_display_name(kind), cell.x, cell.y, cell.z])
+			GameState.set_hint("%s. Заякорь, чтобы унести в Явь." % GameState.block_display_name(kind))
 		else:
-			GameState.set_hint("%s [%d,%d,%d]%s" % [GameState.block_display_name(kind), cell.x, cell.y, cell.z, GameState.palette_stock_text(kind)], false)
+			GameState.set_hint("%s%s" % [GameState.block_display_name(kind), GameState.palette_stock_text(kind)], false)
 	elif not from_palette:
 		GameState.add_item_count(kind, 1)
 
@@ -209,7 +213,7 @@ func _try_remove() -> void:
 	for c in removed:
 		dream_voxels.remove_block(c)
 	if not removed.is_empty():
-		GameState.set_hint("Снят блок [%d,%d,%d]%s · Z — отменить" % [cell.x, cell.y, cell.z, (" (+%d зеркально)" % (removed.size() - 1)) if removed.size() > 1 else ""], false)
+		GameState.set_hint("Снят блок%s · Z — отменить" % ((" · +%d зеркально" % (removed.size() - 1)) if removed.size() > 1 else ""), false)
 
 
 func _try_mine_wake() -> void:

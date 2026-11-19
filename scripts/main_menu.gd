@@ -343,10 +343,10 @@ func _build_create_screen() -> Control:
 	_seed_info.add_theme_color_override("font_color", Color(0.78, 0.78, 0.86))
 	box.add_child(_seed_info)
 	_peaceful = CheckButton.new()
-	_peaceful.text = "Мирный режим (враги не появляются)"
+	_peaceful.text = "Мирный режим — без врагов"
 	box.add_child(_peaceful)
 	_tutorial = CheckButton.new()
-	_tutorial.text = "Пройти обучение во Сне (7 шагов, ~3 минуты)"
+	_tutorial.text = "Пройти обучение во Сне — 7 шагов, около 3 минут"
 	_tutorial.button_pressed = true
 	box.add_child(_tutorial)
 	var row := HBoxContainer.new()
@@ -378,13 +378,13 @@ func _update_seed_info() -> void:
 	if t == "":
 		_seed_info.text = "Сид задаёт рельеф, холмы, озёра, руины, места и типы реагентов и мир сна. Один сид — один и тот же мир."
 	elif t == str(GameState.DEV_SEED):
-		_seed_info.text = "Сид разработчика: все ресурсы, предметы, якоря и маяки бесконечны (∞), осознанность во сне не тратится."
+		_seed_info.text = "Сид разработчика: все ресурсы, предметы, якоря и маяки бесконечны, осознанность во сне не тратится."
 		_seed_info.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
 		return
 	elif t.is_valid_int():
 		_seed_info.text = "Числовой сид: %s" % t
 	else:
-		_seed_info.text = "Текстовый сид → число %d (хеш строки)." % GameState.seed_from_text(t)
+		_seed_info.text = "Текстовый сид → число %d." % GameState.seed_from_text(t)
 	_seed_info.add_theme_color_override("font_color", Color(0.78, 0.78, 0.86))
 
 

@@ -117,7 +117,7 @@ func _refresh() -> void:
 		_slots[i].set_item(id, int(d.get("count", 0)))
 		if id != "":
 			n += int(d.get("count", 0))
-	_title.text = "Под подушкой" + ("  — пусто (крафт хилок во сне: 50 осыпи)" if n == 0 else "")
+	_title.text = "Под подушкой" + ("  — пусто" if n == 0 else "")
 
 
 func _input(event: InputEvent) -> void:

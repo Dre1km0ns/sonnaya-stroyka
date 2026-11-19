@@ -57,7 +57,7 @@ func _build() -> void:
 	box.add_child(b1)
 	var b2 := Button.new()
 	b2.name = "Exit"
-	b2.text = "Выйти из мира (сохранить)"
+	b2.text = "Сохранить и выйти из мира"
 	b2.custom_minimum_size = Vector2(0, 46)
 	b2.pressed.connect(func() -> void: exit_pressed.emit())
 	box.add_child(b2)

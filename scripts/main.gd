@@ -102,7 +102,7 @@ func _ready() -> void:
 	elif _want_shots():
 		call_deferred("_capture_shots")
 	elif loaded:
-		GameState.set_hint("Продолжение с диска (F5 сейв / F9 лоад).")
+		GameState.set_hint("Продолжение с диска. F5 — сейв, F9 — загрузка.")
 	else:
 		saver.save_game("new-world")
 		var gsx := get_node_or_null("/root/GameSettings")
@@ -142,7 +142,7 @@ func _on_player_died() -> void:
 	if gid >= 0:
 		_spawn_grave(gid)
 	last_death_drop = n
-	var info := "Вещи (%d шт.) лежат на месте гибели — подойди, чтобы подобрать.\nГвозди, клинья, якоря и маяки остались при тебе." % n if n > 0 else "Терять было нечего."
+	var info := "Вещи лежат на месте гибели: %d шт. — подойди, чтобы подобрать.\nГвозди, клинья, якоря и маяки остались при тебе." % n if n > 0 else "Терять было нечего."
 	if GameState.dev_mode:
 		info = "DEV-сид: ресурсы бесконечны, ничего не выпало."
 	var hud := get_node_or_null("HUD")
@@ -287,7 +287,7 @@ func _capture_v05() -> void:
 	if GameState.place_wake_block(bcell, "beacon"):
 		wake_voxels.add_block(bcell, GameState.wake_blocks[bcell])
 	await get_tree().create_timer(1.2).timeout
-	GameState.set_hint("v0.5: хотбар 1–9, инвентарь I/Tab, якоря — справа (R), маяк — G.")
+	GameState.set_hint("v0.5: хотбар 1–9, инвентарь I/Tab, якоря справа — R, маяк — G.")
 	await _save_shot("v05_hud.png")
 	var hud := get_node_or_null("HUD")
 	if hud and "inventory" in hud and hud.inventory:

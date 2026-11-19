@@ -191,8 +191,8 @@ func _rebuild() -> void:
 		btn.button_pressed = i == _selected
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		var mark := "можно" if can else "не хватает"
-		btn.text = "%d. %s  —  %s  [%s]" % [i + 1, str(rec.get("name", "?")), GameState.recipe_cost_text(rec), mark]
+		# v0.22: без пометок «можно/не хватает» — недоступный рецепт просто тусклее
+		btn.text = "%d. %s  —  %s" % [i + 1, str(rec.get("name", "?")), GameState.recipe_cost_text(rec)]
 		btn.disabled = false
 		btn.modulate = Color.WHITE if can else Color(1, 1, 1, 0.55)
 		btn.pressed.connect(_select.bind(i))
@@ -214,14 +214,7 @@ func _refresh_status() -> void:
 		return
 	var rec: Dictionary = _recipes[_selected]
 	var can := GameState.can_afford_recipe(rec)
-	_status.text = "Выбрано: %s (%s)" % [str(rec.get("name", "?")), "хватит ресурсов" if can else "не хватает: " + GameState.recipe_missing_text(rec)]
-	# v0.11: объяснение, куда попадёт результат и что ещё откроется.
-	if GameState.is_dream() and str(rec.get("where","")) == "dream" and str(rec.get("item","")) != "":
-		_status.text += "\nПредмет ляжет в инвентарь Сна: поставь его и закрепи якорем, чтобы он появился в Яви."
-	if _station_id == "sawmill" and not _upgraded:
-		_status.text += "\nМастерская: поставь лесопилку вплотную к верстаку — откроется деревянная броня."
-	if GameState.is_dream() and _station_id == "" and not _at_workbench and not _at_lathe and not GameState.mother_defeated and not GameState.dev_mode:
-		_status.text += "\n🔒 После победы над Матерью блоков: Алхимический стол, Ловец идей."
+	_status.text = "Выбрано: %s" % str(rec.get("name", "?"))  # v0.22: без фраз о нехватке и подсказок
 	_craft_btn.disabled = not can
 	_craft_btn.text = "Создать: %s" % str(rec.get("name", "?"))
 

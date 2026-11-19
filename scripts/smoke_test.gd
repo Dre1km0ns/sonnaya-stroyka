@@ -3313,7 +3313,7 @@ func _v017_checks() -> void:
 	scene.build._place_at(Vector3i(42, 10, 40))
 	_a(G.dream_blocks.has(Vector3i(42, 10, 40)) and G.dream_blocks.has(Vector3i(38, 10, 40)) and G.undo_size() == 1, 17051)
 	await process_frame
-	_a(tools.status_text().contains("Зеркало X") and tools.status_text().contains("отмена (1)"), 17052)
+	_a(tools.status_text().contains("Зеркало X") and tools.status_text().contains("отмена 1"), 17052)
 	G.frame_mark(Vector3i(40, 12, 40)); G.frame_mark(Vector3i(41, 13, 41))
 	await process_frame
 	_a(tools._lines.visible and tools.status_text().contains("Рамка 2×2×2"), 17053)
@@ -3735,6 +3735,7 @@ func _v021_checks() -> void:
 	anc.last_preview = {"local_count": 0}
 	scene.player.global_position = Vector3(0, 60, 0); scene.player.get_node("CameraPivot").rotation.x = 1.4
 	anc._timer = 0.0; for i in range(3): await process_frame
+	if not (anc.info.visible and anc.info.text.contains("наведись")): print("DBG21032 vis=", anc.info.visible, " txt=", anc.info.text, " ui=", G.ui_blocked(), " step=", G.tutorial_step_id(), " lp=", anc.last_preview)
 	_a(anc.info.visible and anc.info.text.contains("наведись"), 21032)
 	G.skip_tutorial()
 	for i in range(3): await process_frame

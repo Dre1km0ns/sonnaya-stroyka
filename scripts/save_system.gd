@@ -74,13 +74,13 @@ func save_game(reason: String = "manual") -> bool:
 	var json := JSON.stringify(data, "\t")
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f == null:
-		GameState.set_hint("Сохранение не удалось (%s)." % reason)
+		GameState.set_hint("Сохранение не удалось: %s." % reason)
 		save_completed.emit(false)
 		return false
 	f.store_string(json)
 	f.close()
 	WorldStore.touch(GameState.world_folder)
-	GameState.set_hint("Сохранено (%s). F9 — загрузка." % reason)
+	GameState.set_hint("Сохранено: %s. F9 — загрузка." % reason)
 	save_completed.emit(true)
 	print("SAVE OK reason=", reason, " path=", SAVE_PATH)
 	return true

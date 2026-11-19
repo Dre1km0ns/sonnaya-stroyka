@@ -99,6 +99,6 @@ static func fade_of(mi: MeshInstance3D) -> float:
 
 
 func status_text() -> String:
-	return "Камера боя: %s · FOV %.0f° (база %.0f° +%.1f) · прозрачность Матери %d%% · до ближайшего босса %s" % [
+	return "Камера боя: %s · FOV %.0f° · база %.0f° +%.1f · прозрачность Матери %d%% · до ближайшего босса %s" % [
 		"вкл" if enabled else "выкл", (_cam.fov if _cam else base_fov), base_fov, fov_add, int(round(fade * 100.0)),
 		("%.1f м" % nearest_boss_dist) if nearest_boss_dist < INF else "—"]

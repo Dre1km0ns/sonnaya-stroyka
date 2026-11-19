@@ -146,7 +146,7 @@ func _build() -> void:
 	pouch_gap.custom_minimum_size.y = 8
 	right.add_child(pouch_gap)
 	var pcap := Label.new()
-	pcap.text = "Кошель (общий)"
+	pcap.text = "Кошель — общий"
 	pcap.add_theme_font_size_override("font_size", 13)
 	right.add_child(pcap)
 	var pgrid := GridContainer.new()

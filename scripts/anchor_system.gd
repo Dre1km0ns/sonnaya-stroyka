@@ -50,7 +50,7 @@ func _update_preview()->void:
 	if not p.conflicts.is_empty():status="Конфликт: "+str(p.conflicts[0])
 	var mats:String=GameState.materials_text(p.materials) if not p.materials.is_empty() else "—"
 	# v0.21: компактная справка — 3–4 строки вместо шести.
-	var drift_line:="" if int(p.get("drift",0))==0 else "\nДрейф: %d бл. — может мутировать (до %d)"%[int(p.get("drift",0)),mini(p.cap,int(p.get("drift",0)))]
+	var drift_line:="" if int(p.get("drift",0))==0 else "\nДрейф: %d бл. — может мутировать, до %d"%[int(p.get("drift",0)),mini(p.cap,int(p.get("drift",0)))]
 	info.text="ЯКОРЬ · %s · новых %d · закреплено %d\nЦена: %d реаг. + %.0f осознанности · Явь: %s%s\n%s"%[GameState.ItemDB.display_name(cost.special),p.new_roots.size(),p.already,cost.reagents,cost.clarity,mats,drift_line,status]
 	var mesh:=ImmediateMesh.new();var mat:=StandardMaterial3D.new();mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;mat.vertex_color_use_as_albedo=true;mat.no_depth_test=true
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES,mat)

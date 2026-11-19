@@ -107,7 +107,7 @@ func _refresh() -> void:
 
 func _start_wait(action: String) -> void:
 	_waiting = action
-	_status.text = "«%s»: нажми новую клавишу или кнопку мыши (Esc — отмена)." % _gs().action_title(action)
+	_status.text = "«%s»: нажми новую клавишу или кнопку мыши. Esc — отмена." % _gs().action_title(action)
 	_refresh()
 
 

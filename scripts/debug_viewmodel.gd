@@ -77,7 +77,7 @@ func _cube(body: StaticBody3D, kind: String, at: Vector3) -> void:
 
 func _apply() -> void:
 	rig.set_tool(ORDER[idx])
-	label.text = "Viewmodel: %s  (%d/%d)  ←/→ сменить · Space удар · W/S к стене" % [ORDER[idx], idx + 1, ORDER.size()]
+	label.text = "Viewmodel: %s  %d/%d  ←/→ сменить · Space удар · W/S к стене" % [ORDER[idx], idx + 1, ORDER.size()]
 
 
 func _unhandled_input(ev: InputEvent) -> void:

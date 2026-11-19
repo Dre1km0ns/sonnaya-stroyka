@@ -455,7 +455,7 @@ func _update_debug() -> void:
 		if bool(cm.get("is_dream_layer")) == GameState.is_dream() and cm.has_method("get_loaded_count"):
 			chunks = cm.get_loaded_count()
 			pending = cm.get_pending_count()
-	_debug_label.text = "FPS %d   кадр %.1f мс\nсид %s%s\nчанков %d (+%d в очереди)\nузлов %d   draw calls %d\nсущностей %d" % [
+	_debug_label.text = "FPS %d   кадр %.1f мс\nсид %s%s\nчанков %d · в очереди %d\nузлов %d   draw calls %d\nсущностей %d" % [
 		Engine.get_frames_per_second(), 1000.0 / maxf(1.0, Engine.get_frames_per_second()),
 		str(GameState.world_seed), "  (DEV)" if GameState.dev_mode else "",
 		chunks, pending,
@@ -469,7 +469,7 @@ func _update_debug() -> void:
 		var pos:=player.global_position
 		var facing:=fposmod(rad_to_deg(player.rotation.y),360.0)
 		var names: Array[String]=["Север −Z","Запад −X","Юг +Z","Восток +X"]
-		_debug_label.text+="\nXYZ %.2f / %.2f / %.2f\nНаправление %s (%.0f°)\nЧанк %d / %d" % [pos.x,pos.y,pos.z,names[posmod(roundi(facing/90),4)],facing,floori(pos.x/16),floori(pos.z/16)]
+		_debug_label.text+="\nXYZ %.2f / %.2f / %.2f\nНаправление %s %.0f°\nЧанк %d / %d" % [pos.x,pos.y,pos.z,names[posmod(roundi(facing/90),4)],facing,floori(pos.x/16),floori(pos.z/16)]
 
 func set_debug(mode: String="toggle") -> bool:
 	_debug_label.visible=not _debug_label.visible if mode=="toggle" else mode=="on"
@@ -557,6 +557,11 @@ func _refresh_inv() -> void:
 	_dev_badge.visible = GameState.dev_mode
 	for i in range(_hotbar.size()):
 		var d: Dictionary = GameState.get_slot(i)
+		if GameState.palette_slot_active(i):
+			# v0.22: честный хотбар Сна — в слоте 1 виден текущий материал палитры, ставится бесконечно
+			_hotbar[i].set_item(GameState.dream_palette_kind(), 0, i == GameState.selected_slot, true)
+			_hotbar[i].set_durability(0, 0)
+			continue
 		_hotbar[i].set_item(str(d.get("id", "")), int(d.get("count", 0)), i == GameState.selected_slot, GameState.is_infinite_slot(i))
 		_hotbar[i].set_durability(int(d.get("durability", GameState.tool_max(str(d.get("id", ""))))), GameState.tool_max(str(d.get("id", ""))))
 	for pair in _specials:

@@ -109,13 +109,13 @@ func _handle_input() -> void:
 func status_text() -> String:
 	var parts: Array = []
 	if GameState.frame_points == 1: parts.append("Рамка: угол A — K для угла B")
-	elif GameState.frame_complete(): parts.append("Рамка %s (%d)" % [GameState.frame_dims_text(), GameState.frame_volume()])
+	elif GameState.frame_complete(): parts.append("Рамка %s · %d" % [GameState.frame_dims_text(), GameState.frame_volume()])
 	if GameState.mirror_axis != 0: parts.append("Зеркало %s" % ("X" if GameState.mirror_axis == 1 else "Z"))
 	if GameState.blueprint_shown >= 0 and GameState.blueprint_shown < GameState.blueprints.size():
 		parts.append("Чертёж «%s» %d°" % [GameState.blueprints[GameState.blueprint_shown].name, GameState.paste_rot * 90])
 	if GameState.undo_size() > 0 or GameState.redo_size() > 0: # v0.21: пустой счётчик не занимает экран
 		if not GameState.tutorial_focus() or GameState.tutorial_step_id() == "build":
-			parts.append("Z — отмена (%d) · U — возврат (%d)" % [GameState.undo_size(), GameState.redo_size()])
+			parts.append("Z — отмена %d · U — возврат %d" % [GameState.undo_size(), GameState.redo_size()])
 	return "  ·  ".join(parts)
 
 

@@ -90,7 +90,7 @@ func refresh() -> void:
 	_how.text = str(cur.get("how", ""))
 	# v0.21 c2: цель Сна, а игрок в Яви — сначала подсказываем, как уснуть (раньше «R — Клин…» в Яви сбивало).
 	if bool(cur.get("dream", false)) and not GameState.is_dream():
-		_how.text = "Это делается во Сне: ляг на кровать (E). " + _how.text
+		_how.text = "Это делается во Сне: ляг на кровать. " + _how.text
 	_next.text = ("Дальше: ★ " + str(big.title)) if not big.is_empty() else ""
 	_next.visible = _next.text != ""
 	var show_threat := not GameState.is_dream() and GameState.deep_threat >= 25.0 and not GameState.boss_alive
@@ -105,7 +105,7 @@ func refresh() -> void:
 		_next.text += ("\n" if _next.text != "" else "") + rq
 	if not GameState.dream_cracks.is_empty():
 		_next.visible = true
-		_next.text += ("\n" if _next.text != "" else "") + "Трещин во Сне: %d — залатай до рассвета (заякорь постройку снова)" % GameState.dream_cracks.size()
+		_next.text += ("\n" if _next.text != "" else "") + "Трещин во Сне: %d — залатай до рассвета, заякорив постройку снова" % GameState.dream_cracks.size()
 	if GameState.is_dream() and GameState.archive_unlocked() and not GameState.blueprints.is_empty():
 		_next.visible = true
 		_next.text += ("\n" if _next.text != "" else "") + "Архив Снов %d/%d: K — рамка, B — сохранить, N — выбрать, P — вставить, O — поворот · Z/U — отмена/возврат, L — заливка, X — зеркало" % [GameState.blueprints.size(), GameState.blueprint_cap()]

@@ -33,7 +33,7 @@ func _ready() -> void:
 		b.rotation_degrees = Vector3(0, randf() * 90.0, 0)
 		add_child(b)
 	var tag := Label3D.new()
-	tag.text = "Твои вещи (%d)" % n
+	tag.text = "Твои вещи · %d" % n
 	tag.position = Vector3(0, 1.0, 0)
 	tag.font_size = 26
 	tag.pixel_size = 0.004

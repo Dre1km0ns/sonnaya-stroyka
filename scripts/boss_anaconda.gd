@@ -137,7 +137,7 @@ func boss_hint() -> String:
 		return "   — ОСЛЕПЛЕНА СВЕТОМ!"
 	if is_invulnerable():
 		return "   — в земле"
-	return "   — бей СВЕТОМ (факелы)"
+	return "   — бей СВЕТОМ факелов"
 
 
 func _ready() -> void:
@@ -447,7 +447,7 @@ func update_torch_aggro() -> bool:
 		if Vector3(c).distance_to(hp) < Vector3(best).distance_to(hp): best = c
 	if aggro_cell.y == -9999:
 		aggro_events += 1
-		GameState.chat("Анаконда в ярости от света — она идёт ломать факелы! (%d рядом)" % near.size(), Color(1.0, 0.5, 0.25))
+		GameState.chat("Анаконда в ярости от света — она идёт ломать факелы! Рядом: %d" % near.size(), Color(1.0, 0.5, 0.25))
 	aggro_cell = best
 	return true
 

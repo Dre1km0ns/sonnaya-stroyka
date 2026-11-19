@@ -61,7 +61,7 @@ func _ready() -> void:
 		inv.add_child(v)
 		_inv_views.append(v)
 	var close_btn := Button.new()
-	close_btn.text = "Закрыть (Esc / Y)"
+	close_btn.text = "Закрыть"
 	close_btn.pressed.connect(close)
 	box.add_child(close_btn)
 	GameState.inventory_changed.connect(_refresh)
@@ -156,7 +156,7 @@ func _refresh() -> void:
 	if not catcher and GameState.is_dream():
 		_hint.text += "\nСундук Сна: закрепи его якорем — при пробуждении содержимое перенесётся в Явь. Иначе вещи вернутся в инвентарь Сна."
 	if catcher:
-		_hint.text = ("Сон: только забрать блоки в инвентарь сна." if GameState.is_dream() else "Явь: положи стопку от %d блоков одного типа — Сон станет длиннее навсегда (один раз на тип)." % GameState.IDEA_THRESHOLD) + " Бонус сна: +%d с из %d" % [int(GameState.dream_bonus_seconds), int(GameState.IDEA_BONUS_CAP)]
+		_hint.text = ("Сон: только забрать блоки в инвентарь сна." if GameState.is_dream() else "Явь: положи стопку от %d блоков одного типа — Сон станет длиннее навсегда, один раз на тип." % GameState.IDEA_THRESHOLD) + " Бонус сна: +%d с из %d" % [int(GameState.dream_bonus_seconds), int(GameState.IDEA_BONUS_CAP)]
 	for i in range(27):
 		var d: Dictionary = slots[i]
 		_store_views[i].set_item(str(d.get("id", "")), int(d.get("count", 0)))

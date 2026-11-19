@@ -133,7 +133,7 @@ static func spawn_near(host: Node3D, cell: Vector3i) -> Node:
 		if cm2.has_method("absorb_trees_near") and not bool(cm2.get("is_dream_layer")):
 			var eaten := int(cm2.call("absorb_trees_near", pos, ARENA_CLEAR_RADIUS))
 			if eaten > 0:
-				GameState.chat("Мать блоков втягивает в себя деревья вокруг (%d) — арена расчищена." % eaten)
+				GameState.chat("Мать блоков втягивает в себя деревья вокруг: %d — арена расчищена." % eaten)
 	var script: GDScript = load("res://scripts/block_mother.gd")
 	var boss: CharacterBody3D = script.new()
 	boss.position = pos
@@ -746,7 +746,7 @@ func _maybe_spawn_minions() -> void:
 		m.velocity = Vector3(cos(a) * 3.0, 4.0, sin(a) * 3.0)
 	attack_log["minion_spawn"] += 1
 	attack_log["minions"] += n
-	GameState.chat("Мать блоков рожает блоклингов (%d)." % n, Color(1.0, 0.75, 0.5))
+	GameState.chat("Мать блоков рожает блоклингов: %d." % n, Color(1.0, 0.75, 0.5))
 
 
 # ---------------------------------------------------------------- переходы, смерть, уход

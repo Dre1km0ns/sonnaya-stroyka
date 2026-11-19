@@ -199,9 +199,9 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE_ELITE if elite else HIT_DAMAGE), "Шовник")
 	var stolen := GameState.steal_resource_hardcore(amount)
 	if stolen.begins_with("dust"):
-		GameState.set_hint("Шовник вырвал осыпь (%s)!" % stolen, false)
+		GameState.set_hint("Шовник вырвал осыпь: %s!" % stolen, false)
 	elif stolen == "reagent":
-		GameState.set_hint("Шовник сорвал реагент (−1)!", false)
+		GameState.set_hint("Шовник сорвал реагент: −1!", false)
 	else:
 		GameState.set_hint("Шовник толкает — карман пуст, но удар есть.", false)
 

@@ -518,6 +518,20 @@ func count_item(id: String) -> int:
 	return raw_count(id)
 
 
+## v0.22: инвентари Яви и Сна раздельные. Палитра Сна (бесплатный материал) ставится ТОЛЬКО из пустого слота 1
+## во Сне — HUD рисует в нём иконку текущего материала с «∞», так что хотбар показывает честно то, что ставится.
+const PALETTE_SLOT := 0
+
+
+func dream_palette_kind() -> String:
+	return dream_material if has_imprint(dream_material) else "drift"
+
+
+func palette_slot_active(index: int = -1) -> bool:
+	var i := selected_slot if index < 0 else index
+	return is_dream() and i == PALETTE_SLOT and str(get_slot(i).get("id", "")) == ""
+
+
 func is_infinite_slot(index: int) -> bool:
 	if not dev_mode or index < 0 or index >= item_slots.size():
 		return false
@@ -552,7 +566,11 @@ func add_item_count(id: String, count: int) -> int:
 			var put := mini(cap - int(s.get("count", 0)), left)
 			s["count"] = int(s.get("count", 0)) + put
 			left -= put
-	for i in range(ITEM_SLOT_COUNT):
+	# v0.22: в инвентаре Сна слот 1 — «рука палитры»: новые предметы занимают его только если больше некуда.
+	var order: Array = range(ITEM_SLOT_COUNT)
+	if is_same(item_slots, inv_dream):
+		order.erase(PALETTE_SLOT); order.append(PALETTE_SLOT)
+	for i in order:
 		if left <= 0:
 			break
 		if str(item_slots[i].get("id", "")) == "":
@@ -908,19 +926,19 @@ func recipe_defs() -> Array:
 		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 6, "item": "workbench", "item_name": "Верстак", "tier": 0},
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent1": 2, "reagent2": 1, "item": "pickaxe", "item_name": "Кирка", "tier": 1},
 		{"id": "torch", "name": "Факел ×4", "count": 4, "where": "workbench", "reagent1": 1, "log": 1, "item": "torch", "item_name": "Факел", "tier": 1},
-		{"id": "sword", "name": "Деревянный меч (8 урона)", "where": "workbench", "reagent1": 3, "reagent2": 1, "item": "sword", "item_name": "Меч", "tier": 1},
+		{"id": "sword", "name": "Деревянный меч · 8 урона", "where": "workbench", "reagent1": 3, "reagent2": 1, "item": "sword", "item_name": "Меч", "tier": 1},
 		{"id": "planks", "name": "Доски ×4", "where": "sawmill", "log": 1, "item": "planks", "item_name": "Доски", "count": 4, "tier": 1},
 		{"id": "bed", "name": "Кровать", "where": "dream", "dust": BED_CRAFT_DUST, "reagent1": BED_CRAFT_R1, "item": "bed", "item_name": "Кровать", "tier": 1},
-		{"id": "heal1", "name": "хилка1 +20 HP (под подушку)", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1", "tier": 1},
+		{"id": "heal1", "name": "Хилка1 +20 HP под подушку", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1", "tier": 1},
 		{"id": "lathe", "name": "Станок", "where": "dream", "reagent3": 5, "reagent2": 2, "dust": 20, "item": "lathe", "item_name": "Станок", "tier": 2},
-		{"id":"sword3","name":"Чешуйчатый меч (24 урона)","where":"lathe","items":{"sword2":1,"anaconda_scale":5},"item":"sword3", "tier": 4},
-		{"id": "sword2", "name": "Каменный меч (14 урона)", "where": "lathe", "items": {"sword": 1, "stone": 6}, "reagent2": 2, "item": "sword2", "item_name": "Меч2", "tier": 2},
-		{"id": "pickaxe2", "name": "Кирка2 (каменная, ×2 скорость)", "where": "lathe", "items": {"pickaxe": 1, "stone": 6}, "reagent2": 1, "item": "pickaxe2", "tier": 2},
+		{"id":"sword3","name":"Чешуйчатый меч · 24 урона","where":"lathe","items":{"sword2":1,"anaconda_scale":5},"item":"sword3", "tier": 4},
+		{"id": "sword2", "name": "Каменный меч · 14 урона", "where": "lathe", "items": {"sword": 1, "stone": 6}, "reagent2": 2, "item": "sword2", "item_name": "Меч2", "tier": 2},
+		{"id": "pickaxe2", "name": "Каменная кирка2 · ×2 скорость", "where": "lathe", "items": {"pickaxe": 1, "stone": 6}, "reagent2": 1, "item": "pickaxe2", "tier": 2},
 		{"id": "sawmill", "name": "Лесопилка", "where": "dream", "reagent1": 4, "reagent2": 3, "reagent3": 2, "item": "sawmill", "tier": 1},
 		{"id": "door", "name": "Дверь", "where": "sawmill", "items": {"planks": 6}, "item": "door", "tier": 1},
-		{"id": "chest", "name": "Сундук (27 ячеек)", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
+		{"id": "chest", "name": "Сундук · 27 ячеек", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
 		{"id": "alchemy", "name": "Алхимический стол", "where": "dream", "unlock": "mother", "reagent2": 4, "reagent3": 4, "dust": 60, "item": "alchemy", "tier": 3},
-		{"id": "heal2", "name": "Хилка2 (+40 HP)", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
+		{"id": "heal2", "name": "Хилка2 +40 HP", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
 		{"id": "lumen", "name": "Светоблок тёплый ×4", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 10, "item": "lumen", "count": 4, "tier": 4},
 		{"id": "lumen_cold", "name": "Светоблок холодный ×4", "where": "dream", "unlock": "heart_light", "reagent2": 1, "dust": 10, "item": "lumen_cold", "count": 4, "tier": 4},
 		{"id": "lamp", "name": "Светильник ×2", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 16, "item": "lamp", "count": 2, "tier": 4},
@@ -1043,7 +1061,7 @@ func recipe_label(rec: Dictionary) -> String:
 	if int(rec.get("log", 0)) > 0:
 		parts.append("%d бревно" % int(rec.get("log", 0)))
 	var cost := ", ".join(parts) if not parts.is_empty() else "бесплатно"
-	return "%s  (%s)" % [str(rec.get("name", rec.get("id", "?"))), cost]
+	return "%s — %s" % [str(rec.get("name", rec.get("id", "?"))), cost]
 
 
 func spend_typed_reagent(type_id: int, amount: int) -> bool:
@@ -1511,7 +1529,7 @@ func use_heal(id: String="") -> bool:
 	var slot := first_heal_slot(potion) if potion != "" else -1
 	if slot < 0:
 		var hidden := pillow_count("heal1") + pillow_count("heal2")
-		set_hint("Нет лечебных зелий." + (" Под подушкой лежит %d — Y у кровати." % hidden if hidden > 0 else " Свари хилку во Сне (C)."), false)
+		set_hint("Нет лечебных зелий." + (" Под подушкой лежит %d — Y у кровати." % hidden if hidden > 0 else " Свари хилку во Сне на C."), false)
 		return false
 	if not dev_mode:
 		inv_wake[slot].count = int(inv_wake[slot].count) - 1
@@ -1535,7 +1553,7 @@ func heal_status_text() -> String:
 	var n1 := _inv_count(inv_wake, "heal1")
 	var n2 := _inv_count(inv_wake, "heal2")
 	if n1 + n2 <= 0:
-		return "H ▸ нет зелий" + (" (подушка: %d)" % (pillow_count("heal1") + pillow_count("heal2")) if pillow_count("heal1") + pillow_count("heal2") > 0 else "")
+		return "H ▸ нет зелий" + (" · под подушкой %d" % (pillow_count("heal1") + pillow_count("heal2")) if pillow_count("heal1") + pillow_count("heal2") > 0 else "")
 	var pick := choose_heal(PLAYER_MAX_HP - player_hp, n1, n2)
 	if pick == "":
 		return "H ▸ %d×I %d×II" % [n1, n2]
@@ -1786,7 +1804,7 @@ func on_mother_killed() -> void:
 	heart_structure = true
 	unlock_zone("stone_garden")
 	if first:
-		var t := "Сердце структуры: во Сне — массовая постановка (Shift+ЛКМ — ряд из 5), якоря шире на 2, перенос без мутаций, подпорки (C). Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
+		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ЛКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1797,7 +1815,7 @@ func on_anaconda_killed() -> void:
 	heart_light = true
 	unlock_zone("light_garden")
 	if first:
-		var t := "Сердце света: во Сне открыты светоблоки, светильники (C → Светоблок / Светильник) и чешуйчатое оружие на станке."
+		var t := "Сердце света: во Сне открыты светоблоки и светильники в крафте Сна, а также чешуйчатое оружие на станке."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1983,7 +2001,7 @@ func learn_imprint(kind: String, silent: bool = false) -> bool:
 		Sfx.play("dream_imprint", _sfx_host())
 		gain_lucidity(LUCID_IMPRINT, "", true)
 		toast.emit("Отпечаток: %s — теперь бесконечен во Сне" % block_display_name(kind))
-		chat("Новый отпечаток: «%s». Во Сне он бесконечен (T — палитра), копия в Явь стоит 1 штуку. Осознанность +%d." % [block_display_name(kind), int(LUCID_IMPRINT)], Color(0.75, 0.85, 1.0))
+		chat("Новый отпечаток: «%s». Во Сне он бесконечен, палитра — T, копия в Явь стоит 1 штуку. Осознанность +%d." % [block_display_name(kind), int(LUCID_IMPRINT)], Color(0.75, 0.85, 1.0))
 		milestones_mark("imprint")
 	return true
 
@@ -2001,12 +2019,13 @@ func cycle_palette(step: int = 1) -> String:
 	dream_material = pal[posmod((i if i >= 0 else 0) + step, pal.size())]
 	set_hint("Материал Сна: %s%s · T / Shift+T — сменить" % [block_display_name(dream_material), palette_stock_text(dream_material)], false)
 	clarity_changed.emit(clarity, dream_clarity_max())
+	notify_inventory()  # v0.22: слот 1 Сна показывает материал палитры
 	return dream_material
 
 
 func palette_stock_text(kind: String) -> String:
-	if kind == "drift": return " (бесплатно, может мутировать)"
-	return " (в Яви: %d)" % wake_stock(kind)
+	if kind == "drift": return " · бесплатно, может мутировать"
+	return " · в Яви: %d" % wake_stock(kind)
 
 
 func wake_stock(kind: String) -> int:
@@ -2070,14 +2089,14 @@ func select_anchor(t: AnchorType) -> void:
 	anchor_selected.emit(int(t))
 	notify_inventory()
 	# v0.16: якорь — инструмент. Если его нет — подсказываем, сколько стоит один раз скрафтить.
-	var names := ["Гвоздь (1 блок)", "Клин (~%dx%dx%d)" % [WEDGE_SIZE, WEDGE_SIZE, WEDGE_SIZE], "Якорь3 (~%dx%dx%d)" % [ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_SIZE]]
+	var names := ["Гвоздь · 1 блок", "Клин · ~%dx%dx%d" % [WEDGE_SIZE, WEDGE_SIZE, WEDGE_SIZE], "Якорь3 · ~%dx%dx%d" % [ANCHOR3_SIZE, ANCHOR3_SIZE, ANCHOR3_SIZE]]
 	var ids := ["nail", "wedge", "anchor3"]
 	var craft := [NAIL_CRAFT_DUST, WEDGE_CRAFT_DUST, ANCHOR3_CRAFT_DUST]
 	var cost := anchor_cost(int(t))
 	if dev_mode or special_count(ids[int(t)]) > 0:
-		set_hint("Выбран %s. Q — материализовать (%d р. + %d осознанности)." % [names[int(t)], int(cost.reagents), int(cost.clarity)])
+		set_hint("Выбран %s. Q — материализовать: %d р. + %d осознанности." % [names[int(t)], int(cost.reagents), int(cost.clarity)])
 	else:
-		set_hint("%s ещё нет: C — скрафтить один раз (%d осыпи), дальше он твой навсегда." % [names[int(t)], craft[int(t)]])
+		set_hint("%s ещё нет: C — скрафтить один раз за %d осыпи, дальше он твой навсегда." % [names[int(t)], craft[int(t)]])
 
 
 func cycle_anchor(delta: int = 1) -> void:
@@ -2170,7 +2189,7 @@ func try_place_anchor(origin:Vector3i) -> bool:
 		var why:="нет новых блоков в зоне."
 		if not plan.missing.is_empty(): why="не хватает в Яви: "+materials_text(plan.missing)+". Добудь и возвращайся."
 		elif not plan.conflicts.is_empty(): why=str(plan.conflicts[0])
-		elif plan.same>0: why="всё в зоне уже стоит в Яви (%d) — чинить нечего."%plan.same
+		elif plan.same>0: why="всё в зоне уже стоит в Яви: %d — чинить нечего."%plan.same
 		elif plan.skipped>0: why="все %d блоков зоны заняты в Яви чем-то другим."%plan.skipped
 		set_hint("Якорь: "+why,false);return false
 	if not plan.affordable: set_hint("Не хватает реагентов или осознанности для якоря. Осознанность копится в Яви.");return false
@@ -2222,7 +2241,7 @@ func enter_dream() -> void:
 		if inv_dream.size() > 4 and str(inv_dream[4].get("id", "")) == "":
 			inv_dream[4] = {"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}; put = true; notify_inventory()
 		if put or _give_items(inv_dream, [{"id":"workbench","name":ItemDB.display_name("workbench"),"count":1}]).is_empty():
-			if not tutorial_focus(): chat("Во сне ты вспомнил, как выглядит верстак. Поставь его (слот хотбара) и закрепи якорем.", Color(0.75, 0.85, 1.0))
+			if not tutorial_focus(): chat("Во сне ты вспомнил, как выглядит верстак. Поставь его из хотбара и закрепи якорем.", Color(0.75, 0.85, 1.0))
 	if not dream_stash.is_empty():
 		var before := dream_stash.size()
 		dream_stash = _give_items(inv_dream, dream_stash)
@@ -2237,7 +2256,7 @@ func enter_dream() -> void:
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
 	if not tutorial_focus(): # v0.21: во время обучения клавиши вводит только его панель
-		set_hint("Сон помнит всё построенное. ЛКМ — блок (%s), T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
+		set_hint("Сон помнит всё построенное. ЛКМ — блок %s, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
 
 
 func resolve_wake(abort_transfer:bool=false) -> Dictionary:
@@ -2314,9 +2333,9 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	var patched := patch_cracks()
 	result["patched"] = patched
 	result["trial_bonus"] = reward_tested_regions() # v0.19: первая материализация испытанной постройки
-	set_hint("Пробуждение: материализовано %d (копий %d, перенесено объектов %d), мутаций %d%s. Сон сохранил всё построенное."%[transferred,copied,moved_count,mutation.cells.size()," · резерв якорей возвращён" if abort_transfer else ""],false)
+	set_hint("Пробуждение: материализовано %d · копий %d · перенесено объектов %d · мутаций %d%s. Сон сохранил всё построенное."%[transferred,copied,moved_count,mutation.cells.size()," · резерв якорей возвращён" if abort_transfer else ""],false)
 	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
-		chat("Под подушкой лежат зелья (%d). Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
+		chat("Под подушкой лежат зелья: %d. Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
 	return result
 
 
@@ -2385,7 +2404,7 @@ func reward_kill(is_boss: bool = false, who: String = "") -> int:
 		var mult := kill_fatigue_mult()
 		amount = maxi(1, roundi(float(randi_range(DUST_PER_KILL_MIN,DUST_PER_KILL_MAX)) * mult))
 		if mult < 0.99:
-			note = " (фарм: ×%.1f)" % mult
+			note = " · фарм ×%.1f" % mult
 		kill_log.append(_clock)
 	if not dev_mode:
 		add_item_count("dust", amount)
@@ -2946,7 +2965,7 @@ func catcher_eat(c: Vector3i) -> int:
 			bonus += seconds
 			slots[i] = {}
 	if bonus > 0:
-		set_hint("Ловец идей: +%d с сна навсегда! (итого +%d из %d)" % [roundi(bonus), roundi(dream_bonus_seconds), int(IDEA_BONUS_CAP)])
+		set_hint("Ловец идей: +%d с сна навсегда! Итого +%d из %d" % [roundi(bonus), roundi(dream_bonus_seconds), int(IDEA_BONUS_CAP)])
 	return roundi(bonus)
 
 
@@ -3462,7 +3481,7 @@ func save_blueprint() -> bool:
 	blueprints.append(bp)
 	blueprint_shown = blueprints.size() - 1
 	milestones_mark("archive")
-	set_hint("Архив Снов: «%s» (%d блоков, %d×%d×%d). P — вставить, O — повернуть, N — следующий." % [bp.name, cells.size(), bp["size"][0], bp["size"][1], bp["size"][2]], false)
+	set_hint("Архив Снов: «%s» · %d блоков · %d×%d×%d. P — вставить, O — повернуть, N — следующий." % [bp.name, cells.size(), bp["size"][0], bp["size"][1], bp["size"][2]], false)
 	objective_changed.emit()
 	return true
 
@@ -3656,7 +3675,7 @@ func dream_undo() -> int:
 	if _touches_anchor(op.after):
 		set_hint("Отмена задела бы закреплённые блоки — сначала сними якоря.", false); return 0
 	_undo.pop_back(); _apply_snap(op.before); _redo.append(op)
-	set_hint("Отменено: %s (%d) · Z — ещё, U — вернуть" % [op.label, op.before.size()], false)
+	set_hint("Отменено: %s · %d · Z — ещё, U — вернуть" % [op.label, op.before.size()], false)
 	return op.before.size()
 
 
@@ -3667,7 +3686,7 @@ func dream_redo() -> int:
 	if _touches_anchor(op.before):
 		set_hint("Возврат задел бы закреплённые блоки — сначала сними якоря.", false); return 0
 	_redo.pop_back(); _apply_snap(op.after); _undo.append(op)
-	set_hint("Возвращено: %s (%d)" % [op.label, op.after.size()], false)
+	set_hint("Возвращено: %s · %d" % [op.label, op.after.size()], false)
 	return op.after.size()
 
 
@@ -3722,11 +3741,11 @@ func dream_tool_remove(cell: Vector3i) -> Array:
 func frame_mark(c: Vector3i) -> int:
 	if frame_points != 1:
 		frame_a = c; frame_points = 1
-		set_hint("Рамка: угол A [%d,%d,%d]. K — угол B." % [c.x, c.y, c.z], false)
+		set_hint("Рамка: угол A. K — угол B.", false)
 	else:
 		frame_b = c; frame_points = 2
 		var n := frame_volume()
-		set_hint("Рамка %s (%d клеток). L — залить «%s», Shift+L — очистить, B — в чертёж, K — заново." % [frame_dims_text(), n, block_display_name(dream_material)], false)
+		set_hint("Рамка %s · %d клеток. L — залить «%s», Shift+L — очистить, B — в чертёж, K — заново." % [frame_dims_text(), n, block_display_name(dream_material)], false)
 	return frame_points
 
 
@@ -3764,7 +3783,7 @@ func tool_cost(n: int) -> float:
 func _tool_pay(n: int, what: String) -> bool:
 	var cost := tool_cost(n)
 	if cost > 0.0 and not spend_clarity(cost):
-		set_hint("%s: нужно %d осознанности (есть %d). Её дают дела в Яви." % [what, int(cost), int(clarity)], false)
+		set_hint("%s: нужно %d осознанности, есть %d. Её дают дела в Яви." % [what, int(cost), int(clarity)], false)
 		return false
 	return true
 
@@ -3821,14 +3840,14 @@ func dream_clear() -> int:
 		if d.is_empty(): continue
 		if d.has("root") or not _palette_kind(str(d.get("kind", ""))) or d.get("anchored", false): skipped += 1; continue
 		cells.append(c)
-	if cells.is_empty(): set_hint("В рамке нечего очищать (станции и закреплённое не трогаю).", false); return 0
+	if cells.is_empty(): set_hint("В рамке нечего очищать.", false); return 0
 	if not _tool_pay(cells.size(), "Очистка"): return 0
 	var before := _dream_snap(cells)
 	for c in cells: dream_blocks.erase(c)
 	_push_edit("очистка", before, _dream_snap(cells))
 	placed_cells_changed.emit(true, cells)
 	last_tool = {"op": "clear", "n": cells.size(), "cost": tool_cost(cells.size()), "skipped": skipped}
-	set_hint("Очищено %d%s. Z — отменить." % [cells.size(), (" · пропущено %d (станции/якоря)" % skipped) if skipped > 0 else ""], false)
+	set_hint("Очищено %d%s. Z — отменить." % [cells.size(), (" · пропущено станций и якорей: %d" % skipped) if skipped > 0 else ""], false)
 	return cells.size()
 
 
@@ -3997,7 +4016,7 @@ func nightmare_tick() -> Dictionary:
 	if not eaten.is_empty():
 		placed_cells_changed.emit(true, eaten)
 		Sfx.play("dream_nightmare", _sfx_host())
-		chat("Кошмары сгрызли %d блоков дрейфа у трещин (%d). Свет и маяк во Сне защищают; настоящие материалы кошмарам не по зубам." % [eaten.size(), dream_cracks.size()], Color(1.0, 0.6, 0.55))
+		chat("Кошмары сгрызли %d блоков дрейфа у трещин: %d. Свет и маяк во Сне защищают; настоящие материалы кошмарам не по зубам." % [eaten.size(), dream_cracks.size()], Color(1.0, 0.6, 0.55))
 	cracks_changed.emit()
 	last_nightmare = {"eaten": eaten.size(), "guarded": guarded, "cracks": dream_cracks.size()}
 	return last_nightmare
@@ -4056,12 +4075,12 @@ func ensure_request() -> Dictionary:
 func request_text() -> String:
 	if dream_request.is_empty(): return ""
 	var have := _inv_count(inv_wake, str(dream_request.kind))
-	return "Просьба Сна: %d × %s (в Яви: %d)%s" % [int(dream_request.n), block_display_name(str(dream_request.kind)), have, " — J во Сне, чтобы отдать" if have >= int(dream_request.n) else ""]
+	return "Просьба Сна: %d × %s · в Яви %d%s" % [int(dream_request.n), block_display_name(str(dream_request.kind)), have, " — J во Сне, чтобы отдать" if have >= int(dream_request.n) else ""]
 
 
 func offer_request() -> bool:
 	if not is_dream():
-		set_hint("Просьбу Сна исполняют во Сне (J).", false); return false
+		set_hint("Просьбу Сна исполняют во Сне клавишей J.", false); return false
 	ensure_request()
 	var kind := str(dream_request.kind); var n := int(dream_request.n)
 	if _inv_count(inv_wake, kind) < n:
@@ -4074,7 +4093,7 @@ func offer_request() -> bool:
 	gain_lucidity(LUCID_REQUEST, "просьба Сна")
 	milestones_mark("dream_request")
 	ensure_request()
-	var extra := " Архив Снов: +1 слот (%d)." % blueprint_cap() if blueprint_cap() > cap_before else ""
+	var extra := " Архив Снов: +1 слот, всего %d." % blueprint_cap() if blueprint_cap() > cap_before else ""
 	chat("Сон принял %d × %s: осознанность +%d.%s Новая просьба: %d × %s." % [n, block_display_name(kind), int(LUCID_REQUEST), extra, int(dream_request.n), block_display_name(str(dream_request.kind))], Color(0.85, 0.75, 1.0))
 	notify_inventory(); objective_changed.emit()
 	return true
@@ -4126,7 +4145,7 @@ func run_trial() -> Dictionary:
 	if not is_dream():
 		set_hint("Испытание проводят во Сне.", false); return {}
 	if not frame_complete():
-		set_hint("Испытание: сначала рамка вокруг постройки (K, K), затем M.", false); return {}
+		set_hint("Испытание: сначала рамка вокруг постройки — K, K, затем M.", false); return {}
 	var box := frame_box(); var lo: Vector3i = box[0]; var hi: Vector3i = box[1]
 	if (hi - lo).x > 40 or (hi - lo).z > 40:
 		set_hint("Испытание: рамка не шире 41×41.", false); return {}
@@ -4144,7 +4163,7 @@ func run_trial() -> Dictionary:
 	if r.held:
 		set_hint("Испытание: постройка выдержала! Оценка %s. Фантомов %d, сожжено светом %d, прогрызено дрейфа %d.%s Материализуй её — бонус +%d осознанности." % [r.grade, r.phantoms, r.burned, r.broken.size(), (" Функции: " + ", ".join(fn) + ".") if not fn.is_empty() else "", int(DREAM_TRIAL.GRADE_BONUS.get(r.grade, 0))], false)
 	else:
-		set_hint("Испытание провалено: к сердцу прорвалось %d из %d фантомов (оценка %s). Красным — где прогрызли дрейф. Закрой щели, подними стены до 2 блоков, поставь свет." % [r.breaches, r.phantoms, r.grade], false)
+		set_hint("Испытание провалено: к сердцу прорвалось %d из %d фантомов, оценка %s. Красным — где прогрызли дрейф. Закрой щели, подними стены до 2 блоков, поставь свет." % [r.breaches, r.phantoms, r.grade], false)
 	tutorial_event("trial")
 	trial_finished.emit(r)
 	objective_changed.emit()
@@ -4176,7 +4195,7 @@ func reward_tested_regions() -> float:
 			total += b
 			gain_lucidity(b, "испытанная постройка")
 			milestones_mark("trial_built")
-			chat("Испытанная постройка (оценка %s) материализована: осознанность +%d." % [t.grade, int(b)], Color(0.85, 0.75, 1.0))
+			chat("Испытанная постройка с оценкой %s материализована: осознанность +%d." % [t.grade, int(b)], Color(0.85, 0.75, 1.0))
 	return total
 
 
@@ -4195,7 +4214,7 @@ signal tutorial_changed
 
 const TUTORIAL := [
 	{"id": "fly", "title": "Лети", "how": "Во Сне ты летаешь. Пробел — вверх, Ctrl — вниз, WASD — вперёд и вбок. Отлети на 8 блоков."},
-	{"id": "build", "title": "Поставь 5 блоков", "how": "Пустая рука (слот 1) ставит блок дрейфа — он бесплатный. ЛКМ — поставить, ПКМ — снять. Поставь 5 блоков."},
+	{"id": "build", "title": "Поставь 5 блоков", "how": "Слот 1 ставит блок дрейфа — он бесплатный. ПКМ — поставить, ЛКМ — снять. Поставь 5 блоков."},
 	{"id": "frame", "title": "Рамка и заливка", "how": "Наведись на блок: K — первый угол рамки, ещё раз K — второй угол. Потом L — залить рамку целиком."},
 	{"id": "trial", "title": "Испытай фантомами", "how": "M — испытание: фантомы атакуют копию постройки в рамке. Дыры и дрейф — слабые места. Сон не пострадает."},
 	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ЛКМ — поставить его."},
