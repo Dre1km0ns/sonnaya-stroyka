@@ -227,12 +227,12 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	player.velocity += Vector3(push.x, 0.3, push.z).normalized() * KNOCKBACK
 	GameState.hit_from(global_position)
 	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE), kind_name())
-	var stolen := GameState.steal_resource_hardcore(1)
+	var stolen := GameState.try_steal(1)
 	if stolen.begins_with("dust"):
 		GameState.set_hint("%s выхватил осыпь!" % kind_name(), false)
 	elif stolen.begins_with("reagent"):
 		GameState.set_hint("%s сорвал реагент!" % kind_name(), false)
-	else:
+	elif stolen != "miss":
 		GameState.set_hint("%s толкает — карман пуст." % kind_name(), false)
 
 

@@ -29,16 +29,16 @@ func show_result(result:Dictionary,switcher:Node)->void:
 	if result.ok:
 		title.text="Черновик сна сохранён" if result.get("aborted",false) else "Пробуждение · результат переноса"
 		var spent:Dictionary=result.get("spent",{})
-		details.text="Материализовано: %d (копий %d · перенесено объектов %d)\nМутаций дрейфа: %d / максимум %d · Осыпь: +%d\nПотрачено: якорей применено %d · %d реагентов · %.0f осознанности\n"%[result.transferred,result.get("copied",0),result.get("moved",0),result.mutations,result.get("cap",0),result.dust,spent.get("anchors",0),spent.get("reagents",0),spent.get("clarity",0)]
+		details.text="Материализовано: %d · копий %d · перенесено объектов %d\nМутаций дрейфа: %d / максимум %d · Осыпь: +%d\nПотрачено: якорей применено %d · %d реагентов · %.0f осознанности\n"%[result.transferred,result.get("copied",0),result.get("moved",0),result.mutations,result.get("cap",0),result.dust,spent.get("anchors",0),spent.get("reagents",0),spent.get("clarity",0)]
 		if not result.get("materials",{}).is_empty(): details.text+="Материалы Яви: %s\n"%GameState.materials_text(result.materials)
 		if int(result.get("unpaid",0))>0: details.text+="Не хватило материалов: %d блоков остались только во Сне.\n"%int(result.unpaid)
-		if not result.get("aborted",false): details.text+="Оригиналы остались во Сне (%d объектов) — Сон помнит.\n"%int(result.get("kept_in_dream",0))
+		if not result.get("aborted",false): details.text+="Оригиналы остались во Сне: %d объектов — Сон помнит.\n"%int(result.get("kept_in_dream",0))
 		if result.get("aborted",false): details.text+="%d объектов осталось во Сне. Якоря отменены, резерв возвращён.\n"%result.get("draft_saved",0)
 		else:
-			details.text+="Бросок мутации 7%% на каждый блок дрейфа (отпечатки стабильны); общий предел — 3%% структуры.\nМаяки защитили: %d (+5 осыпи за каждый предотвращённый бросок)."%result.get("protected",0)
+			details.text+="Бросок мутации 7%% на каждый блок дрейфа, отпечатки стабильны; общий предел — 3%% структуры.\nМаяки защитили: %d · +5 осыпи за каждый предотвращённый бросок."%result.get("protected",0)
 			if int(result.get("chest_moved",0))>0: details.text+="\nСундуки перенесли в Явь стаков: %d."%int(result.chest_moved)
 			if int(result.get("chest_returned",0))>0: details.text+="\nВ Яви место сундука было занято — %d стаков вернулись в инвентарь Сна."%int(result.chest_returned)
-			if int(result.transferred)==0: details.text+="\nНичего не материализовано — постройки ждут во Сне. Закрепи их якорем (Q), когда будут материалы."
+			if int(result.transferred)==0: details.text+="\nНичего не материализовано — постройки ждут во Сне. Закрепи их якорем на Q, когда будут материалы."
 		_button("Продолжить · Esc / Y",close)
 	else:
 		title.text="Перенос остановлен — ничего не потеряно" if result.get("ready",true) else "Проверяем рельеф Яви…"

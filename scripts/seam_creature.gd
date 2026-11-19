@@ -197,12 +197,12 @@ func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
 	# v0.7: мобы бьют игрока (i-frames и анти-комбо-кап — в GameState.damage_player).
 	GameState.hit_from(global_position)
 	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE_ELITE if elite else HIT_DAMAGE), "Шовник")
-	var stolen := GameState.steal_resource_hardcore(amount)
+	var stolen := GameState.try_steal(amount)
 	if stolen.begins_with("dust"):
 		GameState.set_hint("Шовник вырвал осыпь: %s!" % stolen, false)
 	elif stolen == "reagent":
 		GameState.set_hint("Шовник сорвал реагент: −1!", false)
-	else:
+	elif stolen != "miss":
 		GameState.set_hint("Шовник толкает — карман пуст, но удар есть.", false)
 
 

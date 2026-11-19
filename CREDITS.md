@@ -18,3 +18,10 @@ License: CC0 1.0 Universal / public domain — https://creativecommons.org/publi
 Original download: https://static.poly.pizza/16c02d69-21ae-49c2-bed1-6325570e356a.glb
 Original local file: assets/models/kenney/wooden_door.glb (unchanged; 240 triangles).
 Adaptation: coordinate/scale fit to one block wide and two blocks tall, 0.16-thick leaf; original beveled panels, both faces, hinges, handle and palette UV retained. Nearest filtering and brightness adaptation. Inventory icon rendered from this same model. No stretched plank atlas on the door.
+
+## Руки от первого лица (v0.22) — Kenney Blocky Characters 2.0
+Source: https://kenney.nl/assets/blocky-characters
+Author: Kenney — https://kenney.nl/
+License: CC0 1.0 Universal / public domain — https://creativecommons.org/publicdomain/zero/1.0/ (копия: assets/models/kenney_blocky/License.txt)
+Local files: assets/models/kenney_blocky/character-a.glb, Textures/texture-a.png (unchanged).
+Usage: только правая рука модели, видна от первого лица; клипы модели holding-right, attack-melee-right, interact-right. Ходьба, прыжок и засыпание — процедурное движение той же руки. Вида от третьего лица в игре нет.

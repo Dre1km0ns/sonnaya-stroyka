@@ -25,7 +25,7 @@ const ENTITY_MAX := 6
 
 ## v0.6: переназначаемое управление. [action, подпись, тип ("key"/"mouse"), код по умолчанию]
 ## v0.20: заголовки разделов в меню управления — раздел начинается с указанного действия.
-const SECTIONS := {"move_forward": "Движение", "place_block": "Действия и Явь", "dream_palette": "Сон — главный мир: проектирование, якоря, испытание", "toggle_debug": "Прочее", "hotbar_1": "Хотбар"}
+const SECTIONS := {"move_forward": "Движение", "attack_break": "Действия и Явь", "dream_palette": "Сон — главный мир: проектирование, якоря, испытание", "toggle_debug": "Прочее", "hotbar_1": "Хотбар"}
 
 const BINDABLE := [
 	["move_forward", "Вперёд", "key", KEY_W],
@@ -36,8 +36,8 @@ const BINDABLE := [
 	["sprint", "Бег", "key", KEY_SHIFT],
 	["fly_down", "Вниз в полёте", "key", KEY_CTRL],
 	["toggle_fly", "Полёт во сне", "key", KEY_V],
-	["place_block", "Удар / поставить / использовать", "mouse", MOUSE_BUTTON_LEFT],
-	["remove_block", "Снять блок / копать", "mouse", MOUSE_BUTTON_RIGHT],
+	["attack_break", "Удар / сломать блок", "mouse", MOUSE_BUTTON_LEFT],
+	["use_place", "Использовать / поставить", "mouse", MOUSE_BUTTON_RIGHT],
 	["interact", "Взаимодействие: кровать — сон, верстак, станок", "key", KEY_E],
 	["open_inventory", "Инвентарь", "key", KEY_I],
 	["use_heal", "Лечение: само выберет зелье", "key", KEY_H],

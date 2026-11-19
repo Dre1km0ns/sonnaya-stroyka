@@ -45,15 +45,17 @@ const WEDGE_COST_CLARITY := 12.0
 const WEDGE_SIZE := 5
 const ANCHOR3_SIZE := 9
 const DUST_PER_BLOCK := 1
-const NAIL_CRAFT_DUST := 10
-const WEDGE_CRAFT_DUST := 60
-const ANCHOR3_CRAFT_DUST := 180
-const BEACON_CRAFT_DUST := 30
-const BED_CRAFT_DUST := 40
+const NAIL_CRAFT_DUST := 8       # v0.22: было 10
+const WEDGE_CRAFT_DUST := 40     # v0.22: было 60
+const ANCHOR3_CRAFT_DUST := 90   # v0.22: было 180 (≈25+ убийств), теперь ≈8
+const BEACON_CRAFT_DUST := 20    # v0.22: было 30
+const BED_CRAFT_DUST := 30       # v0.22: было 40
 const BED_CRAFT_R1 := 3
 ## Осыпь за убийство моба = 1/5 стоимости клина; босс «Мать блоков» даёт стоимость Якоря3.
-const DUST_PER_KILL_MIN := 5
-const DUST_PER_KILL_MAX := 8
+const DUST_PER_KILL_MIN := 8     # v0.22: было 5
+const DUST_PER_KILL_MAX := 14    # v0.22: было 8
+## v0.22: воры осыпи (шовники, призраки) крадут не при каждом ударе, а с шансом.
+const DUST_STEAL_CHANCE := 0.35
 const DUST_PER_BOSS_KILL := 200
 const DUST_PER_ANACONDA_KILL := 300
 # --- v0.16: Сон — главный мир (DREAM_CORE_PLAN.md) ---
@@ -71,8 +73,8 @@ const IMPRINT_KINDS: Array[String] = ["dirt","ground","hill","sand","stone","dee
 const UNIQUE_KINDS: Array[String] = ["workbench","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","beacon"]
 ## v0.11: усталость от фарма обычных мобов: −12% за каждое убийство за последние 240 с, минимум 20%.
 const KILL_FATIGUE_WINDOW := 240.0
-const KILL_FATIGUE_STEP := 0.12
-const KILL_FATIGUE_MIN := 0.2
+const KILL_FATIGUE_STEP := 0.08   # v0.22: было 0.12
+const KILL_FATIGUE_MIN := 0.4    # v0.22: было 0.2 (фарм давал 1–2 осыпи)
 ## v0.11: стартовые ресурсы и Ловец идей.
 const START_REAGENT1 := 4
 const IDEA_THRESHOLD := 50
@@ -124,7 +126,7 @@ var pouch: Dictionary = {"reagent1": 0, "reagent2": 0, "reagent3": 0, "dust": 0}
 const PILLOW_SIZE := 27
 var pillow: Array = []
 ## Хилки: «хилка1» = 50 осыпи, +20 HP, кулдаун 15 с.
-const HEAL1_DUST := 35
+const HEAL1_DUST := 25 # v0.22: было 35
 const HEAL1_AMOUNT := 20
 const HEAL_COOLDOWN := 15.0
 var heal_cd: float = 0.0
@@ -188,6 +190,29 @@ var dream_blocks: Dictionary = {}
 var imprints: Dictionary = {}          # v0.16: kind -> true
 var dream_material := "drift"          # v0.16: текущий материал палитры Сна
 var night_awake := 0.0                 # v0.16: секунд текущей ночи, проведённых в Яви
+## v0.22: пока игрок во Сне, время Яви идёт ×4 (1 с во Сне = 4 с в Яви) — сон проматывает ночь.
+const DREAM_WAKE_TIME_SCALE := 4.0
+var dream_time_scale := DREAM_WAKE_TIME_SCALE
+var night_dreamt := 0.0                # секунд Яви этой ночи, прошедших, пока игрок спал во Сне
+var wake_time_skipped := 0.0           # сколько секунд Яви «промотал» последний сон
+
+func wake_time_scale() -> float:
+	return dream_time_scale if is_dream() else 1.0
+
+
+func advance_wake_clock(delta: float) -> float:
+	## Возвращает, на сколько секунд сдвинуть часы Яви за кадр.
+	var scaled := delta * wake_time_scale()
+	if is_dream():
+		wake_time_skipped += scaled
+		if is_night():
+			night_dreamt += scaled
+	return scaled
+
+
+func night_counts() -> bool:
+	## Проспанная ночь не засчитывается: в Яви ≥ 60 с и не меньше, чем проспано во Сне.
+	return night_awake >= LUCID_NIGHT_AWAKE_MIN and night_dreamt <= night_awake
 var nights_survived := 0
 var _loading_save := false
 var last_lucid_gain := {"amount": 0.0, "why": ""}
@@ -937,13 +962,13 @@ func recipe_defs() -> Array:
 		{"id": "sawmill", "name": "Лесопилка", "where": "dream", "reagent1": 4, "reagent2": 3, "reagent3": 2, "item": "sawmill", "tier": 1},
 		{"id": "door", "name": "Дверь", "where": "sawmill", "items": {"planks": 6}, "item": "door", "tier": 1},
 		{"id": "chest", "name": "Сундук · 27 ячеек", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
-		{"id": "alchemy", "name": "Алхимический стол", "where": "dream", "unlock": "mother", "reagent2": 4, "reagent3": 4, "dust": 60, "item": "alchemy", "tier": 3},
+		{"id": "alchemy", "name": "Алхимический стол", "where": "dream", "unlock": "mother", "reagent2": 4, "reagent3": 4, "dust": 40, "item": "alchemy", "tier": 3},
 		{"id": "heal2", "name": "Хилка2 +40 HP", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
 		{"id": "lumen", "name": "Светоблок тёплый ×4", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 10, "item": "lumen", "count": 4, "tier": 4},
 		{"id": "lumen_cold", "name": "Светоблок холодный ×4", "where": "dream", "unlock": "heart_light", "reagent2": 1, "dust": 10, "item": "lumen_cold", "count": 4, "tier": 4},
 		{"id": "lamp", "name": "Светильник ×2", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 16, "item": "lamp", "count": 2, "tier": 4},
 		{"id": "strut", "name": "Подпорка ×4", "where": "dream", "unlock": "heart_structure", "reagent3": 1, "dust": 8, "item": "strut", "count": 4, "tier": 4},
-		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 150, "item": "idea_catcher", "tier": 3},
+		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 100, "item": "idea_catcher", "tier": 3},
 	]
 	for tier in ["wood","scale"]:
 		for i in range(4):
@@ -1835,7 +1860,7 @@ func on_mother_killed() -> void:
 	heart_structure = true
 	unlock_zone("stone_garden")
 	if first:
-		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ЛКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
+		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ПКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -2011,13 +2036,17 @@ var _lucid_emit_t := 0.0
 func _on_night_edge(now_night: bool) -> void:
 	if now_night:
 		night_awake = 0.0
+		night_dreamt = 0.0
 		return
 	nightmare_tick() # v0.18: на рассвете кошмары грызут дрейф у трещин
-	if night_awake >= LUCID_NIGHT_AWAKE_MIN:
+	if night_counts():
 		nights_survived += 1
 		gain_lucidity(LUCID_NIGHT, "ночь пережита в Яви")
 		chat("Ночь пережита. Сон стал яснее: осознанность +%d." % int(LUCID_NIGHT), Color(0.75, 0.85, 1.0))
+	elif night_dreamt > night_awake:
+		chat("Ночь проспана во Сне — осознанность за неё не даётся.", Color(0.7, 0.75, 0.9))
 	night_awake = 0.0
+	night_dreamt = 0.0
 
 
 func has_imprint(kind: String) -> bool:
@@ -2262,6 +2291,7 @@ func cancel_anchors() -> Dictionary:
 
 func enter_dream() -> void:
 	current_world = World.DREAM
+	wake_time_skipped = 0.0
 	_bind_inventory()
 	_dream_session_blocks = 0
 	if not starter_kit_given:
@@ -2287,7 +2317,7 @@ func enter_dream() -> void:
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
 	if not tutorial_focus(): # v0.21: во время обучения клавиши вводит только его панель
-		set_hint("Сон помнит всё построенное. ЛКМ — блок %s, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
+		set_hint("Сон помнит всё построенное. ПКМ — блок %s, ЛКМ — снять, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
 
 
 func resolve_wake(abort_transfer:bool=false) -> Dictionary:
@@ -2359,6 +2389,8 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	current_world=World.WAKE;_bind_inventory();dream_exit_count+=1 # v0.16: осознанность не сбрасывается
 	clear_dream_history();paste_origin_set=false # v0.17: история правок Сна живёт в пределах одного сна
 	clarity_changed.emit(clarity,dream_clarity_max());notify_inventory();world_changed.emit(false)
+	if wake_time_skipped >= 60.0:
+		chat("Пока ты спал, в Яви прошло %d ч — сейчас %s." % [roundi(wake_time_skipped / 60.0), clock_text(day_time)], Color(0.75, 0.85, 1.0))
 	wake_resolved.emit(transferred,dust_gained,mutation.cells.size());last_transfer_apply_usec=Time.get_ticks_usec()-started
 	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0,"kept_in_dream":root_count-moved_count,"copied":copied,"moved":moved_count,"materials":materials_spent,"unpaid":unpaid_count,"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
 	var patched := patch_cracks()
@@ -2395,6 +2427,18 @@ func remove_dream_block(cell: Vector3i) -> bool:
 		if idx >= 0:
 			cells.remove_at(idx)
 	return true
+
+
+var steal_rolls := 0
+var steal_hits := 0
+
+func try_steal(amount: int = 1) -> String:
+	## v0.22: удар вора крадёт только с шансом DUST_STEAL_CHANCE (раньше — каждый удар).
+	steal_rolls += 1
+	if randf() >= DUST_STEAL_CHANCE:
+		return "miss"
+	steal_hits += 1
+	return steal_resource_hardcore(amount)
 
 
 func steal_resource_hardcore(amount: int = 1) -> String:
@@ -4248,7 +4292,7 @@ const TUTORIAL := [
 	{"id": "build", "title": "Поставь 5 блоков", "how": "Слот 1 ставит блок дрейфа — он бесплатный. ПКМ — поставить, ЛКМ — снять. Поставь 5 блоков."},
 	{"id": "frame", "title": "Рамка и заливка", "how": "Наведись на блок: K — первый угол рамки, ещё раз K — второй угол. Потом L — залить рамку целиком."},
 	{"id": "trial", "title": "Испытай фантомами", "how": "M — испытание: фантомы атакуют копию постройки в рамке. Дыры и дрейф — слабые места. Сон не пострадает."},
-	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ЛКМ — поставить его."},
+	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ПКМ — поставить его."},
 	{"id": "anchor", "title": "Закрепи якорем", "how": "Наведись на верстак и нажми Q — закрепить его якорем. Реагенты на первый якорь Сон подарил."},
 	{"id": "wake", "title": "Проснись", "how": "F — проснуться. Закреплённый верстак появится в Яви копией, а оригинал останется во Сне."},
 ]

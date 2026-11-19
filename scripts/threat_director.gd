@@ -65,8 +65,15 @@ func setup(p: CharacterBody3D, wake: Node3D, bed_node: Node3D) -> void:
 	_ensure_all_spawns()
 
 
+const DAY_WAKE_CAP := 6
+const WAKE_SPAWN_GRACE := 8.0  # v0.22: после пробуждения (время промотано ×4) — передышка без нового спавна
+
 func _on_player_woke(_t: int, _d: int, _m: int) -> void:
 	_ensure_all_spawns()
+	_next_spawn_at = maxf(_next_spawn_at, awake_time + WAKE_SPAWN_GRACE)
+	# ночь кончилась, пока спал — лишние «ночные» шовники уходят, дневной предел честный
+	if not GameState.is_night() and GameState.wake_time_skipped > 0.0:
+		_cull_to_cap(DAY_WAKE_CAP)
 
 
 func mobs_can_spawn() -> bool:
@@ -194,7 +201,7 @@ func _warn_nests(chunks: Node) -> void:
 		GameState.chat("Гнездо Анаконды рядом. Ночью она выйдет к тому, кто подойдёт к яйцу ближе 12 м. Меч бесполезен — её жгут только ПОСТАВЛЕННЫЕ факелы, лучше 2–3 с разных сторон. Её тело ломает факелы — бери запас.", Color(1.0, 0.7, 0.35))
 
 
-func _cull_to_cap() -> int:
+func _cull_to_cap(cap: int = -1) -> int:
 	## Босс появился — лишние обычные враги (самые дальние) рассеиваются.
 	var all: Array = []
 	for e in get_tree().get_nodes_in_group("seam_creature"):
@@ -203,7 +210,7 @@ func _cull_to_cap() -> int:
 	for g in get_tree().get_nodes_in_group("enemy_ghost"):
 		if not g.is_queued_for_deletion():
 			all.append(g)
-	var extra := all.size() - BOSS_ENEMY_CAP
+	var extra := all.size() - (BOSS_ENEMY_CAP if cap < 0 else cap)
 	if extra <= 0:
 		return 0
 	var ppos := player.global_position if player else Vector3.ZERO

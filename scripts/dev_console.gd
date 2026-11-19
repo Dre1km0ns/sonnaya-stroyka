@@ -58,6 +58,16 @@ const COMMAND_HELP := {
 "mirror":"Зеркало Сна (X): переключить ось у игрока или выключить. Пример: mirror; mirror off",
 "dreamdecor":"Декор Сна v0.21: острова, флора на земле (кристаллы, кочки, пятна света), пылинки. status — счётчики; rebuild — пересобрать флору вокруг; island — телепорт на ближайший остров (острова закреплены в мире, на них можно встать, текстуры как у земли Сна); home — на точку старта лицом к острову старта (он всегда виден из начала игры); off/on — спрятать/показать весь декор (для сравнения и замера FPS). Пример: dreamdecor; dreamdecor rebuild; dreamdecor home; dreamdecor off",
 "bosscam":"Камера боя v0.21: у боссов FOV шире (до +10°), вплотную Мать блоков полупрозрачная. on/off — включить/выключить, status — текущие FOV и прозрачность. Пример: bosscam; bosscam off; bosscam on",
+"economy":"Экономика осыпи v0.22: цены крафта, осыпь за убийство, усталость фарма, шанс кражи воров. Пример: economy; economy steal 1000",
+"fall":"Урон от падения v0.22: 3 блока бесплатно, дальше 5 HP за блок, в воду без урона. status, on/off, test N — сколько снимет падение с N блоков. Пример: fall; fall test 8; fall off",
+"torch":"Опора факелов v0.22: факел держится на верхней грани или на стене, на факел и на потолок нельзя; без опоры падает предметом. status — факелы без опоры, drop — уронить их. Пример: torch; torch drop",
+"frameclear":"Очистить рамку Сна целиком, любой размер, бесплатно; Z отменяет. Пример: frame here 10; frameclear",
+"timeskip":"Время Яви во Сне v0.22: 1 с во Сне = N с в Яви, по умолчанию 4. Проспанная ночь не даёт +25 осознанности. status, x N — множитель 1–16, night — счётчики ночи. Пример: timeskip; timeskip x 8; timeskip night",
+"dayspawn":"Дневной спавн v0.22: днём мобов на 75 % меньше — интервал ×4, призраки возрождаются ×4 дольше. Пример: dayspawn",
+"knockback":"Откидывание мобов от удара v0.22: сила по оружию, боссов не откидывает; отдача руки. status, on/off. Пример: knockback; knockback off",
+"aggro":"Агрессия Анаконды на факелы v0.22: больше 3 факелов рядом — она злится и ломает их; стана от света нет. Пример: aggro",
+"arms":"Руки от первого лица v0.22, модель Kenney Blocky Characters CC0. status, play attack|break|place|use|jump|sleep|wake. Пример: arms; arms play attack",
+"mouse":"Кнопки мыши v0.22: ЛКМ — удар и сломать, ПКМ — использовать и поставить; переназначаются в настройках. Пример: mouse",
 "hudfocus":"Фокус HUD обучения v0.21: что сейчас скрыто (цели, якорная панель, колонка Гвоздь/Клин/Якорь3/Маяк, цена якоря). Пример: hudfocus",
 }
 var history: Array[String] = []
@@ -169,6 +179,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 			all.append("fill "+id)
 			all.append("hardness "+id)
 	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","dreamdecor island","dreamdecor home","hudfocus","bosscam","bosscam on","bosscam off","bosscam status"]: all.append(command)
+	for command in ["economy","economy steal ","fall","fall status","fall on","fall off","fall test ","torch","torch status","torch drop","frameclear","timeskip","timeskip status","timeskip x ","timeskip night","dayspawn","knockback","knockback status","knockback on","knockback off","aggro","arms","arms status","arms play attack","arms play break","arms play place","arms play use","arms play jump","arms play sleep","arms play wake","mouse"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -553,7 +564,91 @@ func _v010_command(a: PackedStringArray) -> String:
 			return "Крафт: "+str(GameState.craft_recipe(a[1],ctx))
 		"clarity","imprint","palette","frame","dreamfill","crack","nightmare","garden","request","trial","tutorial","blueprint","undo","mirror","dreamdecor","hudfocus","bosscam":
 			return _dream_cmd(a, _player())
+		"economy","fall","torch","frameclear","timeskip","dayspawn","knockback","aggro","arms","mouse":
+			return _v022_cmd(a, _player())
 	return "Ошибка: неизвестная команда. help — список."
+
+
+## v0.22: команды новых систем.
+func _build() -> Node:
+	return get_tree().current_scene.get_node_or_null("Systems/BuildController") if get_tree().current_scene else null
+
+
+func _v022_cmd(a: PackedStringArray, p: Node3D) -> String:
+	var G := GameState
+	var sub := a[1] if a.size() > 1 else "status"
+	var b := _build()
+	match a[0]:
+		"economy":
+			if sub == "steal":
+				var n := clampi(int(a[2]) if a.size() > 2 and a[2].is_valid_int() else 1000, 1, 100000)
+				var hits := 0
+				for i in range(n):
+					if randf() < G.DUST_STEAL_CHANCE: hits += 1
+				return "Бросков кражи: %d · удачных %d · %.1f %% · ожидаемо %.0f %%" % [n, hits, 100.0 * hits / n, G.DUST_STEAL_CHANCE * 100.0]
+			return "Осыпь за моба %d–%d · усталость фарма −%.0f %% за убийство, не ниже ×%.1f · босс %d / Анаконда %d\nЦены: гвоздь %d · клин %d · якорь3 %d · маяк %d · кровать %d · хилка1 %d\nВоры крадут с шансом %.0f %% за удар" % [G.DUST_PER_KILL_MIN, G.DUST_PER_KILL_MAX, G.KILL_FATIGUE_STEP * 100.0, G.KILL_FATIGUE_MIN, G.DUST_PER_BOSS_KILL, G.DUST_PER_ANACONDA_KILL, G.NAIL_CRAFT_DUST, G.WEDGE_CRAFT_DUST, G.ANCHOR3_CRAFT_DUST, G.BEACON_CRAFT_DUST, G.BED_CRAFT_DUST, G.HEAL1_DUST, G.DUST_STEAL_CHANCE * 100.0]
+		"fall":
+			if sub == "on" or sub == "off":
+				G.fall_damage_enabled = sub == "on"
+			elif sub == "test":
+				if a.size() < 3 or not a[2].is_valid_float(): return "Ошибка: fall test <блоков>"
+				return "Падение с %s блоков: −%d HP из %d" % [a[2], G.fall_damage_for(float(a[2])), G.PLAYER_MAX_HP]
+			elif sub != "status": return "Ошибка: fall [status|on|off|test N]"
+			return "Урон от падения: %s · бесплатно %d блока, дальше %d HP за блок · последнее падение %.1f блока, −%d" % ["вкл" if G.fall_damage_enabled else "выкл", int(G.FALL_SAFE_BLOCKS), G.FALL_DMG_PER_BLOCK, G.last_fall_height, G.last_fall_damage]
+		"torch":
+			if b == null: return "Ошибка: нет мира."
+			var loose: Array = []
+			for c in G.wake_blocks:
+				if str(G.wake_blocks[c].get("kind", "")) == "torch" and not b.torch_supported(c): loose.append(c)
+			if sub == "drop":
+				var n := 0
+				for c in loose:
+					if G.remove_torch(c):
+						var vox: Node = b._wake_voxels()
+						if vox: vox.remove_block(c)
+						b._spawn_block_pickup(c, "torch"); n += 1
+				return "Уронено факелов без опоры: %d" % n
+			return "Факелов: %d · без опоры: %d%s" % [G.wake_kind_count("torch"), loose.size(), (" · " + str(loose.slice(0, 4))) if not loose.is_empty() else ""]
+		"frameclear":
+			var e := _need_dream(); if e != "": return e
+			if not G.frame_complete(): return "Ошибка: сначала рамка, frame ... или K, K."
+			return "Очищено клеток: %d · Z — отменить" % G.dream_clear()
+		"timeskip":
+			if sub == "x":
+				if a.size() < 3 or not a[2].is_valid_float(): return "Ошибка: timeskip x <1–16>"
+				G.dream_time_scale = clampf(float(a[2]), 1.0, 16.0)
+			elif sub == "night":
+				return "Эта ночь: в Яви %.0f с · проспано во Сне %.0f с · засчитается: %s · ночей пережито %d" % [G.night_awake, G.night_dreamt, "да" if G.night_counts() else "нет", G.nights_survived]
+			elif sub != "status": return "Ошибка: timeskip [status|x N|night]"
+			return "Во Сне время Яви ×%.1f · сейчас ×%.1f · последний сон промотал %.0f с · %s" % [G.dream_time_scale, G.wake_time_scale(), G.wake_time_skipped, G.clock_text(G.day_time)]
+		"dayspawn":
+			var td: GDScript = load("res://scripts/threat_director.gd")
+			return "Интервал спавна при 0 с бодрствования: день %.0f с · ночь %.0f с · дневной множитель %.2f, это −%d %% · призраки днём ×%.0f дольше" % [td.spawn_interval(0.0, false), td.spawn_interval(0.0, true), td.DAY_SPAWN_RATE, roundi((1.0 - td.DAY_SPAWN_RATE) * 100.0), 1.0 / td.DAY_SPAWN_RATE]
+		"knockback":
+			if b == null: return "Ошибка: нет мира."
+			if sub == "on" or sub == "off": b.knockback_enabled = sub == "on"
+			elif sub != "status": return "Ошибка: knockback [status|on|off]"
+			var vm: Node = b.viewmodel
+			return "Откидывание: %s · сила %s · последнее %.1f м/с · отдач руки %d" % ["вкл" if b.knockback_enabled else "выкл", str(b.KNOCKBACK), b.last_knockback.length(), int(vm.recoil_count) if vm else 0]
+		"aggro":
+			var ana: Node = get_tree().get_first_node_in_group("anaconda")
+			if ana == null: return "Анаконды нет. spawn anaconda — призвать. Злится, если рядом больше %d факелов." % 3
+			ana.update_torch_aggro()
+			return "Анаконда: факелов рядом %d · агрессия %s · сломано в ярости %d" % [ana.torches_near(ana._head.global_position, ana.TORCH_AGGRO_RADIUS).size(), "да" if ana.has_torch_aggro() else "нет", int(ana.torches_broken_aggro)]
+		"arms":
+			if b == null: return "Ошибка: нет мира."
+			b._ensure_hand_tools()
+			var arms: Node = b.viewmodel.arms if b.viewmodel else null
+			if arms == null: return "Ошибка: руки не созданы."
+			if sub == "play":
+				var k := a[2] if a.size() > 2 else "attack"
+				return "Анимация %s: %s" % [k, "ок" if arms.play_action(k) else "нет такой"]
+			return "Руки: Kenney Blocky Characters, CC0 · клип %s · последнее действие %s · сыграно %s" % [arms.current_clip(), arms.last_action, str(arms.actions_played)]
+		"mouse":
+			var gs := get_node_or_null("/root/GameSettings")
+			if gs == null: return "Ошибка: нет настроек."
+			return "ЛКМ-действие «удар / сломать»: %s · ПКМ-действие «использовать / поставить»: %s · менять в Настройках → Управление" % [gs.key_label("attack_break"), gs.key_label("use_place")]
+	return "Ошибка: help " + a[0]
 
 
 ## v0.21: команды для систем Сна v0.16–v0.20 (осознанность, отпечатки, рамка, трещины, кошмары, сады,

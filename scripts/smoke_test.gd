@@ -69,7 +69,7 @@ func _run() -> void:
 	_a(not gs.craft_recipe("nail", {"is_dream": true}) and gs.nails == 1, 621)
 	_a(not gs.craft_recipe("nail", {"is_dream": false}), 63)
 	_a(not gs.craft_recipe("nail", {"at_workbench": true, "is_dream": true}), 64)
-	_a(gs.NAIL_CRAFT_DUST == 10, 65)
+	_a(gs.NAIL_CRAFT_DUST == 8, 65)
 
 	# Клин из осыпи — только во сне, не на верстаке
 	gs.dust = gs.WEDGE_CRAFT_DUST
@@ -78,13 +78,13 @@ func _run() -> void:
 	_a(gs.craft_recipe("wedge", {"is_dream": true}), 70)
 	_a(gs.wedges == wedges_before + 1, 71)
 	_a(gs.dust == 0, 72)
-	_a(gs.WEDGE_CRAFT_DUST == 60, 73) # v0.11: клин дешевле (был 100)
+	_a(gs.WEDGE_CRAFT_DUST == 40, 73) # v0.11: клин дешевле (был 100)
 	gs.dust = gs.ANCHOR3_CRAFT_DUST
 	var a3_before: int = gs.anchors3
 	_a(gs.craft_recipe("anchor3", {"is_dream": true}), 76)
 	_a(gs.anchors3 == a3_before + 1, 77)
 	_a(gs.dust == 0, 78)
-	_a(gs.ANCHOR3_CRAFT_DUST == 180, 79) # v0.11
+	_a(gs.ANCHOR3_CRAFT_DUST == 90, 79) # v0.11
 	_a(gs.ANCHOR3_SIZE == 9, 80)
 	_a(is_equal_approx(gs.CLARITY_DRAIN_PER_SEC, 0.85), 81) # v0.11: ≈118 с
 	_a(gs.recipe_defs().size() >= 7, 82)
@@ -708,10 +708,10 @@ func _v05_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 		_a(ResourceLoader.exists("res://assets/icons/%s.png" % iid), 680)
 
 	# --- Осыпь за убийства ---
-	_a(gs_script.DUST_PER_KILL_MIN == 5 and gs_script.DUST_PER_KILL_MAX == 8, 683)
+	_a(gs_script.DUST_PER_KILL_MIN == 8 and gs_script.DUST_PER_KILL_MAX == 14, 683)
 	gi.dust = 0
 	var kill_reward: int = gi.reward_kill(false,"Шовник")
-	_a(kill_reward >= 5 and kill_reward <= 8,685)
+	_a(kill_reward >= 8 and kill_reward <= 14,685)
 	_a(gi.dust == kill_reward,686)
 	_a("+%d осыпи" % kill_reward in gi.last_hint,687)
 	_a(gi.reward_kill(true, "Мать блоков") == 200, 688) # v0.11: Мать 200 осыпи
@@ -1068,7 +1068,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(not G.craft_recipe("heal1", {"is_dream": false}), 1019)
 	var dust0: int = G.count_item("dust")
 	_a(G.craft_recipe("heal1", {"is_dream": true}), 1021)
-	_a(G.count_item("dust") == dust0 - G.HEAL1_DUST and G.HEAL1_DUST == 35, 1022)
+	_a(G.count_item("dust") == dust0 - G.HEAL1_DUST and G.HEAL1_DUST == 25, 1022)
 	_a(G.pillow_count("heal1") == 1 and G.count_item("heal1") == 0, 1023)
 	G.resolve_wake()
 	_a(G.count_item("heal1") == 0, 1025)
@@ -1684,10 +1684,10 @@ func _v08_checks() -> void:
 	G.reset_state()
 	G.enter_dream()
 	G.on_mother_killed()
-	# v0.11: алхимия во Сне — только кошель (4 р2 + 4 р3 + 60 осыпи); подушка не трогается.
+	# v0.11: алхимия во Сне — только кошель (4 р2 + 4 р3 + 40 осыпи); подушка не трогается.
 	G.add_item_count("reagent2",4)
 	G.add_item_count("reagent3",4)
-	G.add_item_count("dust",60)
+	G.add_item_count("dust",40)
 	G.add_to_pillow("heal1",1)
 	_a(G.craft_recipe("alchemy",{"is_dream":true}),1662)
 	_a(G.get_reagent_count(2)==0 and G.get_reagent_count(3)==0 and G.dust==0 and G.pillow_count("heal1")==1 and G.count_item("alchemy")==1,1663)
@@ -1756,7 +1756,7 @@ func _v08_checks() -> void:
 	_a(not G.craft_recipe("idea_catcher",{"is_dream":true}),1683)
 	_a(G.dust==500 and G.get_reagent_count(1)==6,1684)
 	G.set_slot(0,{})
-	_a(G.craft_recipe("idea_catcher",{"is_dream":true}) and G.dust==350,1685)
+	_a(G.craft_recipe("idea_catcher",{"is_dream":true}) and G.dust==400,1685)
 	G.reset_state()
 	var old_save: Dictionary = G.to_save_dict()
 	old_save["version"] = 7
@@ -3924,7 +3924,58 @@ func _v022_scene_checks() -> void:
 	G.frame_points = 0; G.frame_mark(Vector3i(300, 20, 300)); G.frame_mark(Vector3i(309, 29, 309))
 	_a(G.dream_clear() == 1000 and G.dream_blocks.is_empty() and is_equal_approx(G.clarity, 0.0), 22040)
 	_a(G.dream_undo() == 1000 and G.dream_blocks.size() == 1000, 22041)
+	# п.4: время Яви ×4 во Сне, проспанная ночь не засчитывается
+	var t0: float = G.day_time
+	_a(is_equal_approx(G.advance_wake_clock(0.5), 2.0) and G.wake_time_skipped >= 2.0, 22050)
+	G.night_awake = 70.0; G.night_dreamt = 200.0
+	_a(not G.night_counts(), 22051)
+	G.night_dreamt = 30.0; _a(G.night_counts(), 22052)
+	var ns: int = G.nights_survived
+	G.night_awake = 70.0; G.night_dreamt = 300.0; G._on_night_edge(false)
+	_a(G.nights_survived == ns, 22053)
 	scene.switcher.wake_up(); await process_frame
+	_a(is_equal_approx(G.advance_wake_clock(0.5), 0.5), 22054)
+	# п.3: экономика осыпи
+	_a(G.ANCHOR3_CRAFT_DUST == 90 and G.DUST_PER_KILL_MIN == 8 and G.DUST_PER_KILL_MAX == 14 and is_equal_approx(G.DUST_STEAL_CHANCE, 0.35), 22060)
+	G.dev_mode = false; G.dust = 100000; G.steal_rolls = 0; G.steal_hits = 0
+	for i in range(2000): G.try_steal(1)
+	var ratio: float = float(G.steal_hits) / 2000.0
+	_a(ratio > 0.29 and ratio < 0.41 and G.dust == 100000 - G.steal_hits, 22061)
+	G.kill_log = []; G.dust = 0
+	for i in range(8): G.reward_kill(false, "")
+	_a(G.dust >= 46, 22062) # 8 убийств подряд с усталостью: минимум 46 осыпи (в v0.21 минимум был 24)
+	G.dev_mode = true
+	# п.8: ЛКМ — удар/сломать, ПКМ — использовать/поставить
+	var lmb := false; var rmb := false
+	for e in InputMap.action_get_events("attack_break"): lmb = lmb or (e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT)
+	for e in InputMap.action_get_events("use_place"): rmb = rmb or (e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_RIGHT)
+	_a(lmb and rmb and not InputMap.has_action("place_block") and not InputMap.has_action("remove_block"), 22070)
+	var gset: Node = root.get_node("GameSettings")
+	_a(gset.action_title("attack_break") != "" and gset.action_title("use_place") != "", 22071)
+	# п.7: отдача и откидывание
+	b._ensure_hand_tools()
+	var mob: CharacterBody3D = load("res://scripts/seam_creature.gd").new()
+	scene.wake_world.add_child(mob); mob.global_position = scene.player.global_position + Vector3(0, 0, -2)
+	await process_frame
+	var rc: int = b.viewmodel.recoil_count
+	b._combat_feedback({"dealt": 5, "bounce": false}, mob)
+	var kb: Vector3 = mob.get_meta("kb", Vector3.ZERO)
+	_a(kb.length() > 3.0 and kb.z < 0.0 and b.viewmodel.recoil_count == rc + 1, 22072)
+	var boss_kb := Node3D.new(); boss_kb.add_to_group("boss")
+	_a(b._is_boss(boss_kb), 22073); boss_kb.free()
+	mob.queue_free()
+	# п.13: руки от первого лица (Kenney CC0)
+	var arms: Node = b.viewmodel.arms
+	_a(arms != null and arms.model != null and arms.ap != null and arms.ap.has_animation("attack-melee-right"), 22080)
+	for k in ["attack", "break", "place", "use", "jump", "sleep", "wake"]: _a(arms.play_action(k), 22081)
+	_a(int(arms.actions_played.get("place", 0)) >= 1 and FileAccess.file_exists("res://assets/models/kenney_blocky/License.txt"), 22082)
+	# консоль v0.22
+	var con: Node = get_first_node_in_group("dev_console")
+	for cmd in ["economy", "economy steal 500", "fall", "fall test 8", "fall off", "fall on", "torch", "torch drop", "timeskip", "timeskip x 4", "timeskip night", "dayspawn", "knockback", "knockback off", "knockback on", "aggro", "arms", "arms play attack", "mouse", "help frameclear", "help timeskip"]:
+		var out: String = con.execute(cmd)
+		if out.begins_with("Ошибка"): print("DBG22090 ", cmd, " → ", out)
+		_a(not out.begins_with("Ошибка"), 22090)
+	_a(con.execute("fall test 8").contains("−25") and con.completion_candidates("timeskip").size() >= 4 and con.completion_candidates("arms play").size() == 7, 22091)
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
-	print("SMOKE: v0.22 scene: no wake summary / no camp sign / bed no prompt / day spawn −75% / torch support / fall damage / frame clear OK")
+	print("SMOKE: v0.22 scene: no wake summary / no camp sign / bed no prompt / day spawn −75% / torch support / fall damage / frame clear / time ×4 / dust economy / mouse LMB-RMB / recoil+knockback / FP arms / console OK")
 

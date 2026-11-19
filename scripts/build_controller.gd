@@ -68,47 +68,49 @@ func _process(delta: float) -> void:
 	if not GameState.is_dream():
 		ghost.visible = false
 		update_torch_rings()
-		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
+		# v0.22: ЛКМ (attack_break) — удар и добыча; ПКМ (use_place) — использовать и поставить.
+		if Input.is_action_just_pressed("use_place") and _toggle_aimed_door():
+			_arms("use")
 			return
-		if (GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2") or GameState.get_selected_item().get("id","")=="") and (Input.is_action_pressed("place_block") or Input.is_action_pressed("remove_block")):
+		var sel := str(GameState.get_selected_item().get("id", ""))
+		var sword := sel == "sword" or sel == "sword2" or sel == "sword3"
+		if (sel == "" or sel == "pickaxe" or sel == "pickaxe2") and Input.is_action_pressed("attack_break"):
 			_tick_mining(delta)
 			return
 		_mine_elapsed = 0.0
 		_mine_cell = Vector3i(99999,99999,99999)
-		if Input.is_action_just_pressed("remove_block") and _toggle_aimed_door():
-			return
-		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("place_block"):
-			# v0.11: зелья пьются только клавишей H (автовыбор), ЛКМ по зелью ничего не делает.
-			if GameState.selected_is("heal1") or GameState.selected_is("heal2"):
-				GameState.set_hint("Зелья пьются клавишей %s — она сама выберет подходящее." % _heal_key(), false)
-			elif GameState.selected_is("sword") or GameState.selected_is("sword2") or GameState.selected_is("sword3"):
+		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("attack_break"):
+			if sword:
 				_try_sword()
 				_place_cooldown = SWORD_COOLDOWN
-			elif GameState.selected_is("torch"):
+			elif sel == "torch" and _try_pick_up_torch():
+				_arms("break")
+				_place_cooldown = 0.16
+		elif _place_cooldown <= 0.0 and Input.is_action_just_pressed("use_place"):
+			# v0.11: зелья пьются только клавишей H (автовыбор).
+			if sel == "heal1" or sel == "heal2":
+				GameState.set_hint("Зелья пьются клавишей %s — она сама выберет подходящее." % _heal_key(), false)
+			elif sel == "torch":
 				_try_place_torch()
+				_arms("place")
 				_place_cooldown = 0.16
-			elif GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2"):
-				_try_mine_wake()
-				_place_cooldown = 0.18
-			elif GameState.selected_is("anaconda_egg"):
+			elif sel == "anaconda_egg":
 				_try_summon_anaconda()
+				_arms("use")
 				_place_cooldown = 0.5
-			elif GameState.is_placeable_block(str(GameState.get_selected_item().get("id", ""))):
+			elif GameState.is_placeable_block(sel):
 				_try_place_wake_item()
+				_arms("place")
 				_place_cooldown = 0.16
-		elif _place_cooldown <= 0.0 and Input.is_action_just_pressed("remove_block"):
-			if GameState.selected_is("torch") and _try_pick_up_torch():
-				_place_cooldown = 0.16
-			elif GameState.selected_is("pickaxe") or GameState.selected_is("pickaxe2"):
-				_try_mine_wake()
-				_place_cooldown = 0.18
 		return
 	_update_ghost()
-	if Input.is_action_just_pressed("place_block") and _place_cooldown <= 0.0:
+	if Input.is_action_just_pressed("use_place") and _place_cooldown <= 0.0:
 		_try_place()
+		_arms("place")
 		_place_cooldown = 0.12
-	if Input.is_action_just_pressed("remove_block") and _place_cooldown <= 0.0:
+	if Input.is_action_just_pressed("attack_break") and _place_cooldown <= 0.0:
 		_try_remove()
+		_arms("break")
 		_place_cooldown = 0.12
 
 
@@ -181,7 +183,7 @@ func _place_at(cell: Vector3i) -> void:
 
 
 func mass_place_row(cell: Vector3i, facing: int) -> Array:
-	## v0.12 (Сердце структуры): Shift+ЛКМ дрейф-блоком — ряд из 5 поперёк взгляда. Каждый следующий опирается на предыдущий.
+	## v0.12 (Сердце структуры): Shift+ПКМ дрейф-блоком — ряд из 5 поперёк взгляда. Каждый следующий опирается на предыдущий.
 	var right := Vector3i(1, 0, 0) if facing % 2 == 0 else Vector3i(0, 0, 1)
 	var out: Array = []
 	for dir in [right, -right]:
@@ -325,13 +327,13 @@ func _wake_voxels() -> Node3D:
 
 
 func _try_summon_anaconda() -> Node:
-	## v0.7: ЛКМ с Яйцом Анаконды в руке ночью в яви — призыв босса (яйцо тратится, кулдауна нет).
+	## v0.7 (v0.22: ПКМ): с Яйцом Анаконды в руке ночью в яви — призыв босса (яйцо тратится, кулдауна нет).
 	var script: GDScript = load("res://scripts/boss_anaconda.gd")
 	return script.summon_with_egg(_wake_world(), player, _wake_chunks())
 
 
 func _try_pick_up_torch() -> bool:
-	## v0.13: снять свой факел ПКМ (с факелом в руке) — без кирки и без потерь.
+	## v0.13 (v0.22: ЛКМ): снять свой факел (с факелом в руке) — без кирки и без потерь.
 	var aim := _aim()
 	if not aim.get("hit", false):
 		return false
@@ -608,6 +610,7 @@ func _try_place_wake_item() -> void:
 
 func _try_sword() -> void:
 	_play_sword_swing()
+	_arms("attack")
 	var origin: Vector3 = player.global_position + Vector3(0, 1.15, 0)
 	var forward := Vector3.FORWARD
 	if player.has_node("CameraPivot/Camera3D"):
@@ -706,12 +709,19 @@ func _update_hand_tools() -> void:
 	viewmodel.set_tool(id)
 
 
+func _arms(kind: String) -> void:
+	## v0.22: анимация рук от первого лица (attack, break, place, use, jump, sleep, wake).
+	_ensure_hand_tools()
+	if viewmodel and viewmodel.has_method("play_action"):
+		viewmodel.play_action(kind)
+
+
 func _play_tool_swing() -> void:
 	_ensure_hand_tools()
 	if viewmodel == null or player == null:
 		return
 	_update_hand_tools()
-	viewmodel.play_swing()
+	viewmodel.play_swing("attack" if GameState.selected_is("sword") or GameState.selected_is("sword2") or GameState.selected_is("sword3") else "break")
 
 
 func _combat_feedback(res: Dictionary, target: Node) -> void:
@@ -729,6 +739,18 @@ func _combat_feedback(res: Dictionary, target: Node) -> void:
 		Sfx.play("break_wood", get_tree().root if is_inside_tree() else null)
 	if target and target.has_method("on_hit_feedback"):
 		target.on_hit_feedback(res)
+	if dealt > 0 and knockback_enabled and target is CharacterBody3D and player and not _is_boss(target):
+		var tool := str(GameState.get_selected_item().get("id", ""))
+		last_knockback = load("res://scripts/enemy_navigation.gd").apply_knockback(target, player.global_position, float(KNOCKBACK.get(tool, KNOCKBACK[""])))
+
+
+## v0.22: сила откидывания по оружию (м/с в начале импульса). Боссов не откидывает.
+const KNOCKBACK := {"": 4.0, "pickaxe": 4.5, "pickaxe2": 5.0, "sword": 7.0, "sword2": 8.0, "sword3": 9.0}
+var knockback_enabled := true
+var last_knockback := Vector3.ZERO
+
+static func _is_boss(n: Node) -> bool:
+	return n.is_in_group("block_mother") or n.is_in_group("anaconda") or n.is_in_group("boss")
 
 
 static func hit_marker_kind(res: Dictionary) -> String:

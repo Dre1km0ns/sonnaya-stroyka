@@ -263,6 +263,22 @@ static func _reconstruct(came: Dictionary, current: Vector2i, y: float) -> Array
 	return pts
 
 
+## v0.22: откидывание мобов от удара игрока — импульс по горизонтали + подскок, гаснет за ~0.8 с.
+const KNOCKBACK_DECAY := 9.0
+
+static func apply_knockback(body: Node3D, from: Vector3, strength: float) -> Vector3:
+	if not (body is CharacterBody3D) or strength <= 0.0:
+		return Vector3.ZERO
+	var d := body.global_position - from
+	d.y = 0.0
+	d = d.normalized() if d.length() > 0.01 else Vector3(0, 0, -1)
+	var kb := d * strength
+	body.set_meta("kb", kb)
+	var cb := body as CharacterBody3D
+	cb.velocity.y = maxf(cb.velocity.y, strength * 0.4)
+	return kb
+
+
 static func apply_movement(body: CharacterBody3D, want_dir: Vector3, speed: float, delta: float) -> void:
 	speed = movement_speed(body,speed)
 	var gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity"))
@@ -295,6 +311,11 @@ static func apply_movement(body: CharacterBody3D, want_dir: Vector3, speed: floa
 
 	body.velocity.x = chosen.x * speed
 	body.velocity.z = chosen.z * speed
+	var kb: Vector3 = body.get_meta("kb", Vector3.ZERO)
+	if kb.length() > 0.05:
+		body.velocity.x += kb.x
+		body.velocity.z += kb.z
+		body.set_meta("kb", kb.move_toward(Vector3.ZERO, KNOCKBACK_DECAY * delta))
 	body.move_and_slide()
 	if not body.has_meta("face_lock"):
 		var flat := Vector3(body.velocity.x, 0.0, body.velocity.z)

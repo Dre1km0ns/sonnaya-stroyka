@@ -42,11 +42,13 @@ var models: Dictionary = {}       # id -> Node3D (ToolModel)
 var current := ""
 var swinging := false
 var swing_count := 0
+var recoil_count := 0
 var retract := 0.0
 var _tween: Tween
 var _bob_t := 0.0
 var _light: OmniLight3D
 var player: Node3D
+var arms: Node3D
 
 
 func _ready() -> void:
@@ -62,7 +64,12 @@ func _ready() -> void:
 		models[id] = m
 	var arm := _build_arm()
 	arm.name = "Arm"
+	arm.visible = false
 	swing_pivot.add_child(arm)
+	# v0.22: настоящая рука от первого лица (Kenney Blocky Characters, CC0) вместо кубика-кулака
+	arms = load("res://scripts/fp_arms.gd").new()
+	arms.player = player
+	add_child(arms)
 	_light = OmniLight3D.new()
 	_light.name = "HeldLight"
 	_light.light_color = Color(1.0, 0.72, 0.4)
@@ -99,7 +106,7 @@ func set_tool(id: String) -> void:
 		(models[k] as Node3D).visible = k == current
 	hand_root.visible = current != ""
 	var arm := swing_pivot.get_node_or_null("Arm") as Node3D
-	if arm: arm.visible = current != ""
+	if arm: arm.visible = false # v0.22: кулак заменён рукой модели (FirstPersonArms)
 	_light.visible = current == "torch"
 	_light.omni_range = 7.0
 	if current == "":
@@ -119,14 +126,27 @@ func set_tool(id: String) -> void:
 
 func play_recoil(solid_hit: bool = true) -> void:
 	## Короткая отдача после попадания. Не трясёт камеру.
-	if current == "" or swinging:
+	## v0.22: отдача прерывает замах (раньше во время замаха её просто пропускали — удар не ощущался).
+	recoil_count += 1
+	if current == "":
+		return
+	if swinging and is_inside_tree():
+		# попадание считается сразу, а отдача — в момент удара замаха (≈60 % его длительности)
+		var c: Dictionary = TOOL_CONFIG[current]
+		var t := float(c.swing_time) / maxf(0.1, float(c.speed)) * 0.6
+		get_tree().create_timer(t).timeout.connect(func() -> void: _do_recoil(solid_hit))
+		return
+	_do_recoil(solid_hit)
+
+
+func _do_recoil(solid_hit: bool) -> void:
+	if current == "" or not is_inside_tree():
 		return
 	if _tween and _tween.is_valid():
 		_tween.kill()
-	swing_pivot.rotation = Vector3.ZERO
-	swing_pivot.position = Vector3.ZERO
-	var back := 0.04 if solid_hit else 0.02
-	var kick := Vector3(-8 if solid_hit else -4, 0, 3 if solid_hit else 1)
+	swinging = false
+	var back := 0.07 if solid_hit else 0.035
+	var kick := Vector3(16 if solid_hit else 7, -4, -6 if solid_hit else -2)
 	_tween = create_tween()
 	_tween.tween_property(swing_pivot, "position", Vector3(0, -0.01, back), 0.05).set_trans(Tween.TRANS_QUAD)
 	_tween.parallel().tween_property(swing_pivot, "rotation_degrees", kick, 0.05)
@@ -134,7 +154,13 @@ func play_recoil(solid_hit: bool = true) -> void:
 	_tween.parallel().tween_property(swing_pivot, "rotation_degrees", Vector3.ZERO, 0.10)
 
 
-func play_swing() -> void:
+func play_action(kind: String) -> void:
+	if arms and arms.has_method("play_action"):
+		arms.play_action(kind)
+
+
+func play_swing(kind: String = "attack") -> void:
+	play_action(kind)
 	if current == "":
 		return
 	var c: Dictionary = TOOL_CONFIG[current]

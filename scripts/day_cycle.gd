@@ -101,7 +101,7 @@ func night_blend() -> float:
 
 
 func _process(delta: float) -> void:
-	time_of_day += delta
+	time_of_day += GameState.advance_wake_clock(delta) if GameState else delta
 	if GameState:
 		GameState.day_time = time_of_day
 		if GameState.has_method("notify_night_from_time"):
