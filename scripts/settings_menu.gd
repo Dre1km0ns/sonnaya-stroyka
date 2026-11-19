@@ -44,7 +44,7 @@ func _build() -> void:
 	_add_slider(box, "mouse_sensitivity", "Чувствительность мыши", 20, 400, 10, g.mouse_sensitivity * 100.0, "%d%%", 0.01)
 	_add_check(box, "shadows", "Тени от солнца", g.shadows)
 	_add_check(box, "fullscreen", "Полный экран", g.fullscreen)
-	_add_check(box, "dream_start", "Новый мир начинается во Сне (обучение, 7 шагов)", g.dream_start)
+	_add_check(box, "dream_start", "Новый мир начинается во Сне (Сон — главный мир)", g.dream_start)
 	var note := Label.new()
 	note.text = "1 чанк = 16×16 блоков. Меньше прогрузка/сущностей — больше FPS."
 	note.add_theme_font_size_override("font_size", 14)

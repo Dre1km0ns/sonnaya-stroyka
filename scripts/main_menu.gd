@@ -346,7 +346,7 @@ func _build_create_screen() -> Control:
 	_peaceful.text = "Мирный режим (враги не появляются)"
 	box.add_child(_peaceful)
 	_tutorial = CheckButton.new()
-	_tutorial.text = "Пройти обучение?"
+	_tutorial.text = "Пройти обучение во Сне (7 шагов, ~3 минуты)"
 	_tutorial.button_pressed = true
 	box.add_child(_tutorial)
 	var row := HBoxContainer.new()

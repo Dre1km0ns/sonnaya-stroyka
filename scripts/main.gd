@@ -113,7 +113,10 @@ func _ready() -> void:
 
 func start_in_dream() -> void:
 	## v0.20: новая игра начинается во Сне — Сон главный мир. Обучение ведёт панель сверху.
-	GameState.start_tutorial()
+	if GameState.tutorial_enabled:
+		GameState.start_tutorial()
+	else:
+		GameState.give_tutorial_gift() # без обучения — тот же подарок на первый якорь
 	switcher.enter_dream()
 	GameState.set_hint("Ты во Сне. Здесь ты строишь — Явь только проверяет построенное. Следуй обучению сверху.", false)
 

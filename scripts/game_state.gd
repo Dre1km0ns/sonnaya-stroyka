@@ -4212,11 +4212,15 @@ func start_tutorial() -> void:
 	tutorial_done = {}
 	tutorial_times = {}
 	tutorial_started_msec = Time.get_ticks_msec()
-	if not tutorial_gift:
-		tutorial_gift = true
-		pouch["reagent1"] = int(pouch.get("reagent1", 0)) + TUTORIAL_GIFT_REAGENTS
-		notify_inventory()
+	give_tutorial_gift()
 	tutorial_changed.emit()
+
+
+func give_tutorial_gift() -> void:
+	if tutorial_gift: return
+	tutorial_gift = true
+	pouch["reagent1"] = int(pouch.get("reagent1", 0)) + TUTORIAL_GIFT_REAGENTS
+	notify_inventory()
 
 
 func tutorial_current() -> Dictionary:

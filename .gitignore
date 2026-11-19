@@ -12,3 +12,4 @@ android/
 *.tmp
 *.swp
 Thumbs.db
+build/

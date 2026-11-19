@@ -10,6 +10,7 @@ func _ok(c: bool, tag: String) -> void:
 	if not c: fails.append(tag)
 
 func _go() -> void:
+	root.get_node("GameSettings").dream_start = false # v0.20: петля v0.16 проверяет старт в Яви (без записи настроек)
 	change_scene_to_file("res://scenes/main_menu.tscn")
 	await _wait(10)
 	var mm = current_scene
