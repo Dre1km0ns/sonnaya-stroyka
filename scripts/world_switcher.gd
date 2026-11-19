@@ -153,6 +153,7 @@ func enter_dream() -> void:
 	GameState.enter_dream()
 	# Стартовая площадка сна у нуля — MVP-стройка; дальше бесконечные чанки.
 	if GameState.dream_blocks.is_empty():
+		GameState._dream_session_blocks = -1000 # v0.20: площадка не засчитывается в обучение «поставь 5 блоков»
 		for x in range(-2, 3):
 			for z in range(-2, 3):
 				var c := Vector3i(floori(destination.x)+x,floori(destination.y)-2,floori(destination.z)+z)

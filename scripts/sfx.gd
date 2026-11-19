@@ -39,16 +39,20 @@ static func count(path: String) -> int:
 			n += 1
 	return n
 
-static func play(kind: String, host: Node) -> void:
+static func play(kind: String, host: Node, volume_db: float = -12.0, pitch: float = 1.0) -> void:
 	var path := "res://assets/audio/sfx_" + kind + ".ogg"
 	played.append(path)
 	if played.size() > 64:
 		played.remove_at(0)
-	if host == null or not host.is_inside_tree() or not ResourceLoader.exists(path):
+	if host == null or not host.is_inside_tree():
+		return
+	var stream: AudioStream = _stream(path)
+	if stream == null:
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = _stream(path)
-	p.volume_db = -12.0
+	p.stream = stream
+	p.pitch_scale = pitch
+	p.volume_db = volume_db
 	p.bus = &"SFX" if AudioServer.get_bus_index("SFX") >= 0 else &"Master"
 	host.add_child(p)
 	p.finished.connect(p.queue_free)
@@ -57,5 +61,7 @@ static func play(kind: String, host: Node) -> void:
 static func _stream(path: String) -> AudioStream:
 	# Short effects use predecoded PCM: no OggPacketSequencePlayback survives scene teardown.
 	# Keep original CC0 source files and journal IDs for save/tests/attribution.
+	# v0.20: процедурные звуки Сна существуют только как .wav (tools/gen_dream_sfx.py).
 	var pcm:=path.get_basename()+".wav"
-	return load(pcm if ResourceLoader.exists(pcm) else path) as AudioStream if ResourceLoader.exists(path) else null
+	if ResourceLoader.exists(pcm): return load(pcm) as AudioStream
+	return load(path) as AudioStream if ResourceLoader.exists(path) else null

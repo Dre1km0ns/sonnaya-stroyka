@@ -156,10 +156,11 @@ func _build_ui() -> void:
 	_screens["main"] = _build_main_screen()
 	_screens["worlds"] = _build_worlds_screen()
 	_screens["create"] = _build_create_screen()
+	_screens["howto"] = _build_howto_screen()
 	for k in _screens.keys():
 		_ui.add_child(_screens[k])
 	var ver := Label.new()
-	ver.text = "Сонная стройка v0.19 · Godot 4.7"
+	ver.text = "Сонная стройка v0.20 · Godot 4.7"
 	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	ver.offset_left = 14
 	ver.offset_top = -32
@@ -200,9 +201,51 @@ func _build_main_screen() -> Control:
 	spacer.custom_minimum_size = Vector2(0, 50)
 	box.add_child(spacer)
 	_main_btn(box, "Играть", _on_play)
+	_main_btn(box, "Как играть", func() -> void: _show("howto"))
 	_main_btn(box, "Настройки", _open_settings)
 	_main_btn(box, "Выход", func() -> void: get_tree().quit())
 	return root
+
+
+const HOWTO := """[b]Сон — главный мир.[/b] Новая игра начинается во Сне. Здесь ты летаешь, строишь из ничего и проектируешь. Явь — суровая проверка: туда твои проекты переносятся копией.
+
+[color=#d8c8ff][b]Во Сне[/b][/color]
+• ЛКМ — блок, ПКМ — снять, T — материал палитры. Дрейф бесплатен, но нестабилен.
+• K, K — рамка; L — залить (Shift+L — очистить); X — зеркало; Z/U — отмена и возврат.
+• M — испытание: фантомы осаждают постройку в рамке. Дыры и дрейф — слабые места, свет их сжигает.
+• B — рамку в чертёж, N — выбрать, O — повернуть, P — вставить.
+• R/Q — якорь: закреплённое при пробуждении (F) появится в Яви копией. Оригинал остаётся во Сне.
+
+[color=#ffd98c][b]В Яви[/b][/color]
+• Добывай материалы: первый же блок даёт [i]отпечаток[/i] — во Сне этот материал станет бесконечным.
+• Копия в Явь стоит 1 материал Яви за блок и не мутирует. Дрейф переносится бесплатно, но может мутировать.
+• Осознанность копится в Яви. Её тратят якоря и большие операции.
+• Если сломать материализованное, во Сне появится трещина. Кошмары грызут дрейф рядом, свет и маяк защищают.
+
+[color=#a8f0b0][b]Цель[/b][/color] — проектировать во Сне то, что в Яви невозможно построить руками, испытывать и забирать в Явь. Боссы открывают сады Сна с новыми материалами.
+
+Все клавиши — Настройки → Управление (раздел «Сон»)."""
+
+
+func _build_howto_screen() -> Control:
+	var pr := _panel_screen("Как играть", 760)
+	var box: VBoxContainer = pr[1]
+	var rt := RichTextLabel.new()
+	rt.name = "HowtoText"
+	rt.bbcode_enabled = true
+	rt.text = HOWTO
+	rt.fit_content = false
+	rt.scroll_active = true
+	rt.custom_minimum_size = Vector2(720, 420)
+	rt.add_theme_font_size_override("normal_font_size", 16)
+	rt.add_theme_font_size_override("bold_font_size", 17)
+	box.add_child(rt)
+	var back := Button.new()
+	back.text = "Назад"
+	back.custom_minimum_size = Vector2(0, 44)
+	back.pressed.connect(func() -> void: _show("main"))
+	box.add_child(back)
+	return pr[0]
 
 
 func _main_btn(box: Container, text: String, cb: Callable) -> Button:

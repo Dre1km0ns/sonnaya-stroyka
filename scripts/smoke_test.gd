@@ -3751,7 +3751,7 @@ func _v019_checks() -> void:
 	_a(gs.run_trial().is_empty(), 19032)   # слишком большая рамка
 	# 4) Сейв v14 + миграция v13.
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
-	_a(int(sv.version) == 14 and sv.tested_regions.size() == 1, 19040)
+	_a(int(sv.version) >= 14 and sv.tested_regions.size() == 1, 19040)
 	gs.reset_state(); gs.apply_save_dict(sv)
 	_a(gs.tested_regions.size() == 1 and gs.tested_regions[0].rewarded and gs.tested_regions[0].grade == "S" and gs.trials_run == 2, 19041)
 	sv.version = 13; sv.erase("tested_regions"); sv.erase("trials_run")
@@ -3780,3 +3780,106 @@ func _v019_checks() -> void:
 	_a(not view.playing, 19051)
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.19 trial: wall holds / hole, drift, 1-high fail / light burns / shelter / bonus once / blueprint grade / save v14 / scene M OK")
+	await _v020_checks()
+
+
+func _v020_checks() -> void:
+	## v0.20 «Бета-путь»: старт во Сне с обучением, звуки Сна, тон Сна, разделы управления, «Как играть», сейв v15.
+	var Sfx: GDScript = load("res://scripts/sfx.gd")
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	gs.reset_state(); gs.dev_mode = false
+	_a(not gs.tutorial_active and gs.tutorial_current().is_empty(), 20000)
+	var r0 := int(gs.pouch.reagent1)
+	gs.start_tutorial()
+	_a(gs.tutorial_active and str(gs.tutorial_current().id) == "fly" and int(gs.pouch.reagent1) == r0 + 3, 20001)
+	gs.skip_tutorial(); gs.start_tutorial()
+	_a(int(gs.pouch.reagent1) == r0 + 3 and gs.tutorial_active, 20002)   # подарок — один раз
+	gs.enter_dream()
+	_a(Sfx.count("res://assets/audio/sfx_dream_enter.ogg") > 0 and Sfx._stream("res://assets/audio/sfx_dream_enter.ogg") != null, 20003)
+	var B := Vector3i(200, 5, 200)
+	_a(gs.place_dream_block(B, "workbench", 0) and gs.tutorial_done.has("workbench") and str(gs.tutorial_current().id) == "fly", 20004)   # шаги в любом порядке
+	gs.tutorial_event("fly")
+	for i in range(5): gs.place_dream_block(B + Vector3i(4 + i, 0, 0), "drift")
+	_a(gs.tutorial_done.has("build") and str(gs.tutorial_current().id) == "frame", 20005)
+	gs.tutorial_event("bogus"); gs.tutorial_event("fly")
+	_a(gs.tutorial_done.size() == 3, 20006)
+	Sfx.played.clear()   # журнал звуков ограничен 64 записями — считаем с нуля
+	gs.frame_mark(B + Vector3i(-8, 0, -8)); gs.frame_mark(B + Vector3i(-6, 1, -6))
+	_a(gs.dream_fill("drift") > 0 and gs.tutorial_done.has("frame") and Sfx.count("res://assets/audio/sfx_dream_fill.ogg") == 1, 20007)
+	gs.run_trial()
+	_a(gs.tutorial_done.has("trial") and str(gs.tutorial_current().id) == "anchor", 20008)
+	# сейв посреди обучения (v15) и миграция v14
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	_a(int(sv.version) == 15 and bool(sv.tutorial_active) and sv.tutorial_done.size() == 5 and bool(sv.tutorial_gift), 20010)
+	var g2: Node = load("res://scripts/game_state.gd").new(); root.add_child(g2); g2.reset_state(); g2.apply_save_dict(sv)
+	_a(g2.tutorial_active and g2.tutorial_done.size() == 5 and str(g2.tutorial_current().id) == "anchor" and g2.tutorial_gift, 20011)
+	sv.version = 14; sv.erase("tutorial_active"); sv.erase("tutorial_done"); sv.erase("tutorial_gift")
+	g2.reset_state(); g2.apply_save_dict(sv)
+	_a(not g2.tutorial_active and g2.tutorial_done.is_empty() and g2.tutorial_current().is_empty(), 20012)
+	g2.queue_free()
+	# якорь (на подаренные реагенты) и пробуждение завершают обучение
+	gs.selected_anchor = gs.AnchorType.WEDGE
+	_a(gs.try_place_anchor(B) and gs.tutorial_done.has("anchor") and Sfx.count("res://assets/audio/sfx_dream_anchor.ogg") > 0, 20013)
+	var res: Dictionary = gs.resolve_wake()
+	_a(res.ok and int(res.transferred) > 0 and not gs.tutorial_active and gs.milestones.has("tutorial") and gs.tutorial_times.size() == gs.TUTORIAL.size() and Sfx.count("res://assets/audio/sfx_dream_materialize.ogg") > 0, 20014)
+	_a(gs.wake_kind_count("workbench") > 0, 20015)   # верстак в Яви сразу после обучения
+	gs.learn_imprint("stone")
+	_a(Sfx.count("res://assets/audio/sfx_dream_imprint.ogg") > 0, 20016)
+	gs.queue_free()
+	# тон Сна: тревожнее при низкой осознанности и трещинах
+	var Tone: GDScript = load("res://scripts/dream_tone.gd")
+	_a(is_equal_approx(Tone.target_unease(100, 100, 0), 0.0) and Tone.target_unease(20, 100, 0) > Tone.target_unease(80, 100, 0) and Tone.target_unease(100, 100, 8) > Tone.target_unease(100, 100, 1) and Tone.target_unease(0, 100, 99) <= 1.0, 20020)
+	for p in ["calm", "uneasy"]:
+		var st: AudioStreamWAV = load("res://assets/audio/dream_tone_%s.wav" % p)
+		_a(st != null and st.loop_mode == AudioStreamWAV.LOOP_FORWARD, 20021)
+	for k in ["dream_fill", "dream_materialize", "dream_imprint", "dream_crack", "dream_nightmare", "dream_enter", "dream_anchor", "tutorial_step", "trial_start", "trial_held", "trial_fail", "trial_burn", "trial_breach"]:
+		_a(Sfx._stream("res://assets/audio/sfx_%s.ogg" % k) != null, 20022)
+	# меню: разделы управления, настройка старта во Сне, «Как играть»
+	var GSet: Node = root.get_node("GameSettings")
+	var seen := {}; var dup := false
+	for row in GSet.BINDABLE:
+		var key := "%s:%d" % [row[2], int(row[3])]
+		if seen.has(key): dup = true
+		seen[key] = true
+	_a(not dup and GSet.SECTIONS.has("dream_palette") and GSet.default_binding("tutorial_skip").code == KEY_F1, 20030)
+	var kb: Node = load("res://scripts/keybind_menu.gd").new(); root.add_child(kb); await process_frame
+	_a(kb.find_child("Section_dream_palette", true, false) != null and kb.find_child("Bind_dream_trial", true, false) != null, 20031)
+	kb.queue_free()
+	var was: bool = GSet.dream_start
+	GSet.set_value("dream_start", false); GSet.dream_start = true; GSet.load_settings()
+	_a(GSet.dream_start == false, 20032)
+	GSet.set_value("dream_start", was)
+	var mm: Node = load("res://scenes/main_menu.tscn").instantiate(); root.add_child(mm); await process_frame
+	var ht: Node = mm.find_child("HowtoText", true, false)
+	_a(ht != null and str(ht.text).contains("Сон — главный мир") and mm._screens.has("howto"), 20033)
+	mm.queue_free(); await process_frame
+	# сцена: новая игра — сразу во Сне, панель обучения, полёт засчитан движением, тон Сна звучит, F1 пропускает
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v020 scene", "", "2020", 2020, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	await process_frame
+	scene.player.set_physics_process(false)
+	scene.start_in_dream()
+	for i in range(4): await process_frame
+	var tut: Node = scene.get_tree().get_first_node_in_group("dream_tutorial")
+	_a(G.is_dream() and G.tutorial_active and tut != null and tut.panel.visible and str(tut.title.text).contains("1/7") and G.tutorial_done.is_empty(), 20040)
+	scene.player.global_position += Vector3(10, 0, 0)
+	await process_frame; await process_frame
+	_a(G.tutorial_done.has("fly") and str(tut.title.text).contains("2/7"), 20041)
+	var tone: Node = scene.get_tree().get_first_node_in_group("dream_tone")
+	_a(tone != null and tone.level > 0.0 and tone.calm.playing, 20042)
+	# испытание в сцене озвучено
+	_v019_house(G, Vector3i(30, 20, 30), "stone", 2, false)
+	G.frame_mark(Vector3i(30, 20, 30)); G.frame_mark(Vector3i(38, 23, 38))
+	G.run_trial()
+	var view: Node = scene.get_tree().get_first_node_in_group("dream_trial_view")
+	_a(view.sounds.has("trial_start"), 20043)
+	var e := InputEventAction.new(); e.action = "tutorial_skip"; e.pressed = true; Input.parse_input_event(e)
+	await process_frame; await process_frame
+	e = InputEventAction.new(); e.action = "tutorial_skip"; e.pressed = false; Input.parse_input_event(e)
+	await process_frame
+	_a(not G.tutorial_active and not tut.panel.visible, 20044)
+	scene.switcher.show_result_ui = false
+	scene.switcher.wake_up()
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.20 beta path: tutorial any-order / gift once / anchor+wake finishes / save v15 + v14 migration / dream sfx + tone / keybind sections / how-to / scene start in dream OK")

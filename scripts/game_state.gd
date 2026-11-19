@@ -95,7 +95,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 14 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания
+const SAVE_FORMAT := 15 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -376,6 +376,7 @@ func reset_state() -> void:
 	_undo = []; _redo = []; frame_points = 0; mirror_axis = 0; paste_rot = 0; paste_origin_set = false; _bp_seq = 0
 	dream_cracks = {}; dream_zones = []; dream_request = {}; requests_done = 0; nightmare_eaten = 0; cracks_patched = 0
 	tested_regions = []; last_trial = {}; trials_run = 0
+	tutorial_active = false; tutorial_done = {}; tutorial_gift = false; tutorial_started_msec = 0; tutorial_times = {}
 	selected_anchor = AnchorType.NAIL
 	last_hint = ""
 	awake_time = 0.0
@@ -1979,6 +1980,7 @@ func learn_imprint(kind: String, silent: bool = false) -> bool:
 		return false
 	imprints[kind] = true
 	if not silent:
+		Sfx.play("dream_imprint", _sfx_host())
 		gain_lucidity(LUCID_IMPRINT, "", true)
 		toast.emit("Отпечаток: %s — теперь бесконечен во Сне" % block_display_name(kind))
 		chat("Новый отпечаток: «%s». Во Сне он бесконечен (T — палитра), копия в Явь стоит 1 штуку. Осознанность +%d." % [block_display_name(kind), int(LUCID_IMPRINT)], Color(0.75, 0.85, 1.0))
@@ -2182,7 +2184,7 @@ func try_place_anchor(origin:Vector3i) -> bool:
 	for c in plan.new_roots:
 		for cell in TransferPlan.footprint(c,dream_blocks[c]): dream_blocks[cell]["anchored"]=true;cells.append(cell)
 	pending_anchors.append({"type":selected_anchor,"origin":origin,"cells":cells,"receipt":receipt})
-	milestones_mark("first_anchor")
+	milestones_mark("first_anchor");tutorial_event("anchor");Sfx.play("dream_anchor",_sfx_host())
 	placed_cells_changed.emit(true,cells);notify_inventory();end_inventory_batch()
 	var extra:=""
 	if not plan.materials.is_empty(): extra+=" · материалы Яви: "+materials_text(plan.materials)
@@ -2223,6 +2225,7 @@ func enter_dream() -> void:
 		if dream_stash.size() < before:
 			chat("Вещи из растворившегося сундука Сна вернулись в инвентарь Сна.", Color(0.75, 0.85, 1.0))
 	milestones_mark("first_dream")
+	Sfx.play("dream_enter", _sfx_host())
 	ensure_request()
 	# v0.16: осознанность не восстанавливается входом в Сон — её приносят из Яви.
 	awake_time = 0.0
@@ -2296,7 +2299,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 		dust_gained=int(mutation.protected)*5;pouch.dust=int(pouch.dust)+dust_gained
 		pending_anchors.clear()
 		storage_report=_resolve_dream_storage(moved_roots)
-		if transferred>0: _transfers_done+=1;milestones_mark("first_transfer")
+		if transferred>0: _transfers_done+=1;milestones_mark("first_transfer");tutorial_event("wake");Sfx.play("dream_materialize",_sfx_host())
 		if real_copy: milestones_mark("palette_copy")
 	current_world=World.WAKE;_bind_inventory();dream_exit_count+=1 # v0.16: осознанность не сбрасывается
 	clear_dream_history();paste_origin_set=false # v0.17: история правок Сна живёт в пределах одного сна
@@ -2317,6 +2320,8 @@ func place_dream_block(cell: Vector3i, kind: String = "drift", facing: int = 0) 
 		return false
 	_dream_session_blocks += 1
 	dream_blocks[cell] = {"kind": kind, "anchored": false, "mutant": false}
+	if _dream_session_blocks >= 5: tutorial_event("build")
+	if kind == "workbench": tutorial_event("workbench")
 	if kind=="door":
 		dream_blocks[cell]["facing"] = posmod(facing,4)
 		dream_blocks[cell]["hinge_right"] = door_hinge_right(dream_blocks,cell,facing)
@@ -2417,6 +2422,9 @@ func to_save_dict() -> Dictionary:
 		"cracks_patched": cracks_patched,
 		"tested_regions": tested_regions.duplicate(true),
 		"trials_run": trials_run,
+		"tutorial_active": tutorial_active,
+		"tutorial_done": tutorial_done.keys(),
+		"tutorial_gift": tutorial_gift,
 		"starter_kit_given": starter_kit_given,
 		"starter_camp_built": starter_camp_built,
 		"dream_stash": dream_stash.duplicate(true),
@@ -2650,6 +2658,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	_load_v016(data, fmt)
 	_load_v018(data)
 	_load_v019(data)
+	_load_v020(data)
 	_loading_save = false
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
@@ -3777,6 +3786,8 @@ func dream_fill(kind: String = "") -> int:
 	placed_cells_changed.emit(true, cells)
 	last_tool = {"op": "fill", "n": cells.size(), "cost": tool_cost(cells.size())}
 	milestones_mark("dream_tools")
+	tutorial_event("frame")
+	Sfx.play("dream_fill", _sfx_host())
 	set_hint("Залито %d × «%s»%s. Z — отменить." % [cells.size(), block_display_name(kind), (" · −%d осознанности" % int(tool_cost(cells.size()))) if tool_cost(cells.size()) > 0 else ""], false)
 	return cells.size()
 
@@ -3909,6 +3920,7 @@ func add_crack(c: Vector3i, kind: String) -> bool:
 	var k := cell_key(c)
 	if dream_cracks.has(k) or dream_cracks.size() >= CRACK_MAX: return false
 	dream_cracks[k] = {"kind": kind, "nights": 0}
+	Sfx.play("dream_crack", _sfx_host())
 	cracks_changed.emit()
 	if dream_cracks.size() == 1 or dream_cracks.size() % 8 == 0:
 		chat("Во Сне треснула стена: чудовища сломали материализованный «%s». Трещин: %d. До рассвета залатай — заякорь постройку во Сне снова." % [block_display_name(kind), dream_cracks.size()], Color(1.0, 0.6, 0.55))
@@ -3976,6 +3988,7 @@ func nightmare_tick() -> Dictionary:
 	nightmare_eaten += eaten.size()
 	if not eaten.is_empty():
 		placed_cells_changed.emit(true, eaten)
+		Sfx.play("dream_nightmare", _sfx_host())
 		chat("Кошмары сгрызли %d блоков дрейфа у трещин (%d). Свет и маяк во Сне защищают; настоящие материалы кошмарам не по зубам." % [eaten.size(), dream_cracks.size()], Color(1.0, 0.6, 0.55))
 	cracks_changed.emit()
 	last_nightmare = {"eaten": eaten.size(), "guarded": guarded, "cracks": dream_cracks.size()}
@@ -4124,6 +4137,7 @@ func run_trial() -> Dictionary:
 		set_hint("Испытание: постройка выдержала! Оценка %s. Фантомов %d, сожжено светом %d, прогрызено дрейфа %d.%s Материализуй её — бонус +%d осознанности." % [r.grade, r.phantoms, r.burned, r.broken.size(), (" Функции: " + ", ".join(fn) + ".") if not fn.is_empty() else "", int(DREAM_TRIAL.GRADE_BONUS.get(r.grade, 0))], false)
 	else:
 		set_hint("Испытание провалено: к сердцу прорвалось %d из %d фантомов (оценка %s). Красным — где прогрызли дрейф. Закрой щели, подними стены до 2 блоков, поставь свет." % [r.breaches, r.phantoms, r.grade], false)
+	tutorial_event("trial")
 	trial_finished.emit(r)
 	objective_changed.emit()
 	return r
@@ -4166,3 +4180,82 @@ func _load_v019(data: Dictionary) -> void:
 	trials_run = int(data.get("trials_run", 0))
 	last_trial = {}
 
+
+
+# --- v0.20: обучение во Сне (новая игра начинается во Сне) ---
+signal tutorial_changed
+
+const TUTORIAL := [
+	{"id": "fly", "title": "Лети", "how": "Во Сне ты летаешь: WASD, Пробел — вверх, Ctrl — вниз (V — выключить полёт). Отлети на 8 блоков."},
+	{"id": "build", "title": "Поставь 5 блоков", "how": "ЛКМ — блок дрейфа: он бесплатный, Сон создаёт его из ничего. ПКМ — снять, Z — отменить правку."},
+	{"id": "frame", "title": "Рамка и заливка", "how": "K — первый угол рамки, K — второй угол (под прицелом), L — залить рамку. Так стену строят за секунду."},
+	{"id": "trial", "title": "Испытай фантомами", "how": "Не снимая рамку, нажми M: фантомы осаждают копию постройки. Дыры и дрейф — слабые места, свет сжигает фантомов. Сон не пострадает."},
+	{"id": "workbench", "title": "Поставь верстак", "how": "В хотбаре Сна лежит идея верстака. Выбери её цифрой и поставь ЛКМ."},
+	{"id": "anchor", "title": "Закрепи якорем", "how": "R — выбрать Клин (зона 5×5×5), наведись на верстак, Q — закрепить. На первый якорь Сон подарил 3 реагента."},
+	{"id": "wake", "title": "Проснись", "how": "F — проснуться. Закреплённое появится в Яви копией, а оригинал останется во Сне. Сон помнит всё."},
+]
+const TUTORIAL_GIFT_REAGENTS := 3
+
+var tutorial_active := false
+var tutorial_done: Dictionary = {}
+var tutorial_gift := false
+var tutorial_started_msec := 0
+var tutorial_times: Dictionary = {} # id -> секунды от старта обучения (не сохраняется: для бота/телеметрии)
+
+
+func _sfx_host() -> Node:
+	return get_tree().root if is_inside_tree() else null
+
+
+func start_tutorial() -> void:
+	tutorial_active = true
+	tutorial_done = {}
+	tutorial_times = {}
+	tutorial_started_msec = Time.get_ticks_msec()
+	if not tutorial_gift:
+		tutorial_gift = true
+		pouch["reagent1"] = int(pouch.get("reagent1", 0)) + TUTORIAL_GIFT_REAGENTS
+		notify_inventory()
+	tutorial_changed.emit()
+
+
+func tutorial_current() -> Dictionary:
+	if not tutorial_active: return {}
+	for t in TUTORIAL:
+		if not tutorial_done.has(t.id): return t
+	return {}
+
+
+func tutorial_index() -> int:
+	return tutorial_done.size()
+
+
+func tutorial_event(id: String) -> void:
+	if not tutorial_active or tutorial_done.has(id): return
+	var known := false
+	for t in TUTORIAL:
+		if t.id == id: known = true
+	if not known: return
+	tutorial_done[id] = true
+	tutorial_times[id] = (Time.get_ticks_msec() - tutorial_started_msec) / 1000.0
+	if tutorial_done.size() >= TUTORIAL.size():
+		tutorial_active = false
+		milestones_mark("tutorial", true)
+		chat("Обучение пройдено. Дальше — цели слева: добывай в Яви отпечатки материалов, проектируй во Сне, испытывай и материализуй.", Color(0.85, 0.75, 1.0))
+	Sfx.play("tutorial_step", _sfx_host())
+	tutorial_changed.emit()
+
+
+func skip_tutorial() -> void:
+	if not tutorial_active: return
+	tutorial_active = false
+	tutorial_changed.emit()
+
+
+func _load_v020(data: Dictionary) -> void:
+	tutorial_active = bool(data.get("tutorial_active", false))
+	tutorial_done = {}
+	for id in data.get("tutorial_done", []): tutorial_done[str(id)] = true
+	tutorial_gift = bool(data.get("tutorial_gift", false))
+	tutorial_times = {}
+	tutorial_started_msec = Time.get_ticks_msec()

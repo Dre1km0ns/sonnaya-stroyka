@@ -50,6 +50,14 @@ func _build() -> void:
 	scroll.add_child(grid)
 	for row in _gs().BINDABLE:
 		var action: String = row[0]
+		if _gs().SECTIONS.has(action): # v0.20: разделы управления
+			var hdr := Label.new()
+			hdr.name = "Section_" + action
+			hdr.text = str(_gs().SECTIONS[action])
+			hdr.add_theme_font_size_override("font_size", 19)
+			hdr.add_theme_color_override("font_color", Color(0.85, 0.75, 1.0) if action == "dream_palette" else Color(1.0, 0.86, 0.55))
+			grid.add_child(hdr)
+			grid.add_child(Control.new())
 		var l := Label.new()
 		l.text = str(row[1])
 		l.custom_minimum_size = Vector2(400, 0)

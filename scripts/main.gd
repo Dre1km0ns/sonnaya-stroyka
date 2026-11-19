@@ -42,6 +42,8 @@ func _ready() -> void:
 	dream_tools.setup(player, dream_voxels)
 	dream_world.add_child(load("res://scripts/dream_cracks.gd").new()) # v0.18: трещины Сна
 	dream_world.add_child(load("res://scripts/dream_trial_view.gd").new()) # v0.19: показ испытания
+	add_child(load("res://scripts/dream_tutorial.gd").new()) # v0.20: обучение во Сне
+	add_child(load("res://scripts/dream_tone.gd").new()) # v0.20: тон Сна
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
 	var loaded := false
 	if not _want_shots() and saver.has_save():
@@ -101,9 +103,19 @@ func _ready() -> void:
 		GameState.set_hint("Продолжение с диска (F5 сейв / F9 лоад).")
 	else:
 		saver.save_game("new-world")
+		var gsx := get_node_or_null("/root/GameSettings")
+		if (gsx == null or bool(gsx.get("dream_start"))) and not has_meta("smoke") and not _want_perf():
+			start_in_dream()
 	GameState.inventory_changed.emit()
 	_camp_label()
-	print("Сонная стройка v0.15 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.20 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+
+
+func start_in_dream() -> void:
+	## v0.20: новая игра начинается во Сне — Сон главный мир. Обучение ведёт панель сверху.
+	GameState.start_tutorial()
+	switcher.enter_dream()
+	GameState.set_hint("Ты во Сне. Здесь ты строишь — Явь только проверяет построенное. Следуй обучению сверху.", false)
 
 
 func _on_player_died() -> void:

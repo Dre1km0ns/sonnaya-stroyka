@@ -15,6 +15,7 @@ var shadows: bool = true
 var mouse_sensitivity: float = 1.0
 var fullscreen: bool = false
 var show_fps: bool = false
+var dream_start: bool = true    # v0.20: новый мир начинается во Сне с обучением
 
 const RENDER_MIN := 2
 const RENDER_MAX := 8
@@ -23,6 +24,9 @@ const ENTITY_MAX := 6
 
 
 ## v0.6: переназначаемое управление. [action, подпись, тип ("key"/"mouse"), код по умолчанию]
+## v0.20: заголовки разделов в меню управления — раздел начинается с указанного действия.
+const SECTIONS := {"move_forward": "Движение", "place_block": "Действия и Явь", "dream_palette": "Сон — главный мир: проектирование, якоря, испытание", "toggle_debug": "Прочее", "hotbar_1": "Хотбар"}
+
 const BINDABLE := [
 	["move_forward", "Вперёд", "key", KEY_W],
 	["move_back", "Назад", "key", KEY_S],
@@ -31,30 +35,31 @@ const BINDABLE := [
 	["jump", "Прыжок / вверх (полёт)", "key", KEY_SPACE],
 	["sprint", "Бег", "key", KEY_SHIFT],
 	["fly_down", "Вниз (полёт)", "key", KEY_CTRL],
+	["toggle_fly", "Полёт во сне", "key", KEY_V],
 	["place_block", "Удар / поставить / использовать", "mouse", MOUSE_BUTTON_LEFT],
 	["remove_block", "Снять блок / копать", "mouse", MOUSE_BUTTON_RIGHT],
 	["interact", "Взаимодействие (кровать — сон, верстак, станок)", "key", KEY_E],
 	["open_inventory", "Инвентарь", "key", KEY_I],
+	["use_heal", "Лечение (H сам выберет зелье)", "key", KEY_H],
+	["pillow_check", "Под подушку (у кровати)", "key", KEY_Y],
+	["dream_palette", "Сон: материал палитры (Shift — назад)", "key", KEY_T],
 	["craft_nail", "Крафт (во сне)", "key", KEY_C],
 	["cycle_anchor", "Сменить якорь", "key", KEY_R],
 	["anchor_place", "Поставить якорь", "key", KEY_Q],
 	["place_beacon", "Поставить маяк", "key", KEY_G],
 	["wake_up", "Проснуться", "key", KEY_F],
-	["use_heal", "Лечение (H сам выберет зелье)", "key", KEY_H],
+	["dream_frame", "Сон: угол рамки (Shift — по блоку)", "key", KEY_K],
+	["dream_fill", "Сон: залить рамку (Shift — очистить)", "key", KEY_L],
+	["dream_mirror", "Сон: зеркало X / Z / выкл", "key", KEY_X],
+	["dream_undo", "Сон: отменить правку", "key", KEY_Z],
+	["dream_redo", "Сон: вернуть правку", "key", KEY_U],
+	["dream_trial", "Сон: испытание рамки фантомами", "key", KEY_M],
+	["dream_offer", "Сон: исполнить просьбу Сна", "key", KEY_J],
 	["blueprint_save", "Архив Снов: сохранить рамку в чертёж (во сне)", "key", KEY_B],
 	["blueprint_show", "Архив Снов: выбрать чертёж (во сне)", "key", KEY_N],
 	["blueprint_paste", "Сон: вставить чертёж у прицела", "key", KEY_P],
 	["blueprint_rotate", "Сон: повернуть чертёж на 90°", "key", KEY_O],
-	["dream_undo", "Сон: отменить правку", "key", KEY_Z],
-	["dream_redo", "Сон: вернуть правку", "key", KEY_U],
-	["dream_frame", "Сон: угол рамки (Shift — по блоку)", "key", KEY_K],
-	["dream_fill", "Сон: залить рамку (Shift — очистить)", "key", KEY_L],
-	["dream_mirror", "Сон: зеркало X / Z / выкл", "key", KEY_X],
-	["dream_offer", "Сон: исполнить просьбу Сна", "key", KEY_J],
-	["dream_trial", "Сон: испытание рамки фантомами", "key", KEY_M],
-	["pillow_check", "Под подушку (у кровати)", "key", KEY_Y],
-	["toggle_fly", "Полёт во сне", "key", KEY_V],
-	["dream_palette", "Сон: материал палитры (Shift — назад)", "key", KEY_T],
+	["tutorial_skip", "Пропустить обучение во Сне", "key", KEY_F1],
 	["toggle_debug", "Отладка / FPS", "key", KEY_F3],
 	["quick_save", "Быстрое сохранение", "key", KEY_F5],
 	["quick_load", "Быстрая загрузка", "key", KEY_F9],
@@ -96,6 +101,7 @@ func load_settings() -> void:
 	shadows = bool(cfg.get_value("video", "shadows", shadows))
 	fullscreen = bool(cfg.get_value("video", "fullscreen", fullscreen))
 	show_fps = bool(cfg.get_value("video", "show_fps", show_fps))
+	dream_start = bool(cfg.get_value("game", "dream_start", dream_start))
 	mouse_sensitivity = clampf(float(cfg.get_value("input", "mouse_sensitivity", mouse_sensitivity)), 0.2, 4.0)
 	if cfg.has_section("keybinds"):
 		for row in BINDABLE:
@@ -120,6 +126,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "shadows", shadows)
 	cfg.set_value("video", "fullscreen", fullscreen)
 	cfg.set_value("video", "show_fps", show_fps)
+	cfg.set_value("game", "dream_start", dream_start)
 	cfg.set_value("input", "mouse_sensitivity", mouse_sensitivity)
 	for row in BINDABLE:
 		var a: String = row[0]
@@ -279,6 +286,8 @@ func set_value(key: String, value: Variant) -> void:
 			apply_window()
 		"show_fps":
 			show_fps = bool(value)
+		"dream_start":
+			dream_start = bool(value)
 		"mouse_sensitivity":
 			mouse_sensitivity = clampf(float(value), 0.2, 4.0)
 	apply_audio()

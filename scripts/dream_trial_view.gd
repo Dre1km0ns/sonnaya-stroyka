@@ -11,6 +11,10 @@ var _t := 0.0
 var playing := false
 var shown_phantoms := 0
 var shown_broken := 0
+var _sfx_cd := 0.0
+var _ended := false
+var sounds: Array = [] # v0.20: журнал звуков показа (для смоука)
+const Sfx := preload("res://scripts/sfx.gd")
 
 
 func _ready() -> void:
@@ -46,7 +50,8 @@ func _mm(mesh: Mesh, col: Color, emi: Color) -> MultiMeshInstance3D:
 
 
 func play(r: Dictionary) -> void:
-	_res = r; _t = 0.0; playing = true
+	_res = r; _t = 0.0; playing = true; _ended = false; sounds = []; shown_phantoms = 0; shown_broken = 0
+	_sound("trial_start", -10.0)
 	_core.visible = true
 	_core.position = Vector3(r.core) + Vector3(0.5, 0.6, 0.5)
 	show_tick(0)
@@ -74,13 +79,25 @@ func show_tick(tick: int) -> void:
 	_br.multimesh.instance_count = cells.size()
 	for i in range(cells.size()):
 		_br.multimesh.set_instance_transform(i, Transform3D(Basis(), Vector3(cells[i]) + Vector3(0.5, 0.5, 0.5)))
+	if playing and _sfx_cd <= 0.0:
+		if fr.size() < shown_phantoms: _sound("trial_burn", -16.0); _sfx_cd = 0.12
+		elif cells.size() > shown_broken: _sound("trial_breach", -12.0); _sfx_cd = 0.12
 	shown_phantoms = fr.size(); shown_broken = cells.size()
 
 
 func _process(delta: float) -> void:
 	if not playing: return
 	_t += delta * TPS
+	_sfx_cd -= delta
 	var tick := int(_t)
 	show_tick(tick)
+	if not _ended and tick >= _res.timeline.size():
+		_ended = true
+		_sound("trial_held" if bool(_res.get("held", false)) else "trial_fail", -9.0)
 	if tick >= _res.timeline.size() + int(TPS * 3.0):
 		stop()   # три секунды после конца — убираем
+
+
+func _sound(kind: String, db: float) -> void:
+	sounds.append(kind)
+	Sfx.play(kind, self, db)
