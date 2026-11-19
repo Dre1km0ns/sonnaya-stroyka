@@ -95,7 +95,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 13 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы
+const SAVE_FORMAT := 14 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -375,6 +375,7 @@ func reset_state() -> void:
 	nights_survived = 0
 	_undo = []; _redo = []; frame_points = 0; mirror_axis = 0; paste_rot = 0; paste_origin_set = false; _bp_seq = 0
 	dream_cracks = {}; dream_zones = []; dream_request = {}; requests_done = 0; nightmare_eaten = 0; cracks_patched = 0
+	tested_regions = []; last_trial = {}; trials_run = 0
 	selected_anchor = AnchorType.NAIL
 	last_hint = ""
 	awake_time = 0.0
@@ -2304,6 +2305,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	var result:Dictionary={"ok":true,"aborted":abort_transfer,"draft_saved":root_count if abort_transfer else 0,"transferred":transferred,"blocked":plan.blocked,"mutations":mutation.cells.size(),"cap":mutation.cap,"protected":mutation.protected,"dust":dust_gained,"unanchored":0,"kept_in_dream":root_count-moved_count,"copied":copied,"moved":moved_count,"materials":materials_spent,"unpaid":unpaid_count,"spent":spent,"refunded":refunded,"chest_moved":storage_report.moved,"chest_returned":storage_report.returned}
 	var patched := patch_cracks()
 	result["patched"] = patched
+	result["trial_bonus"] = reward_tested_regions() # v0.19: первая материализация испытанной постройки
 	set_hint("Пробуждение: материализовано %d (копий %d, перенесено объектов %d), мутаций %d%s. Сон сохранил всё построенное."%[transferred,copied,moved_count,mutation.cells.size()," · резерв якорей возвращён" if abort_transfer else ""],false)
 	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
 		chat("Под подушкой лежат зелья (%d). Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
@@ -2413,6 +2415,8 @@ func to_save_dict() -> Dictionary:
 		"requests_done": requests_done,
 		"nightmare_eaten": nightmare_eaten,
 		"cracks_patched": cracks_patched,
+		"tested_regions": tested_regions.duplicate(true),
+		"trials_run": trials_run,
 		"starter_kit_given": starter_kit_given,
 		"starter_camp_built": starter_camp_built,
 		"dream_stash": dream_stash.duplicate(true),
@@ -2645,6 +2649,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	migrate_lanterns() # v0.11.1: «Фонарь глубин» удалён — в любых сейвах превращается в факелы.
 	_load_v016(data, fmt)
 	_load_v018(data)
+	_load_v019(data)
 	_loading_save = false
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
@@ -3434,6 +3439,8 @@ func save_blueprint() -> bool:
 	if blueprints.size() >= blueprint_cap():
 		blueprints.pop_front()
 	bp.name = "Чертёж %d" % (_bp_seq + 1)
+	var tg := trial_grade_for_frame()
+	if tg != "": bp["grade"] = tg # v0.19: чертёж помнит оценку испытания
 	_bp_seq += 1
 	blueprints.append(bp)
 	blueprint_shown = blueprints.size() - 1
@@ -4071,4 +4078,91 @@ func _load_v018(data: Dictionary) -> void:
 	cracks_patched = int(data.get("cracks_patched", 0))
 	# сады поднимают предел осознанности — восстановить сохранённое значение до нового предела
 	clarity = clampf(maxf(clarity, float(data.get("clarity", clarity))), 0.0, dream_clarity_max())
+
+
+# --- v0.19: Испытание Сна (DREAM_CORE_PLAN.md §4.6) ---
+# M во Сне при готовой рамке: фантомы осаждают постройку (симуляция на копии — Сон не меняется).
+# Выдержавшая рамка запоминается; первая материализация такой постройки в Явь даёт осознанность
+# (S +20, A +15, B +10). Чертёж, снятый с испытанной рамки, хранит оценку.
+signal trial_finished(result: Dictionary)
+const DREAM_TRIAL = preload("res://scripts/dream_trial.gd")
+const TRIAL_REGION_MAX := 16
+var tested_regions: Array = []        # [{"lo","hi","grade","sig","rewarded","functions"}]
+var last_trial: Dictionary = {}
+var trials_run := 0
+
+
+func _region_sig(lo: Vector3i, hi: Vector3i) -> int:
+	## Отпечаток содержимого рамки: изменили постройку — испытание надо пройти заново.
+	var parts: Array = []
+	for c in dream_blocks:
+		if _in_box(c, lo, hi): parts.append("%d,%d,%d:%s" % [c.x, c.y, c.z, dream_blocks[c].get("kind", "")])
+	parts.sort()
+	return hash(";".join(parts))
+
+
+func run_trial() -> Dictionary:
+	if not is_dream():
+		set_hint("Испытание проводят во Сне.", false); return {}
+	if not frame_complete():
+		set_hint("Испытание: сначала рамка вокруг постройки (K, K), затем M.", false); return {}
+	var box := frame_box(); var lo: Vector3i = box[0]; var hi: Vector3i = box[1]
+	if (hi - lo).x > 40 or (hi - lo).z > 40:
+		set_hint("Испытание: рамка не шире 41×41.", false); return {}
+	var r: Dictionary = DREAM_TRIAL.run(dream_blocks, lo, hi)
+	trials_run += 1
+	r["lo"] = lo; r["hi"] = hi
+	last_trial = r
+	var sig := _region_sig(lo, hi)
+	tested_regions = tested_regions.filter(func(t): return not (t.lo == cell_key(lo) and t.hi == cell_key(hi)))
+	if r.held:
+		tested_regions.append({"lo": cell_key(lo), "hi": cell_key(hi), "grade": r.grade, "sig": sig, "rewarded": false, "functions": r.functions})
+		while tested_regions.size() > TRIAL_REGION_MAX: tested_regions.pop_front()
+		milestones_mark("trial")
+	var fn: Array = r.functions.map(func(f): return {"shelter": "убежище", "light_ring": "световое кольцо", "fortress": "крепость"}.get(f, f))
+	if r.held:
+		set_hint("Испытание: постройка выдержала! Оценка %s. Фантомов %d, сожжено светом %d, прогрызено дрейфа %d.%s Материализуй её — бонус +%d осознанности." % [r.grade, r.phantoms, r.burned, r.broken.size(), (" Функции: " + ", ".join(fn) + ".") if not fn.is_empty() else "", int(DREAM_TRIAL.GRADE_BONUS.get(r.grade, 0))], false)
+	else:
+		set_hint("Испытание провалено: к сердцу прорвалось %d из %d фантомов (оценка %s). Красным — где прогрызли дрейф. Закрой щели, подними стены до 2 блоков, поставь свет." % [r.breaches, r.phantoms, r.grade], false)
+	trial_finished.emit(r)
+	objective_changed.emit()
+	return r
+
+
+func trial_grade_for_frame() -> String:
+	if not frame_complete(): return ""
+	var box := frame_box()
+	for t in tested_regions:
+		if t.lo == cell_key(box[0]) and t.hi == cell_key(box[1]) and int(t.sig) == _region_sig(box[0], box[1]): return str(t.grade)
+	return ""
+
+
+func reward_tested_regions() -> float:
+	## Испытанная постройка «построена в Яви», если ≥ 50% её блоков Сна стоят в Яви тем же материалом.
+	var total := 0.0
+	for t in tested_regions:
+		if t.rewarded: continue
+		var lo := key_cell(str(t.lo)); var hi := key_cell(str(t.hi))
+		var n := 0; var same := 0
+		for c in dream_blocks:
+			if _in_box(c, lo, hi) and not dream_blocks[c].has("root"):
+				n += 1
+				if str(wake_blocks.get(c, {}).get("kind", "")) == str(dream_blocks[c].get("kind", "")): same += 1
+		if n > 0 and same * 2 >= n:
+			t.rewarded = true
+			var b: float = DREAM_TRIAL.GRADE_BONUS.get(str(t.grade), 0.0)
+			total += b
+			gain_lucidity(b, "испытанная постройка")
+			milestones_mark("trial_built")
+			chat("Испытанная постройка (оценка %s) материализована: осознанность +%d." % [t.grade, int(b)], Color(0.85, 0.75, 1.0))
+	return total
+
+
+func _load_v019(data: Dictionary) -> void:
+	tested_regions = []
+	for t in data.get("tested_regions", []):
+		if typeof(t) == TYPE_DICTIONARY and t.has("lo") and t.has("hi"):
+			tested_regions.append({"lo": str(t.lo), "hi": str(t.hi), "grade": str(t.get("grade", "B")), "sig": int(t.get("sig", 0)), "rewarded": bool(t.get("rewarded", false)), "functions": t.get("functions", [])})
+	trials_run = int(data.get("trials_run", 0))
+	last_trial = {}
 

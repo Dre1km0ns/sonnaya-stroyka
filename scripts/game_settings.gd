@@ -51,6 +51,7 @@ const BINDABLE := [
 	["dream_fill", "Сон: залить рамку (Shift — очистить)", "key", KEY_L],
 	["dream_mirror", "Сон: зеркало X / Z / выкл", "key", KEY_X],
 	["dream_offer", "Сон: исполнить просьбу Сна", "key", KEY_J],
+	["dream_trial", "Сон: испытание рамки фантомами", "key", KEY_M],
 	["pillow_check", "Под подушку (у кровати)", "key", KEY_Y],
 	["toggle_fly", "Полёт во сне", "key", KEY_V],
 	["dream_palette", "Сон: материал палитры (Shift — назад)", "key", KEY_T],

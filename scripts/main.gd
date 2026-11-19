@@ -41,6 +41,7 @@ func _ready() -> void:
 	dream_world.add_child(dream_tools)
 	dream_tools.setup(player, dream_voxels)
 	dream_world.add_child(load("res://scripts/dream_cracks.gd").new()) # v0.18: трещины Сна
+	dream_world.add_child(load("res://scripts/dream_trial_view.gd").new()) # v0.19: показ испытания
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
 	var loaded := false
 	if not _want_shots() and saver.has_save():

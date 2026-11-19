@@ -96,6 +96,7 @@ func _handle_input() -> void:
 		var a := aim_cells()
 		var at: Vector3i = a.get("place", Vector3i(player.global_position.floor()) if player else Vector3i.ZERO)
 		GameState.cycle_mirror(at)
+	if _just("dream_trial"): GameState.run_trial() # v0.19
 	if _just("blueprint_rotate"): GameState.rotate_paste(-1 if shift else 1)
 	if _just("blueprint_paste"):
 		var a := aim_cells()

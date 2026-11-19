@@ -3647,7 +3647,7 @@ func _v018_checks() -> void:
 	gs.add_crack(Vector3i(1, 2, 3), "planks"); gs.dream_blocks[Vector3i(1, 2, 3)] = {"kind": "planks", "anchored": false, "mutant": false}
 	gs.on_mother_killed(); gs.clarity = gs.dream_clarity_max()
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
-	_a(int(sv.version) == 13, 18050)
+	_a(int(sv.version) >= 13, 18050)
 	var keep_req: String = JSON.stringify(gs.dream_request)
 	gs.reset_state(); gs.apply_save_dict(sv)
 	_a(gs.dream_cracks.has("1,2,3") and gs.dream_zones == ["stone_garden"] and gs.requests_done == 3 and JSON.stringify(gs.dream_request) == keep_req and is_equal_approx(gs.clarity, gs.dream_clarity_max()), 18051)
@@ -3680,3 +3680,103 @@ func _v018_checks() -> void:
 	scene.switcher.wake_up()
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.18 cracks from monsters only / nightmare deterministic + guards / patch via anchor / dream gardens / requests / save v13 + migration / scene OK")
+	await _v019_checks()
+
+
+func _v019_house(gs: Node, o: Vector3i, kind: String, h: int, hole: bool) -> void:
+	for x in range(9):
+		for z in range(9):
+			gs.dream_blocks[o + Vector3i(x, 0, z)] = {"kind": "stone", "anchored": false, "mutant": false}
+			for y in range(1, 1 + h):
+				if (x == 0 or x == 8 or z == 0 or z == 8) and not (hole and x == 4 and z == 0):
+					gs.dream_blocks[o + Vector3i(x, y, z)] = {"kind": kind, "anchored": false, "mutant": false}
+
+
+func _v019_checks() -> void:
+	## v0.19 «Испытание Сна»: осада фантомами на копии, оценка, функции, бонус материализации, сейв.
+	var gs: Node = load("res://scripts/game_state.gd").new(); root.add_child(gs)
+	gs.reset_state(); gs.dev_mode = false
+	gs.enter_dream()
+	var A := Vector3i(100, 5, 100)
+	_v019_house(gs, A, "stone", 2, false)
+	var before: String = JSON.stringify(gs.to_save_dict().dream_blocks)
+	_a(gs.run_trial().is_empty(), 19000)   # без рамки — отказ
+	gs.frame_mark(A); gs.frame_mark(A + Vector3i(8, 3, 8))
+	var r: Dictionary = gs.run_trial()
+	_a(r.held and r.grade == "S" and int(r.breaches) == 0 and gs.tested_regions.size() == 1 and gs.milestones.has("trial"), 19001)
+	_a(JSON.stringify(gs.to_save_dict().dream_blocks) == before, 19002)   # Сон не изменился
+	var r2: Dictionary = gs.run_trial()
+	r.erase("lo"); r.erase("hi"); r2.erase("lo"); r2.erase("hi")
+	_a(JSON.stringify(r) == JSON.stringify(r2) and gs.tested_regions.size() == 1, 19003)   # детерминированно, без дублей
+	# дыра, дрейф, стена в 1 блок — не держат
+	var T = load("res://scripts/dream_trial.gd")
+	var src := {}
+	var g2: Node = load("res://scripts/game_state.gd").new(); root.add_child(g2); g2.reset_state()
+	_v019_house(g2, Vector3i.ZERO, "stone", 2, true)
+	var rh: Dictionary = T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8))
+	_a(not rh.held and int(rh.breaches) == T.PHANTOMS and rh.grade == "D", 19010)
+	g2.reset_state(); _v019_house(g2, Vector3i.ZERO, "drift", 2, false)
+	var rd: Dictionary = T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8))
+	_a(not rd.held and rd.broken.size() > 0 and rd.broken_t.size() == rd.broken.size(), 19011)
+	g2.reset_state(); _v019_house(g2, Vector3i.ZERO, "stone", 1, false)
+	_a(not T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8)).held, 19012)
+	# свет закрывает дыру: фантомы сгорают
+	g2.reset_state(); _v019_house(g2, Vector3i.ZERO, "stone", 2, true)
+	for p in [Vector3i(4, 1, -2), Vector3i(1, 1, -2), Vector3i(7, 1, -2)]: g2.dream_blocks[p] = {"kind": "lumen", "anchored": false, "mutant": false}
+	var rl: Dictionary = T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8))
+	_a(rl.held and int(rl.burned) > 0, 19013)
+	# частичная слабость: одна секция дрейфа в каменной стене — прогрызут (не держит), а с 2 светоблоками у неё держит
+	g2.reset_state(); _v019_house(g2, Vector3i.ZERO, "stone", 2, false)
+	g2.dream_blocks[Vector3i(4, 1, 0)] = {"kind": "drift", "anchored": false, "mutant": false}; g2.dream_blocks[Vector3i(4, 2, 0)] = {"kind": "drift", "anchored": false, "mutant": false}
+	var rw: Dictionary = T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8))
+	_a(not rw.held and rw.broken.size() >= 1, 19014)
+	# убежище: стены + дверь + кровать внутри
+	g2.reset_state(); _v019_house(g2, Vector3i.ZERO, "stone", 2, false)
+	g2.dream_blocks.erase(Vector3i(4, 1, 0)); g2.dream_blocks.erase(Vector3i(4, 2, 0))
+	_a(g2.place_dream_block(Vector3i(4, 1, 0), "door", 0) and g2.place_dream_block(Vector3i(3, 1, 4), "bed", 0), 19015)
+	var rs: Dictionary = T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8))
+	_a(rs.held and rs.functions.has("shelter") and rs.functions.has("fortress"), 19016)
+	g2.queue_free()
+	# 2) Бонус: испытанную постройку материализовали (≥50% блоков в Яви) — +20 один раз.
+	for c in gs.dream_blocks:
+		if c.y <= A.y + 1: gs.wake_blocks[c] = {"kind": gs.dream_blocks[c].kind}
+	gs.clarity = 10.0
+	_a(is_equal_approx(gs.reward_tested_regions(), 20.0) and is_equal_approx(gs.clarity, 30.0) and gs.milestones.has("trial_built"), 19020)
+	_a(is_equal_approx(gs.reward_tested_regions(), 0.0), 19021)
+	# 3) Оценка в чертеже; правка сбрасывает оценку рамки.
+	_a(gs.trial_grade_for_frame() == "S" and gs.save_blueprint() and str(gs.blueprints.back().get("grade", "")) == "S", 19030)
+	gs.dream_tool_place(A + Vector3i(4, 3, 4), "drift")
+	_a(gs.trial_grade_for_frame() == "", 19031)
+	gs.frame_mark(Vector3i(0, 0, 0)); gs.frame_mark(Vector3i(60, 2, 2))
+	_a(gs.run_trial().is_empty(), 19032)   # слишком большая рамка
+	# 4) Сейв v14 + миграция v13.
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
+	_a(int(sv.version) == 14 and sv.tested_regions.size() == 1, 19040)
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.tested_regions.size() == 1 and gs.tested_regions[0].rewarded and gs.tested_regions[0].grade == "S" and gs.trials_run == 2, 19041)
+	sv.version = 13; sv.erase("tested_regions"); sv.erase("trials_run")
+	gs.reset_state(); gs.apply_save_dict(sv)
+	_a(gs.tested_regions.is_empty() and gs.trials_run == 0 and gs.blueprints.size() >= 1, 19042)
+	gs.queue_free(); await process_frame
+	# 5) Сцена: M настоящим вводом запускает показ, фантомы видны.
+	var G: Node = root.get_node("GameState")
+	G.begin_world("v019 scene", "", "1909", 1909, false)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	await process_frame
+	scene.player.set_physics_process(false)
+	scene.switcher.enter_dream()
+	_v019_house(G, Vector3i(30, 20, 30), "stone", 2, true)
+	G.frame_mark(Vector3i(30, 20, 30)); G.frame_mark(Vector3i(38, 23, 38))
+	var view: Node = scene.get_tree().get_first_node_in_group("dream_trial_view")
+	for i in range(4): await process_frame   # вход в Сон закрывает модальное окно — 2 кадра ввод заблокирован намеренно
+	var e := InputEventAction.new(); e.action = "dream_trial"; e.pressed = true; Input.parse_input_event(e)
+	await process_frame; await process_frame
+	e = InputEventAction.new(); e.action = "dream_trial"; e.pressed = false; Input.parse_input_event(e)
+	await process_frame
+	_a(view != null and view.playing and view.shown_phantoms > 0 and not G.last_trial.held, 19050)
+	scene.switcher.show_result_ui = false
+	scene.switcher.wake_up()
+	await process_frame
+	_a(not view.playing, 19051)
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.19 trial: wall holds / hole, drift, 1-high fail / light burns / shelter / bonus once / blueprint grade / save v14 / scene M OK")
