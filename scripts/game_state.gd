@@ -1363,6 +1363,37 @@ func hit_from(origin: Vector3) -> void:
 	_hit_origin = origin
 
 
+## v0.22: урон от падения как в Minecraft — 3 блока бесплатно, дальше 1/20 здоровья за блок
+## (у нас 100 HP → 5 за блок). В воду — без урона. Броня не спасает (как в Minecraft).
+const FALL_SAFE_BLOCKS := 3.0
+const FALL_DMG_PER_BLOCK := 5
+var fall_damage_enabled := true
+var last_fall_height := 0.0
+var last_fall_damage := 0
+
+static func fall_damage_for(height: float) -> int:
+	return maxi(0, floori(height - FALL_SAFE_BLOCKS + 0.2)) * FALL_DMG_PER_BLOCK
+
+
+func apply_fall(height: float) -> int:
+	last_fall_height = height
+	last_fall_damage = 0
+	if not fall_damage_enabled or god_mode or is_dream() or player_hp <= 0:
+		return 0
+	var dmg := fall_damage_for(height)
+	if dmg <= 0:
+		return 0
+	last_fall_damage = dmg
+	player_hp = maxi(0, player_hp - dmg)
+	_hp_regen_cd = PLAYER_REGEN_DELAY
+	_hp_regen_acc = 0.0
+	player_hp_changed.emit(player_hp, PLAYER_MAX_HP)
+	set_hint("Падение: −%d" % dmg)
+	if player_hp <= 0:
+		player_died.emit()
+	return dmg
+
+
 func damage_player(amount: int, source: String = "", ignore_iframes: bool = false) -> int:
 	var origin := _hit_origin
 	_hit_origin = Vector3.INF
@@ -2333,7 +2364,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	var patched := patch_cracks()
 	result["patched"] = patched
 	result["trial_bonus"] = reward_tested_regions() # v0.19: первая материализация испытанной постройки
-	set_hint("Пробуждение: материализовано %d · копий %d · перенесено объектов %d · мутаций %d%s. Сон сохранил всё построенное."%[transferred,copied,moved_count,mutation.cells.size()," · резерв якорей возвращён" if abort_transfer else ""],false)
+	pass  # v0.22: без сводки после выхода из Сна
 	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
 		chat("Под подушкой лежат зелья: %d. Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
 	return result
@@ -3841,12 +3872,12 @@ func dream_clear() -> int:
 		if d.has("root") or not _palette_kind(str(d.get("kind", ""))) or d.get("anchored", false): skipped += 1; continue
 		cells.append(c)
 	if cells.is_empty(): set_hint("В рамке нечего очищать.", false); return 0
-	if not _tool_pay(cells.size(), "Очистка"): return 0
+	# v0.22: очистка как в WorldEdit — любой объём, бесплатно, Z отменяет.
 	var before := _dream_snap(cells)
 	for c in cells: dream_blocks.erase(c)
 	_push_edit("очистка", before, _dream_snap(cells))
 	placed_cells_changed.emit(true, cells)
-	last_tool = {"op": "clear", "n": cells.size(), "cost": tool_cost(cells.size()), "skipped": skipped}
+	last_tool = {"op": "clear", "n": cells.size(), "cost": 0.0, "skipped": skipped}
 	set_hint("Очищено %d%s. Z — отменить." % [cells.size(), (" · пропущено станций и якорей: %d" % skipped) if skipped > 0 else ""], false)
 	return cells.size()
 

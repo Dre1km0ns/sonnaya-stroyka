@@ -1729,12 +1729,12 @@ func _v08_checks() -> void:
 	_a(not director._ghost_can_spawn(0,1),1675)
 	director.awake_time = 101.0
 	_a(not director._ghost_can_spawn(0,0),1676)
-	director.awake_time = 160.9
+	director.awake_time = 340.9 # v0.22: днём задержка ×4 (60 → 240 с)
 	_a(not director._ghost_can_spawn(0,0),1677)
 	var gdump: Dictionary = JSON.parse_string(JSON.stringify(director.to_save_dict()))
 	director.apply_save_dict(gdump)
 	_a(not director._ghost_can_spawn(0,0),1678)
-	director.awake_time = 161.0
+	director.awake_time = 341.0
 	_a(director._ghost_can_spawn(0,0) and not director._ghost_can_spawn(0,3),1679)
 	director.queue_free()
 	G.reset_state()
@@ -2374,12 +2374,12 @@ func _v010_transfer_checks() -> void:
 	# v0.16: при нулевой осознанности Esc больше не будит силой — игрок остаётся во Сне.
 	_a(G.is_dream() and not G.transfer_ui_open and not paused and G.dream_blocks.has(far) and G.pending_anchors.size()==1,10087)
 	var ab:Dictionary=scene.switcher.wake_up(true)
-	_a(not G.is_dream() and ab.aborted and G.dream_blocks.has(far) and G.pending_anchors.is_empty() and ui.panel.visible,100870)
-	key.keycode=KEY_Y;ui._input(key);_a(not G.transfer_ui_open and not paused,10088)
+	_a(not G.is_dream() and ab.aborted and G.dream_blocks.has(far) and G.pending_anchors.is_empty() and not ui.panel.visible,100870) # v0.22: сводки нет
+	key.keycode=KEY_Y;_a(not G.transfer_ui_open and not paused,10088)
 	_a(DisplayServer.get_name()=="headless" or Input.mouse_mode==Input.MOUSE_MODE_CAPTURED,100881)
 	G.remove_shape(G.wake_blocks,far+Vector3i.UP);scene.switcher.enter_dream();_a(G.try_place_anchor(far),10089)
-	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and ui.panel.visible and paused and not G.dream_blocks.has(far) and not G.dream_blocks.has(far+Vector3i.UP) and int(success.moved)==1,10090) # v0.16: дверь уникальна — перенесена; площадка Сна осталась
-	ui._input(key);_a(not paused and not G.transfer_ui_open,10091)
+	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and not ui.panel.visible and not paused and not G.dream_blocks.has(far) and not G.dream_blocks.has(far+Vector3i.UP) and int(success.moved)==1,10090) # v0.16: дверь уникальна — перенесена; площадка Сна осталась
+	_a(not paused and not G.transfer_ui_open,10091)
 	var console:Node=get_first_node_in_group("dev_console")
 	for command in ["help transfer","transfer plan","transfer risk","transfer cancel"]:_a(not console.execute(command).begins_with("Ошибка"),10092)
 	_a(console.completion_candidates("transfer ").size()==5,10093)
@@ -3864,4 +3864,67 @@ func _v022_checks() -> void:
 	host.queue_free()
 	await process_frame
 	print("SMOKE: v0.22: bosses v0.11 + anaconda torch aggro, no light stun OK")
+	await _v022_scene_checks()
+
+
+func _v022_scene_checks() -> void:
+	var G: Node = root.get_node("GameState")
+	G.reset_state()
+	G.begin_world("v022 test", "", "6767676767", G.DEV_SEED, true)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	for i in range(3): await process_frame
+	scene.player.set_physics_process(false); scene.threat.set_process(false)
+	# п.6/11/12: нет сводки после Сна, нет 3D-надписи лагеря, у кровати нет окна выбора
+	_a(scene.switcher.show_result_ui and scene.find_child("CampSign", true, false) == null, 22010)
+	var hud: Node = scene.get_node("HUD")
+	_a(hud._bed_prompt == null or not hud._bed_prompt.visible, 22011)
+	scene.switcher.enter_dream(); await process_frame
+	var wr: Dictionary = scene.switcher.wake_up(); await process_frame
+	var tui: Node = get_first_node_in_group("transfer_result_ui")
+	_a(wr.ok and not G.is_dream() and not paused and (tui == null or not tui.panel.visible), 22012)
+	# п.9: днём спавн −75 %
+	var td: GDScript = load("res://scripts/threat_director.gd")
+	_a(is_equal_approx(td.spawn_interval(0.0, false), 220.0) and is_equal_approx(td.spawn_interval(0.0, true), 33.0), 22013)
+	# п.2: факел держится на верхней грани или стене; на факел — нельзя; без опоры падает предметом
+	var b: Node = scene.build
+	var base := Vector3i(0, 40, 0)
+	G.wake_blocks[base] = {"kind": "stone", "mutant": false}
+	var t1 := base + Vector3i.UP
+	var at: Vector3i = b.torch_attach_for(t1, Vector3.UP)
+	_a(at == base, 22020)
+	G.wake_blocks[t1] = {"kind": "torch", "mutant": false, "attach": [base.x, base.y, base.z]}
+	_a(b.torch_attach_for(t1 + Vector3i.UP, Vector3.UP).y == -9999, 22021)           # на факел нельзя
+	_a(b.torch_attach_for(base + Vector3i.DOWN, Vector3.DOWN).y == -9999, 22022)      # на потолок нельзя
+	var side := base + Vector3i(1, 0, 0)
+	_a(b.torch_attach_for(side, Vector3(1, 0, 0)) == base, 22023)                     # на стену можно
+	G.wake_blocks[side] = {"kind": "torch", "mutant": false, "attach": [base.x, base.y, base.z]}
+	var pick_before := get_nodes_in_group("pickup").filter(func(n): return str(n.get("kind")) == "torch").size()
+	G.wake_blocks.erase(base)
+	_a(b.drop_unsupported_torches(base) == 2 and not G.wake_blocks.has(t1) and not G.wake_blocks.has(side), 22024)
+	var pick_after := get_nodes_in_group("pickup").filter(func(n): return str(n.get("kind")) == "torch").size()
+	if pick_after - pick_before != 2: print("DBG22025 ", pick_before, " ", pick_after, " ww=", b._wake_world())
+	_a(pick_after - pick_before == 2, 22025)
+	# старый сейв без attach: держится, пока есть пол
+	G.wake_blocks[base] = {"kind": "stone", "mutant": false}; G.wake_blocks[t1] = {"kind": "torch", "mutant": false}
+	_a(b.torch_supported(t1), 22026)
+	G.wake_blocks.erase(base); _a(not b.torch_supported(t1), 22027); G.wake_blocks.erase(t1)
+	# п.14: урон от падения как в Minecraft
+	_a(G.fall_damage_for(3.0) == 0 and G.fall_damage_for(4.0) == 5 and G.fall_damage_for(10.0) == 35 and G.fall_damage_for(23.0) == 100, 22030)
+	G.player_hp = 100; G.god_mode = false
+	_a(G.apply_fall(8.0) == 25 and G.player_hp == 75, 22031)
+	G.fall_damage_enabled = false; _a(G.apply_fall(20.0) == 0 and G.player_hp == 75, 22032); G.fall_damage_enabled = true
+	G.player_hp = 100
+	# п.10: очистка рамки — любой объём, бесплатно, Z отменяет
+	scene.switcher.enter_dream(); await process_frame
+	G.dream_blocks.clear()
+	for x in range(10):
+		for y in range(10):
+			for z in range(10): G.dream_blocks[Vector3i(300 + x, 20 + y, 300 + z)] = {"kind": "drift", "anchored": false, "mutant": false}
+	G.clarity = 0.0
+	G.frame_points = 0; G.frame_mark(Vector3i(300, 20, 300)); G.frame_mark(Vector3i(309, 29, 309))
+	_a(G.dream_clear() == 1000 and G.dream_blocks.is_empty() and is_equal_approx(G.clarity, 0.0), 22040)
+	_a(G.dream_undo() == 1000 and G.dream_blocks.size() == 1000, 22041)
+	scene.switcher.wake_up(); await process_frame
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.22 scene: no wake summary / no camp sign / bed no prompt / day spawn −75% / torch support / fall damage / frame clear OK")
 

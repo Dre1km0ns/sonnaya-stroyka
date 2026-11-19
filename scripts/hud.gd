@@ -333,16 +333,8 @@ func _build_bed_prompt() -> void:
 func _update_bed_prompt() -> void:
 	if _bed_prompt == null:
 		return
-	var show := false
-	if not GameState.is_dream() and not GameState.ui_blocked():
-		for sw in get_tree().get_nodes_in_group("world_switcher"):
-			if sw.has_method("aimed_bed") and sw.aimed_bed() != null:
-				show = true
-	_bed_prompt.visible = show
-	if show:
-		var n: int = GameState.pillow_count("heal1")
-		_bed_prompt_label.text = "Вы хотите проверить, что находится под подушкой?\n[%s] Да   ·   [%s] Лечь спать (сон)%s" % [
-			_key("pillow_check", "Y"), _key("interact", "E"), ("   · там что-то лежит (%d)" % n) if n > 0 else ""]
+	# v0.22: у кровати нет окна выбора: Y — под подушку, E — в Сон.
+	_bed_prompt.visible = false
 
 
 func bed_prompt_visible() -> bool:

@@ -304,6 +304,7 @@ func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 
 func _finish_mine(cell: Vector3i, kind: String) -> void:
 	var mined_tool := str(GameState.get_selected_item().get("id",""))
+	drop_unsupported_torches(cell)
 	GameState.wear_tool(1)
 	Sfx.play("break_" + Mining.material(kind), get_tree().root)
 	if Mining.drops(kind,mined_tool):
@@ -455,14 +456,68 @@ func _try_place_torch() -> void:
 		cell = vox.world_to_cell(hit_pos + normal * 0.51)
 	else:
 		return # v0.11.1: в воздух ставить нельзя
-	if not _wake_cell_free(cell) or not placement_supported(cell, false):
+	if not _wake_cell_free(cell) or GameState.wake_blocks.has(cell):
+		return
+	# v0.22: факел держится как в Minecraft — на верхней грани блока или на стене (не на потолке и не на факеле).
+	var attach := torch_attach_for(cell, Vector3(aim["normal"]))
+	if attach.y == -9999:
 		return
 	if not GameState.consume_item("torch", 1):
 		return
 	if GameState.place_wake_block(cell, "torch"):
+		GameState.wake_blocks[cell]["attach"] = [attach.x, attach.y, attach.z]
 		vox.sync_cells([cell])
 	else:
 		GameState.add_item("torch", "Факел", 1)
+
+
+func cell_solid_wake(c: Vector3i) -> bool:
+	## Твёрдая клетка Яви для опоры факела: поставленный блок (не факел, не открытая дверь) или рельеф.
+	if GameState.wake_blocks.has(c):
+		return GameState.wake_solid(c)
+	var cm := _layer_chunks(false)
+	return cm != null and cm.has_method("is_cell_solid") and bool(cm.is_cell_solid(c))
+
+
+func torch_attach_for(cell: Vector3i, normal: Vector3) -> Vector3i:
+	## Возвращает клетку-опору или y=-9999, если факел тут не держится.
+	var n := Vector3i(roundi(normal.x), roundi(normal.y), roundi(normal.z))
+	if n.y < 0:
+		return Vector3i(0, -9999, 0)               # потолок
+	var sup := cell - n if n != Vector3i.ZERO else cell + Vector3i.DOWN
+	if not cell_solid_wake(sup):
+		sup = cell + Vector3i.DOWN                 # запасной вариант — пол
+		if not cell_solid_wake(sup):
+			return Vector3i(0, -9999, 0)
+	return sup
+
+
+func torch_supported(c: Vector3i) -> bool:
+	var d: Dictionary = GameState.wake_blocks.get(c, {})
+	if str(d.get("kind", "")) != "torch":
+		return true
+	var at = d.get("attach", null)
+	if at is Array and (at as Array).size() == 3:
+		return cell_solid_wake(Vector3i(int(at[0]), int(at[1]), int(at[2])))
+	# старые сейвы без опоры: пол или любая боковая стена
+	for dd in [Vector3i.DOWN, Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+		if cell_solid_wake(c + dd):
+			return true
+	return false
+
+
+func drop_unsupported_torches(removed: Vector3i) -> int:
+	## v0.22: блок под/за факелом убрали — факел падает и выпадает предметом.
+	var n := 0
+	var vox := _wake_voxels()
+	for d in _NEIGHBOURS6:
+		var t: Vector3i = removed + d
+		if str(GameState.wake_blocks.get(t, {}).get("kind", "")) == "torch" and not torch_supported(t):
+			if GameState.remove_torch(t):
+				if vox: vox.remove_block(t)
+				_spawn_block_pickup(t, "torch")
+				n += 1
+	return n
 
 const _NEIGHBOURS6 := [Vector3i(1,0,0), Vector3i(-1,0,0), Vector3i(0,1,0), Vector3i(0,-1,0), Vector3i(0,0,1), Vector3i(0,0,-1)]
 

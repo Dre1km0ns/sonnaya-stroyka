@@ -109,7 +109,7 @@ func _ready() -> void:
 		if (gsx == null or bool(gsx.get("dream_start"))) and not has_meta("smoke") and not _want_perf():
 			start_in_dream()
 	GameState.inventory_changed.emit()
-	_camp_label()
+	# v0.22: летающая надпись над стартовым лагерем убрана совсем
 	print("Сонная стройка v0.21 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 

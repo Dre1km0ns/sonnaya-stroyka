@@ -128,6 +128,7 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_pressed("jump") and not GameState.ui_blocked():
 			velocity.y = SWIM_UP
 	move_and_slide()
+	_track_fall()
 	_step_t -= delta
 	if not flying and is_on_floor() and direction.length() > 0.1 and _step_t <= 0.0:
 		_step_t = 0.32 if Input.is_action_pressed("sprint") else 0.5
@@ -136,6 +137,33 @@ func _physics_process(delta: float) -> void:
 	if _pickup_t <= 0.0 and auto_pickup_enabled:
 		_pickup_t = 0.1
 		auto_pickup()
+
+
+var _air := false
+var _peak_y := 0.0
+var _last_y := 0.0
+
+func _track_fall() -> void:
+	## v0.22: высота падения считается от верхней точки полёта; вода, полёт, Сон и телепорт её сбрасывают.
+	var y := global_position.y
+	if absf(y - _last_y) > 3.0:
+		_peak_y = y # телепорт/респавн
+	_last_y = y
+	if flying or GameState.is_dream() or _in_water():
+		_air = false
+		_peak_y = y
+		return
+	if not is_on_floor():
+		if not _air:
+			_air = true
+			_peak_y = y
+		else:
+			_peak_y = maxf(_peak_y, y)
+	elif _air:
+		_air = false
+		var h := _peak_y - y
+		if GameState.apply_fall(h) > 0:
+			load("res://scripts/sfx.gd").play("step", self, -4.0, 0.6) # глухой удар о землю
 
 
 func auto_pickup() -> int:

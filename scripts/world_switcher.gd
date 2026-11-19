@@ -12,7 +12,7 @@ var bed: Node3D
 var _env: Environment
 var _wake_sky: Sky = null # v0.21: небо Яви на время Сна
 var sync_sequences:=0
-var show_result_ui:=true
+var show_result_ui:=true  # окно нужно только когда проснуться нельзя; v0.22: сводки после выхода из Сна больше нет
 
 
 func setup(p: CharacterBody3D, wake: Node3D, dream: Node3D, bed_node: Node3D, wake_vox: Node3D, dream_vox: Node3D) -> void:
@@ -180,7 +180,7 @@ func wake_up(abort_transfer:bool=false) -> Dictionary:
 		player.global_position=GameState.spawn_point;player.velocity=Vector3.ZERO
 		if "flying" in player: player.set("flying",false)
 		switched.emit(false)
-	if show_result_ui:
+	if show_result_ui and not result.ok and not bool(result.get("aborted", false)):
 		for ui in get_tree().get_nodes_in_group("transfer_result_ui"): ui.show_result(result,self)
 	print("Wake resolved: ",result)
 	return result

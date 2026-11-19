@@ -20,6 +20,13 @@ const BOSS_ENEMY_CAP := 2
 func enemy_cap() -> int:
 	return BOSS_ENEMY_CAP if bool(GameState.get("boss_alive")) else MAX_ENEMIES
 const NIGHT_SPAWN_FACTOR := 0.6
+## v0.22: днём мобы появляются на 75% реже — интервал спавна и возрождения призраков ×4.
+const DAY_SPAWN_RATE := 0.25
+
+
+static func spawn_interval(t_awake: float, night: bool) -> float:
+	var base := maxf(20.0, 55.0 - t_awake * 0.05)
+	return base * NIGHT_SPAWN_FACTOR if night else base / DAY_SPAWN_RATE
 var _next_spawn_at: float = 45.0
 var _unstable_cd: float = 18.0
 var _enemy_script: GDScript
@@ -153,7 +160,7 @@ func _process(delta: float) -> void:
 	while _count_all_enemies() < enemy_cap() and _count_enemies() < target and awake_time >= _next_spawn_at:
 		var elite := _count_enemies() >= 5 or dist > 50.0
 		_spawn_one(elite)
-		_next_spawn_at = awake_time + maxf(20.0, 55.0 - awake_time * 0.05) * (NIGHT_SPAWN_FACTOR if night else 1.0)
+		_next_spawn_at = awake_time + spawn_interval(awake_time, night)
 		GameState.set_hint("Шов расползается… ещё Шовник%s!" % ("-тяжёлый" if elite else ""), false)
 
 	if _unstable_cd <= 0.0 and dist > 8.0:
@@ -341,7 +348,7 @@ func _ghost_can_spawn(i: int, have: int) -> bool:
 		return false
 	if bool(_ghost_present.get(i,false)):
 		_ghost_present[i] = false
-		_ghost_respawn_at[i] = awake_time+GHOST_RESPAWN_DELAY
+		_ghost_respawn_at[i] = awake_time+GHOST_RESPAWN_DELAY*(1.0 if GameState.is_night() else 1.0/DAY_SPAWN_RATE)
 	return have < MAX_GHOSTS_PER_SPOT and awake_time >= float(_ghost_respawn_at.get(i,0.0))
 
 
