@@ -42,6 +42,7 @@ func _ready() -> void:
 	dream_tools.setup(player, dream_voxels)
 	dream_world.add_child(load("res://scripts/dream_cracks.gd").new()) # v0.18: трещины Сна
 	dream_world.add_child(load("res://scripts/dream_trial_view.gd").new()) # v0.19: показ испытания
+	dream_world.add_child(load("res://scripts/dream_scenery.gd").new()) # v0.21: небо, острова, светлячки Сна
 	add_child(load("res://scripts/dream_tutorial.gd").new()) # v0.20: обучение во Сне
 	add_child(load("res://scripts/dream_tone.gd").new()) # v0.20: тон Сна
 	saver.setup(self, player, wake_voxels, dream_voxels, threat)
@@ -108,7 +109,7 @@ func _ready() -> void:
 			start_in_dream()
 	GameState.inventory_changed.emit()
 	_camp_label()
-	print("Сонная стройка v0.20 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.21 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func start_in_dream() -> void:
@@ -1418,20 +1419,18 @@ func _camp_label() -> void:
 		return
 	var l := Label3D.new()
 	l.name = "CampSign"
-	l.text = "Разрушенный лагерь сновидца\nЛяг на кровать — во Сне можно построить невозможное"
-	# v0.21: табличка постоянного экранного размера, поверх стен и только издалека —
-	# раньше она резалась стенами лагеря и вблизи раздувалась поверх HUD.
-	l.font_size = 40
-	l.fixed_size = true
-	l.pixel_size = 0.0011
-	l.no_depth_test = true
-	l.render_priority = 10
-	l.outline_render_priority = 9
-	l.visibility_range_begin = 6.0
-	l.visibility_range_end = 60.0
-	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.text = "Разрушенный лагерь сновидца\nЛяг на кровать — и уснёшь"
+	# v0.21: обычная табличка в мире (с тестом глубины): не рисуется поверх HUD и стен,
+	# висит над стенами лагеря (не режется), видна с 4 до 40 м — вплотную не раздувается.
+	l.font_size = 48
+	l.pixel_size = 0.0095
+	l.fixed_size = false
+	l.no_depth_test = false
+	l.visibility_range_begin = 4.0
+	l.visibility_range_end = 40.0
+	l.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	l.modulate = Color(1.0, 0.95, 0.8, 1.0)
 	l.outline_modulate = Color(0.05, 0.04, 0.1, 1.0)
-	l.outline_size = 14
-	l.position = Vector3(0.5, float(wake_chunks.height_at(0, -8)) + 5.0, -7.5)
+	l.outline_size = 12
+	l.position = Vector3(0.5, float(wake_chunks.height_at(0, -8)) + 4.6, -7.5)
 	wake_world.add_child(l)

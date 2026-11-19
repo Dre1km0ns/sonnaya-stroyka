@@ -23,7 +23,7 @@ func _ready() -> void:
 	size = Vector2(330, 10)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var st := StyleBoxFlat.new()
-	st.bg_color = Color(0.05, 0.04, 0.10, 0.72)
+	st.bg_color = Color(0.05, 0.04, 0.10, 0.86) # v0.21: плотнее — 3D-надписи не просвечивают
 	st.border_color = Color(0.55, 0.6, 1.0, 0.55)
 	st.border_width_left = 3
 	st.set_corner_radius_all(6)

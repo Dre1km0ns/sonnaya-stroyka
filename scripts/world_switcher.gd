@@ -10,6 +10,7 @@ var wake_voxels: Node3D
 var dream_voxels: Node3D
 var bed: Node3D
 var _env: Environment
+var _wake_sky: Sky = null # v0.21: небо Яви на время Сна
 var sync_sequences:=0
 var show_result_ui:=true
 
@@ -196,7 +197,16 @@ func _tint_dream(is_dream: bool) -> void:
 		_env.fog_light_color = sky[2]
 		GameSettings.apply_distance_fog(_env)
 		_env.glow_intensity = 0.45
+		# v0.21: у Сна своё небо (сияние, звёзды, луна снов) вместо плоского цвета.
+		var scen := get_tree().get_first_node_in_group("dream_scenery")
+		if scen and scen.get("dream_sky") != null:
+			if _wake_sky == null and _env.sky != scen.dream_sky: _wake_sky = _env.sky
+			scen.apply_palette()
+			_env.sky = scen.dream_sky
+			_env.background_mode = Environment.BG_SKY
+			_env.fog_sky_affect = 0.3
 	else:
+		if _wake_sky != null: _env.sky = _wake_sky
 		for dc in get_tree().get_nodes_in_group("day_cycle"):
 			if dc.has_method("apply_lighting"):
 				dc.apply_lighting()

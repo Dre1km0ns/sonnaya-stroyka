@@ -160,7 +160,7 @@ func _build_ui() -> void:
 	for k in _screens.keys():
 		_ui.add_child(_screens[k])
 	var ver := Label.new()
-	ver.text = "Сонная стройка v0.20 · Godot 4.7"
+	ver.text = "Сонная стройка v0.21 · Godot 4.7"
 	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	ver.offset_left = 14
 	ver.offset_top = -32
@@ -203,7 +203,7 @@ func _build_main_screen() -> Control:
 	_main_btn(box, "Играть", _on_play)
 	_main_btn(box, "Как играть", func() -> void: _show("howto"))
 	_main_btn(box, "Настройки", _open_settings)
-	_main_btn(box, "Выход", func() -> void: get_tree().quit())
+	_main_btn(box, "Выход", func() -> void: GameSettings.safe_quit(0))
 	return root
 
 

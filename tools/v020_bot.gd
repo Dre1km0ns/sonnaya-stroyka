@@ -261,4 +261,5 @@ func _go() -> void:
 	f.store_string(JSON.stringify(res, "  ")); f.close()
 	print("BOT RESULT ", JSON.stringify(res.duplicate().merged({"log": log.size()}, true)))
 	print("BOT OK" if fails.is_empty() else "BOT FAIL %s" % str(fails))
-	quit(0 if fails.is_empty() else 1)
+	# v0.21: чистый выход (аудио отпускается до quit)
+	root.get_node("GameSettings").safe_quit(0 if fails.is_empty() else 1)

@@ -86,6 +86,11 @@ func _ready() -> void:
 	apply_bindings()
 	apply_audio()
 	apply_window()
+	# v0.21: звуковые плееры, ещё играющие при выходе, держали 8 аудио-ресурсов
+	# («resources still in use at exit»). Глушим и отвязываем поток при уходе из дерева.
+	get_tree().node_added.connect(_track_audio)
+	# Закрытие окна тоже идёт через safe_quit (сейв делает save_system по тому же уведомлению).
+	get_tree().set_auto_accept_quit(false)
 
 
 func load_settings() -> void:
@@ -345,3 +350,40 @@ func apply_distance_fog(env: Environment) -> void:
 	env.fog_sky_affect = 0.8
 	var camera := get_viewport().get_camera_3d()
 	if camera: camera.far = fog_end_distance()+8.0
+
+
+## v0.21: отслеживание аудио-плееров для чистого выхода (см. _ready).
+func _track_audio(n: Node) -> void:
+	if n is AudioStreamPlayer or n is AudioStreamPlayer3D or n is AudioStreamPlayer2D:
+		if not n.tree_exiting.is_connected(_release_audio):
+			n.tree_exiting.connect(_release_audio.bind(n))
+
+
+func _release_audio(n: Node) -> void:
+	# В проекте плееры не переподвешиваются (remove_child/reparent нет), так что уход из дерева = удаление.
+	if not is_instance_valid(n):
+		return
+	n.call(&"stop")
+	n.set(&"stream", null)
+
+
+var _quit_started := false
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		safe_quit(0)
+
+
+## v0.21: чистый выход. Глушим все плееры, даём аудиосерверу пару кадров отпустить
+## воспроизведения и только потом выходим — иначе «resources still in use at exit».
+func safe_quit(code: int = 0) -> void:
+	if _quit_started:
+		return
+	_quit_started = true
+	var tree := get_tree()
+	for n in tree.root.find_children("*", "AudioStreamPlayer", true, false) + tree.root.find_children("*", "AudioStreamPlayer3D", true, false) + tree.root.find_children("*", "AudioStreamPlayer2D", true, false):
+		_release_audio(n)
+	for i in range(3):
+		await tree.process_frame
+	await tree.create_timer(0.2, true, false, true).timeout
+	tree.quit(code)

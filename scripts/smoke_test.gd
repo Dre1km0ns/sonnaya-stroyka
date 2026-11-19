@@ -3954,7 +3954,7 @@ func _v021_checks() -> void:
 	for i in range(3): await process_frame
 	_a(not G.tutorial_focus() and op.visible, 21014)
 	var sign := scene.find_child("CampSign", true, false) as Label3D
-	_a(sign == null or (sign.fixed_size and sign.no_depth_test and sign.visibility_range_begin > 0.0), 21015)
+	_a(sign == null or (not sign.no_depth_test and sign.visibility_range_begin > 0.0 and sign.visibility_range_end <= 40.0), 21015)
 	# консоль DevSeed: команды систем Сна известны и отвечают без «неизвестная команда»
 	G.dev_mode = true; G.world_seed = G.DEV_SEED
 	var con: Node = scene.get_tree().get_first_node_in_group("dev_console")
