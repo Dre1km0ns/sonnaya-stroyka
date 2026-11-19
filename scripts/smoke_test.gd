@@ -514,13 +514,13 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	_a(boss.is_in_group("block_mother"), 507)
-	_a(boss.hp == 620, 508) # v0.11.1: Мать 620 HP (фиксировано)
-	_a(boss.max_hp == 620, 509)
+	_a(boss.hp == 560, 508) # v0.11: Мать 560 HP
+	_a(boss.max_hp == 560, 509)
 	boss.take_damage(10)           # SPAWN — неуязвима
-	_a(boss.hp == 620, 511)
+	_a(boss.hp == 560, 511)
 	boss._enter(boss.S.IDLE)
-	boss.take_damage(10)           # v0.11.1: броня закрыта → меч отскакивает
-	_a(boss.hp == 620 and boss.plate_log.bounces >= 1, 514)
+	boss.take_damage(10)
+	_a(boss.hp == 550, 514)
 	_a(boss.get_tree() != null, 515)
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
@@ -975,30 +975,22 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var boss: CharacterBody3D = bs.new()
 	host.add_child(boss)
 	await process_frame
-	_a(boss.hp == 620 and boss.phase == 1, 929)
-	# v0.11.1: урон мечом только по открытому ядру (CORE ×1.25) → пороги фаз не проскакиваются.
-	# v0.13: за одно окно ядро принимает ≤ CORE_WINDOW_CAP — большой урон наносим в нескольких окнах.
-	for k in range(4):
-		if boss.state != boss.S.TRANSITION:
-			boss._enter(boss.S.CORE)
-			boss.take_damage(450)             # не проваливается сквозь порог фазы
+	_a(boss.hp == 560 and boss.phase == 1, 929)
+	boss._enter(boss.S.IDLE)
+	boss.take_damage(450)                 # не проваливается сквозь порог фазы
 	_a(boss.hp == boss.P2_AT, 932)
 	_a(boss.phase == 2 and boss.state == boss.S.TRANSITION, 933)
 	boss.take_damage(50)                  # переход неуязвим
 	_a(boss.hp == boss.P2_AT, 935)
-	boss._enter(boss.S.CORE)
+	boss._enter(boss.S.STAGGER)
+	boss._stagger_len = 2.0
 	_a(boss.is_vulnerable(), 938)
-	boss.receive_weapon_hit(8, "sword")   # ×1.25 по ядру → 10
-	_a(boss.hp == boss.P2_AT - 10, 940)
-	for k in range(4):
-		if boss.state != boss.S.TRANSITION:
-			boss._enter(boss.S.CORE)
-			boss.take_damage(400)
+	boss.take_damage(10)                  # ×1.5 в окне уязвимости
+	_a(boss.hp == boss.P2_AT - 15, 940)
+	boss.take_damage(400)
 	_a(boss.hp == boss.P3_AT and boss.phase == 3, 942)
-	for k in range(4):
-		if boss.state != boss.S.DEAD and boss.hp > 0:
-			boss._enter(boss.S.CORE_LONG)
-			boss.take_damage(400)
+	boss._enter(boss.S.STAGGER)
+	boss.take_damage(400)
 	_a(boss.hp <= 0 or boss.state == boss.S.DEAD, 945)
 	# Пити-таймер блоклингов и жёсткий кап
 	var b3: CharacterBody3D = bs.new()
@@ -1010,7 +1002,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 			got += 1
 	_a(got == 1, 954)                       # 3 неудачи подряд → гарантия
 	_a(not b3.minion_roll(0.0) and not b3.minion_roll(0.0), 955)   # локаут 2 приземления
-	_a(b3.MINION_HARD_CAP == 4, 956)
+	_a(b3.MINION_HARD_CAP == 6, 956)
 	for cap in b3.MINION_CAP:
 		_a(int(cap) <= b3.MINION_HARD_CAP, 958)
 	# Телеграфы ≥0.4 с, урон одного удара ≤40% HP
@@ -1211,10 +1203,10 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(Sfx.count(Sfx.MOTHER_ROAR) > roars0, 1151)
 	_a(ResourceLoader.exists(Sfx.MOTHER_ROAR) and ResourceLoader.exists(Sfx.ANACONDA_ROAR), 1152)
 	boss.hp = 400
-	_a(boss.heal_from_blocks(3) == 0 and boss.hp == 400, 1154)   # v0.11.1: скрытый хил от деревьев убран
+	_a(boss.heal_from_blocks(3) == 15 and boss.hp == 415, 1154)
 	boss.hp = boss.max_hp-1
 	boss.heal_from_blocks(4)
-	_a(boss.hp == boss.max_hp-1, 1157)
+	_a(boss.hp == boss.max_hp, 1157)
 	boss.queue_free()
 	await process_frame
 	G.reset_state()
@@ -1347,7 +1339,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
 	var ana: Node3D = AS.spawn_at(host2, Vector3(40, 0, 40), "test")
 	await process_frame
-	_a(ana != null and ana.hp == ana.MAX_HP and ana.MAX_HP == 1250, 1290)
+	_a(ana != null and ana.hp == ana.MAX_HP and ana.MAX_HP == 2100, 1290)
 	_a(G.boss_alive, 1291)
 	_a(Sfx.count(Sfx.ANACONDA_ROAR) > 0, 1292)
 	# OST Анаконды: зациклен, приоритет над темой Матери, кроссфейд обратно после ухода.
@@ -1364,66 +1356,41 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(mus.current_key() == "anaconda", 1304)
 	ana.take_damage(200)
 	_a(ana.hp == ana.MAX_HP and ana.weapon_hits_ignored == 1, 1306)
-	_a(ana.receive_weapon_hit(24, "sword3").dealt == 0 and ana.hp == ana.MAX_HP, 13060)   # v0.11.1: меч = 0
 	_a(ana.is_invulnerable(), 1307)                 # SPAWN — в земле
-	# v0.11.1: урон наносят ТОЛЬКО поставленные факелы, перекрёстный огонь 1/2/3.
+	# Вынырнула и лежит (REST): без света урона нет.
+	ana.torch_break_cd = 999.0 # light-DPS fixture, torch destruction tested separately
 	ana._emerge = Vector3(40, 0, 40)
 	ana._enter(ana.S.REST)
+	for i in range(5):
+		ana.tick(0.05)
 	_a(ana.light_dps() == 0.0 and ana.hp == ana.MAX_HP, 1313)
-	ana._head.global_position = Vector3(40.5, 0.6, 40.5)
-	for sg in ana._segs:
-		sg.global_position = Vector3(40.5, 0.6, 52.5)       # тело «далеко» для изоляции теста света
-	var hc := Vector3i(40, 0, 40)
-	G.wake_blocks[hc + Vector3i(2, 0, 0)] = {"kind": "torch", "mutant": false}
-	_a(ana.crossfire_level() == 1 and ana.light_dps() == 0.0, 1319)        # 1 источник — только обнаружение
-	G.wake_blocks[hc + Vector3i(0, 0, 2)] = {"kind": "torch", "mutant": false}
-	_a(ana.crossfire_level() == 2 and is_equal_approx(ana.light_dps(), ana.BURN_DPS), 1326)   # 2 — ожог
-	G.wake_blocks[hc + Vector3i(-2, 0, 0)] = {"kind": "torch", "mutant": false}
-	_a(ana.crossfire_level() >= 3 and is_equal_approx(ana.light_dps(), ana.BURN_DPS * ana.BOOST_MULT), 1330)   # 3 — усиление
-	print("SMOKE: anaconda crossfire dps=%.1f" % ana.light_dps())
-	_a(ana.apply_light_damage(10.0, "crossfire3") == 10 and ana.hp == ana.MAX_HP - 10, 1333)
-	# v0.12: стан есть, но свет его НЕ включает и НЕ продлевает (иммунитет + событие).
-	_a("STUN" in ana.STATE_NAMES and ana.STUN_TIME >= 0.6 and ana.STUN_TIME <= 0.9 and ana.STUN_IMMUNITY >= 2.0 and ana.STUN_IMMUNITY <= 3.0, 13330)
-	var stun_hp: int = ana.hp
-	for i in range(90):
-		ana.combat.try_stun(0.75, "light")
-		ana.tick(1.0 / 30.0)
-	_a(not ana.combat.is_stunned() and ana.combat.light_stun_attempts >= 90 and ana.state != ana.S.STUN, 133301)
-	_a(ana.combat.try_stun(ana.STUN_TIME, "ring_break") and ana.combat.is_stunned(), 133302)
-	ana._enter(ana.S.STUN)
-	for i in range(int(ana.STUN_TIME * 30) + 4):
-		ana.tick(1.0 / 30.0)
-	_a(not ana.combat.is_stunned() and ana.state == ana.S.REST, 133303)   # после стана AI возвращается
-	_a(not ana.combat.try_stun(ana.STUN_TIME, "ring_break") and ana.combat.is_stun_immune(), 133304)  # иммунитет
-	ana.combat.stun_immune_t = 0.0
-	_a(ana.combat.try_stun(ana.STUN_TIME, "dash_counter"), 133305)
-	ana.combat.stun_t = 0.0
-	ana.combat.stun_immune_t = 0.0
-	ana.hp = stun_hp
+	# Факел рядом с головой → урон.
+	var hpos: Vector3 = ana.hit_center()
+	G.wake_blocks[Vector3i(floori(hpos.x), floori(hpos.y), floori(hpos.z))] = {"kind": "torch", "mutant": false}
+	ana._torch_scan = 0.0
+	ana.tick(0.05)
+	_a(ana.light_dps() >= ana.HEAD_LIGHT_DPS, 1319)
 	ana._enter(ana.S.REST)
-	# Факел в руке: в light_zones не входит.
-	for z in ana.light_zones():
-		_a(not bool(z["held"]), 13331)
-	# Касание любой секцией тела ломает факел (без шанса и КД).
-	ana._head.global_position = Vector3(40.5, 0.6, 40.5)
-	ana._segs[ana._segs.size() - 1].global_position = Vector3(46.5, 0.6, 40.5)
-	var tail_c := Vector3i(46, 0, 40)
-	G.wake_blocks.clear()
-	G.wake_blocks[tail_c] = {"kind": "torch", "mutant": false}
-	var broke_n: int = ana.check_body_torch_contacts()
-	_a(broke_n == 1 and not G.wake_blocks.has(tail_c) and ana.torches_broken_by_body == 1, 13332)   # хвост
-	G.wake_blocks[hc] = {"kind": "torch", "mutant": false}
-	_a(ana.check_body_torch_contacts() >= 1 and not G.wake_blocks.has(hc), 13333)   # голова
-	G.wake_blocks[hc] = {"kind": "torch", "mutant": false}
-	_a(ana.check_body_torch_contacts() >= 1, 13334)                                  # повторно сразу — без КД
-	G.wake_blocks.clear()
-	# Ни одного неизбежного урона: телеграф ≥0.6 с, удар ≤35%, кап комбо 70.
+	var hp_before: int = ana.hp
+	for i in range(20):
+		ana._t = 0.0
+		ana.tick(0.1)
+	print("SMOKE: anaconda light dps=%.1f hp %d→%d" % [ana.light_dps(), hp_before, ana.hp])
+	_a(ana.hp < hp_before, 1326)
+	# Ослеплена (STUNNED) — ×2 урон.
+	ana._enter(ana.S.STUNNED)
+	ana._stun_len = 5.0
+	_a(ana.is_vulnerable(), 1330)
+	var d_stun: float = ana.light_dps()
+	ana._enter(ana.S.REST)
+	_a(is_equal_approx(d_stun, ana.light_dps() * 2.0), 1333)
+	# Ни одного неизбежного урона: телеграф ≥0.6 с, удар ≤40%, кап комбо 70.
 	for tt in ana.TELEGRAPH:
 		_a(float(tt) >= 0.6, 1336)
 	for dmg in [ana.BURST_DAMAGE, ana.ROCK_DAMAGE, ana.CONSTRICT_DAMAGE, ana.CONTACT_DAMAGE, ana.COIL_CONTACT]:
-		_a(int(dmg) <= 35, 1338)
+		_a(int(dmg) <= 40, 1338)
 	_a(G.COMBO_CAP <= 70, 1339)
-	_a(ana.MINION_CAP <= 3 and ana.cavein_zone_count() >= 3 and ana.cavein_zone_count() <= 4, 1340)
+	_a(ana.MINION_PITY == 3 and ana.MINION_CAP <= 4, 1340)
 	# Рассвет — уходит.
 	G.day_time = 1440.0 + 400.0
 	_a(not G.is_night(), 1343)
@@ -1682,11 +1649,11 @@ func _v08_checks() -> void:
 	G.wake_blocks[c] = {"kind":"torch"}
 	G.wake_blocks[c+Vector3i.RIGHT] = {"kind":"torch"}
 	var ana: Node3D = AS.spawn_at(host,Vector3(50,0,50),"smoke08")
-	# v0.11.1: касание ломает ВСЕГДА — без шанса и без КД (try_break_torch — совместимый враппер).
-	_a(ana.try_break_torch(c,0.99),8065)
-	_a(not G.wake_blocks.has(c),8066)
-	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.99),8067)
-	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)   # уже сломан
+	_a(not ana.try_break_torch(c,0.34),8065)
+	_a(ana.try_break_torch(c,0.0) and ana.torch_break_cd==5,8066)
+	_a(not ana.try_break_torch(c+Vector3i.RIGHT,0.0),8067)
+	ana.torch_break_cd = 0
+	_a(ana.try_break_torch(c+Vector3i.RIGHT,0.0),8068)
 	host.queue_free()
 	# Falling drops only; placed unsupported blocks retain their grid position.
 	var drop: CharacterBody3D = load("res://scripts/block_pickup.gd").new()
@@ -1928,11 +1895,11 @@ func _v09_checks() -> void:
 	# Persistent crafting flag and live HP rebalance; new spawns use same base values.
 	console.execute("sword2 on")
 	# v0.11: крафт оружия больше НЕ раздувает HP врагов.
-	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==620,9035)
+	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==560,9035)
 	var flag_save: Dictionary = G.to_save_dict()
 	_a(flag_save.sword2_crafted,9036)
 	console.execute("sword2 off")
-	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==620,9037)
+	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==560,9037)
 	# Anaconda deterministic probability boundaries and real scale reward.
 	for mm in console._mobs("mother"):
 		mm.free()
@@ -1940,8 +1907,8 @@ func _v09_checks() -> void:
 	var ana: Node = console._mobs("anaconda")[0]
 	var torch_cell := Vector3i(10,0,10)
 	G.wake_blocks[torch_cell] = {"kind":"torch"}
-	_a(ana.max_hp==1250 and ana.try_break_torch(torch_cell,0.99),9038)
-	_a(not G.wake_blocks.has(torch_cell),9039)
+	_a(ana.max_hp==2100 and not ana.try_break_torch(torch_cell,0.334) and ana.try_break_torch(torch_cell,0.333),9038)   # v0.22: откат к v0.11
+	_a(not G.wake_blocks.has(torch_cell) and ana.torch_break_cd==5,9039)
 	ana._die()
 	_a(int(ana.get_meta("last_scale_drop"))>=6 and int(ana.get_meta("last_scale_drop"))<=22,9040)
 	console.execute("kill all")
@@ -2551,10 +2518,10 @@ func _v011_checks() -> void:
 	_a(gs.mother_defeated and gs.deep_threat == 0.0 and not gs.mother_can_come(), 11056)  # кулдаун после победы
 	gs._objectives_eval(true)
 	_a(gs.milestones.has("mother") and gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}) and gs.recipe_available(_rec(gs, "idea_catcher"), {"is_dream": true}), 11057)
-	_a(load("res://scripts/block_mother.gd").MAX_HP == 620, 11058)
+	_a(load("res://scripts/block_mother.gd").MAX_HP == 560, 11058)
 	# --- 16.8 Анаконда: гнёзда спят до Матери, только свет ---
 	var AN: GDScript = load("res://scripts/boss_anaconda.gd")
-	_a(AN.MAX_HP == 1250, 11060)
+	_a(AN.MAX_HP == 2100, 11060)
 	var G: Node = root.get_node("GameState")
 	G.reset_state(); G.mother_defeated = false
 	var host := Node3D.new(); root.add_child(host)
@@ -2746,53 +2713,11 @@ func _v0111_scene_checks(scene: Node) -> void:
 	var mom: Node = get_nodes_in_group("block_mother")[0]
 	# Никогда два босса: Анаконда не выходит при живой Матери.
 	_a(load("res://scripts/boss_anaconda.gd").spawn_at(host, Vector3(30, 0, 30), "smoke") == null, 12065)
-	# Мать: 3 пластины × 6, кирка 2 / кирка2 6, меч по броне 0 (отскок).
+	# v0.22: Мать откатена к v0.11 — без пластин и носильщиков, меч бьёт тело напрямую.
 	mom._enter(mom.S.IDLE)
-	_a(mom.PLATE_COUNT == 3 and mom.PLATE_DURABILITY == 6 and mom.PICK_PLATE_DAMAGE["pickaxe"] == 2 and mom.PICK_PLATE_DAMAGE["pickaxe2"] == 6, 12070)
-	var r0: Dictionary = mom.receive_weapon_hit(24, "sword3")
-	_a(int(r0.dealt) == 0 and bool(r0.bounce) and mom.hp == mom.MAX_HP, 12071)
-	mom._open_plate()
-	_a(mom.state == mom.S.PLATE_OPEN and mom.open_plate >= 0, 12072)
-	var op: int = mom.open_plate
-	_a(int(mom.receive_weapon_hit(8, "sword").dealt) == 0 and mom.hp == mom.MAX_HP, 12073)   # меч и по открытой пластине — 0
-	mom.receive_weapon_hit(2, "pickaxe"); mom.receive_weapon_hit(2, "pickaxe")
-	_a(int(mom.plates[op]["dur"]) == 2 and mom.state == mom.S.PLATE_OPEN, 12074)
-	mom.receive_weapon_hit(2, "pickaxe")
-	_a(int(mom.plates[op]["dur"]) == 0 and mom.state == mom.S.CORE and mom.is_vulnerable(), 12075)   # ядро открыто + оглушение
-	var hpc: int = mom.hp
-	mom.receive_weapon_hit(8, "sword")
-	_a(mom.hp == hpc - 10, 12076)                                  # ×1.25 по ядру
-	_a(mom.CORE_TIME >= 2.5 and mom.CORE_TIME <= 3.5 and mom.PLATE_OPEN_TIME >= 3.0 and mom.PLATE_OPEN_TIME <= 4.0, 12077)
-	# Фаза II: носильщик чинит только повреждённые (не уничтоженные) пластины; фаза III — без восстановления.
-	mom.phase = 2
-	_a(bool(mom.plates[op]["broken"]) and not mom.restore_plate(), 12078)   # уничтоженная не встаёт
-	var dmg_i := -1
-	for i in range(mom.plates.size()):
-		if not bool(mom.plates[i]["broken"]):
-			dmg_i = i
-			break
-	_a(dmg_i >= 0, 120781)
-	mom.plates[dmg_i]["dur"] = 2
-	mom.plates[dmg_i]["broken"] = false
-	_a(mom.has_damaged_plate() and mom.restore_plate() and int(mom.plates[dmg_i]["dur"]) == mom.PLATE_DURABILITY, 12079)
-	mom.on_carrier_delivered(null)
-	_a(bool(mom.plates[op]["broken"]) and int(mom.plates[op]["dur"]) == 0, 120791)   # уничтоженная так и осталась
-	mom.plates[dmg_i]["dur"] = 2
-	mom.phase = 3
-	_a(not mom.restore_plate() and int(mom.plates[dmg_i]["dur"]) == 2, 12080)
-	# Кирпичный дождь: 4–6 кирпичей, тени, навес спасает.
-	var plan: Array = mom.rain_plan(scene.player.global_position, 6)
-	_a(plan.size() == 6 and mom.RAIN_BRICKS_MIN >= 4 and mom.RAIN_BRICKS_MAX <= 6, 12081)
-	for i in range(plan.size()):
-		for j in range(i + 1, plan.size()):
-			var pi_: Vector3 = plan[i]["pos"]; var pj_: Vector3 = plan[j]["pos"]
-			_a(Vector2(pi_.x - pj_.x, pi_.z - pj_.z).length() >= 1.85, 12082)
-	mom._spawn_cover(scene.player.global_position)
-	_a(not mom._covers.is_empty() and mom.under_cover((mom._covers[0]["pos"] as Vector3)) and not mom.under_cover((mom._covers[0]["pos"] as Vector3) + Vector3(5, 0, 0)), 12083)
-	# Скрытого хила нет, урон ≤35% HP.
-	_a(mom.heal_from_blocks(5) == 0, 12084)
-	for d in [mom.SLAM_DAMAGE, mom.WAVE_DAMAGE, mom.REASSEMBLE_DAMAGE, mom.BRICK_DAMAGE, mom.CONTACT_DAMAGE]:
-		_a(int(d) <= 35, 12085)
+	var hp_m0: int = mom.hp
+	mom.take_damage(10)
+	_a(not ("PLATE_COUNT" in mom) and mom.hp == hp_m0 - 10 and mom.MAX_HP == 560, 12070)
 	mom.free()
 	await process_frame
 	# Анаконда: кеш факелов.
@@ -2837,76 +2762,20 @@ func _v012_checks(scene: Node, hud: Node) -> void:
 	_a(not sm.try_stun(0.75, "light") and sm.light_stun_attempts == 1, 13004)
 	sm.tick(3.0)
 	_a(not sm.is_stunned() and not sm.is_stun_immune() and sm.try_stun(0.7, "dash_counter"), 13005)
-	# Анаконда: 0/1/2/3 факела, факел в руке, кольцо, землеройки, фазы.
+	# v0.22: оба босса откатены к v0.11 (кольцо/перекрёстный огонь/пластины/обвал v0.12+ удалены).
 	G.reset_state(); G.dev_mode = true; G.day_time = 1200.0
 	var host := Node3D.new(); root.add_child(host)
 	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
 	pl.global_position = Vector3(8, 0, 8)
 	var ana: Node3D = AS.spawn_at(host, Vector3(8, 0, 8), "v12")
 	await process_frame
-	_a(ana != null and ana.combat != null, 13010)
-	ana._enter(ana.S.REST)
-	ana._head.global_position = Vector3(8.5, 0.6, 8.5)
-	for sg in ana._segs:
-		sg.global_position = Vector3(8.5, 0.6, 20)
-	_a(ana.crossfire_level() == 0 and ana.light_dps() == 0.0, 13011)
-	G.wake_blocks[Vector3i(10, 0, 8)] = {"kind": "torch"}
-	_a(ana.crossfire_level() == 1 and ana.light_dps() == 0.0, 13012)
-	ana._apply_light_cc(1, 0.1)
-	_a(ana.combat.is_slowed() and not ana.combat.is_exposed() and not ana.combat.is_stunned(), 13013)
-	G.wake_blocks[Vector3i(8, 0, 10)] = {"kind": "torch"}
-	_a(ana.crossfire_level() == 2 and is_equal_approx(ana.light_dps(), ana.BURN_DPS), 13014)
-	ana._apply_light_cc(2, 0.1)
-	_a(ana.combat.is_exposed() and not ana.combat.is_stunned(), 13015)
-	G.wake_blocks[Vector3i(6, 0, 8)] = {"kind": "torch"}
-	_a(ana.crossfire_level() >= 3 and is_equal_approx(ana.light_dps(), ana.BURN_DPS * ana.BOOST_MULT), 13016)
-	var attempts0: int = ana.combat.light_stun_attempts
-	for i in range(60):
-		ana._apply_light_cc(3, 1.0 / 30.0)
-		ana.tick(1.0 / 30.0)
-	_a(ana.combat.light_stun_attempts > attempts0 and ana.state != ana.S.STUN, 13017)
-	# Факел в руке по-прежнему 0.
-	G.add_item_count("torch", 1); G.select_item_slot(0)
-	_a(ana.held_torch_near() or true, 13018)
-	# Кольцо: факел внутри рвёт и станит; факел в руке — нет.
-	G.wake_blocks.clear()
-	ana._enter(ana.S.COIL)
-	ana._coil_center = Vector3(8, 0, 8)
-	ana._coil_start_torches = {}
-	_a(not ana.torch_placed_inside_coil(), 13019)
-	G.wake_blocks[Vector3i(8, 0, 8)] = {"kind": "torch"}
-	_a(ana.torch_placed_inside_coil(), 13020)
-	ana._t = 0.5
-	ana.combat.stun_immune_t = 0.0
-	ana._tick_coil(0.1, pl)
-	_a(ana.attack_log.coil_broken >= 1 and (ana.state == ana.S.STUN or ana.combat.stun_events >= 1), 13021)
-	# Сжимающееся кольцо.
-	ana._enter(ana.S.COIL)
-	ana._t = 0.0
-	var r0: float = ana.coil_radius()
-	ana._t = ana.COIL_TIME
-	_a(r0 > ana.coil_radius() and ana.coil_radius() <= ana.COIL_END_R + 0.05, 13022)
-	_a(ana.MINION_CAP == 3 and ana.MINION_FIGHT_MAX == 8, 13023)
-	# Мать: комбо, обвал, повреждённые пластины, нет глобального множителя HP.
+	_a(ana != null and ana.MAX_HP == 2100 and not ("combat" in ana), 13010)
 	for m in get_nodes_in_group("block_mother"):
 		m.free()
 	var mom: Node = load("res://scripts/block_mother.gd").new()
 	host.add_child(mom)
 	await process_frame
-	_a(mom.MAX_HP == 620 and mom.MELEE_DAMAGE <= 35 and mom.COLLAPSE_DAMAGE <= 35, 13030)
-	_a("MELEE" in mom.STATE_NAMES and "GUARD" in mom.STATE_NAMES and "COLLAPSE" in mom.STATE_NAMES, 13031)
-	mom._enter(mom.S.IDLE)
-	mom._start_melee(pl, Vector3(1, 0, 0))
-	_a(mom.state == mom.S.MELEE and mom.attack_log.melee >= 1, 13032)
-	mom._start_guard()
-	_a(mom.state == mom.S.GUARD, 13033)
-	mom.hp = int(mom.MAX_HP * 0.10)
-	mom.phase = 3
-	mom._start_collapse(pl)
-	_a(mom.state == mom.S.COLLAPSE and mom._collapse_done, 13034)
-	mom._t = mom.COLLAPSE_WINDUP
-	mom._resolve_collapse(pl)
-	_a(mom.state == mom.S.CORE_LONG, 13035)
+	_a(mom.MAX_HP == 560 and "RAIN" in mom.STATE_NAMES and not ("CORE" in mom.STATE_NAMES), 13030)
 	# HUD: след, лечение, смерть, возрождение, смена максимума.
 	var bat: Node = hud.find_child("HealthBattery", true, false)
 	G.heal_player_full()
@@ -2978,50 +2847,7 @@ func _v013_checks() -> void:
 	var host := Node3D.new(); root.add_child(host)
 	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
 	pl.global_position = Vector3(0, 0, 4)
-	var mom: Node = load("res://scripts/block_mother.gd").new()
-	host.add_child(mom)
-	await process_frame
-	mom._enter(mom.S.IDLE)
-	mom._open_plate()
-	mom._break_plate(mom.open_plate)
-	_a(mom.state == mom.S.CORE, 13110)
-	var gs: Dictionary = mom.glow_snapshot()
-	_a(float(gs.body) <= mom.BODY_GLOW_VULN + 0.001 and gs.cores.size() == 1 and float(gs.cores[0]) >= mom.CORE_GLOW_VULN - 0.01, 13111)
-	var hp0: int = mom.hp
-	for i in range(10):
-		mom.receive_weapon_hit(24, "sword3")
-	_a(hp0 - mom.hp == mom.CORE_WINDOW_CAP and mom.state == mom.S.IDLE and mom.window_seals == 1, 13112)
-	_a(float(mom.glow_snapshot().body) == 0.0, 13113)
-	_a(mom.receive_weapon_hit(24, "sword3").dealt == 0, 13114)       # окно закрыто — снова броня
-	mom.free()
-	# Анаконда: выбитый факел возвращается (кап), рассвет при низком HP — задержка.
-	G.day_time = 1200.0
-	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
-	var ana: Node3D = AS.spawn_at(host, Vector3(4, 0, 4), "v13")
-	await process_frame
-	var t0: int = G.count_item("torch")
-	for i in range(8):
-		G.wake_blocks[Vector3i(20 + i, 0, 20)] = {"kind": "torch"}
-		G.mark_torches_dirty()
-		ana.break_torch(Vector3i(20 + i, 0, 20), "удар")
-	_a(G.count_item("torch") - t0 == ana.TORCH_REFUND_MAX and ana.torches_refunded == ana.TORCH_REFUND_MAX, 13120)
-	ana._enter(ana.S.REST)
-	ana.hp = int(ana.MAX_HP * 0.2)
-	G.day_time = 1440.0 + 400.0
-	ana.tick(1.0 / 30.0)
-	_a(ana.state != ana.S.LEAVING and ana.dawn_grace_used, 13121)
-	for i in range(int((ana.DAWN_GRACE + 1.0) * 30.0)):
-		ana.tick(1.0 / 30.0)
-		if ana.state == ana.S.LEAVING:
-			break
-	_a(ana.state == ana.S.LEAVING, 13122)
-	# Здоровая Анаконда на рассвете уходит сразу.
-	var ana2: Node3D = AS.spawn_at(host, Vector3(-4, 0, 4), "v13b")
-	if ana2 != null:
-		await process_frame
-		ana2._enter(ana2.S.REST)
-		ana2.tick(1.0 / 30.0)
-		_a(ana2.state == ana2.S.LEAVING and not ana2.dawn_grace_used, 13123)
+	# v0.22: проверки окна ядра Матери и рассвета/возврата факелов Анаконды v0.13 удалены вместе с откатом боссов к v0.11.
 	# Снятие факела ПКМ.
 	G.day_time = 1200.0
 	var tc := Vector3i(30, 0, 30)
@@ -3098,40 +2924,8 @@ func _v014_checks() -> void:
 					if a[key] != b[key]:
 						ok_box = false
 	_a(ok_box, 14002)
-	# 3) crossfire_level == полный перебор (r + 0.4) на случайных позах тела и факелах
-	G.reset_state(); G.dev_mode = false; G.day_time = 1200.0
-	var host := Node3D.new(); root.add_child(host)
-	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
-	pl.global_position = Vector3(8, 0, 8)
-	var ana: Node3D = load("res://scripts/boss_anaconda.gd").spawn_at(host, Vector3(8, 0, 8), "v14")
-	await process_frame
-	ana._enter(ana.S.REST)
-	var rng := RandomNumberGenerator.new(); rng.seed = 1414
-	var ok_cf := true
-	for trial in range(120):
-		G.wake_blocks.clear()
-		for k in range(rng.randi_range(0, 6)):
-			G.wake_blocks[Vector3i(rng.randi_range(0, 16), 0, rng.randi_range(0, 16))] = {"kind": "torch"}
-		G.mark_torches_dirty()
-		ana._tick_n += 1
-		var hp := Vector3(rng.randf_range(2, 14), 0.6, rng.randf_range(2, 14))
-		ana._head.global_position = hp
-		var dir := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
-		for i in range(ana._segs.size()):
-			ana._segs[i].global_position = hp + dir * ana.SPACING * float(i + 1)
-		var best := 0
-		for pp in ana.segment_positions():
-			var n := 0
-			for z in ana.light_zones():
-				if (z["pos"] as Vector3).distance_to(pp) <= float(z["r"]) + 0.4:
-					n += 1
-			best = maxi(best, n)
-		if ana.crossfire_level() != best:
-			ok_cf = false
-	_a(ok_cf, 14003)
-	ana.leave("")
-	host.queue_free()
-	G.wake_blocks.clear()
+	# v0.22: проверка перекрёстного огня Анаконды (v0.12+) удалена вместе с откатом к v0.11.
+	G.reset_state(); G.dev_mode = false
 	# 4) HUD: полоса HP в покое не перерисовывается, после удара — перерисовывается, потом снова затихает
 	var bat: Control = load("res://scripts/health_battery.gd").new()
 	bat.size = Vector2(220, 26); root.add_child(bat)
@@ -3168,39 +2962,7 @@ func _v015_checks() -> void:
 	_a(BC.hit_marker_kind({"dealt": 0, "target": "scales", "bounce": true}) == "immune", 15006)
 	_a(BC.hit_marker_kind({"dealt": 0, "target": "none"}) == "miss", 15007)
 	_a(BC.TORCH_RING_R == AS.TORCH_RADIUS, 15008)
-	# 2) Мать: sealed в результате удара, полоса окна ядра, метка замаха
-	G.reset_state(); G.dev_mode = false
-	var host := Node3D.new(); root.add_child(host)
-	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
-	pl.global_position = Vector3(0, 0, 4)
-	var mom: Node = load("res://scripts/block_mother.gd").new()
-	host.add_child(mom)
-	await process_frame
-	_a(mom.core_window_left() < 0.0, 15010)
-	mom._enter(mom.S.IDLE)
-	mom._open_plate()
-	mom._break_plate(mom.open_plate)
-	_a(is_equal_approx(mom.core_window_left(), 1.0), 15011)
-	var r1: Dictionary = mom.receive_weapon_hit(24, "sword3")
-	_a(int(r1.dealt) > 0 and not bool(r1.sealed) and mom.core_window_left() < 1.0 and mom.core_window_left() > 0.0, 15012)
-	var sealed_seen := false
-	for i in range(10):
-		var r: Dictionary = mom.receive_weapon_hit(24, "sword3")
-		if bool(r.get("sealed", false)):
-			sealed_seen = true
-			break
-	_a(sealed_seen and mom.core_window_left() < 0.0, 15013)
-	mom._enter(mom.S.WINDUP)
-	mom._update_pre_shadow(pl)
-	_a(mom._pre_shadow != null and is_instance_valid(mom._pre_shadow) and mom.pre_shadow_shown == 1, 15014)
-	var pre = mom._pre_shadow
-	mom._make_shadow()
-	_a(mom._pre_shadow == null and mom._shadow != null, 15015)
-	mom._enter(mom.S.IDLE)
-	await process_frame
-	_a(not is_instance_valid(pre), 15016)
-	mom.free()
-	host.queue_free()
+	# v0.22: окно ядра и предтень Матери (v0.13–v0.15) удалены вместе с откатом к v0.11.
 	# 3) направление урона: hit_from → player_hurt_from, одноразово
 	G.reset_state(); G.dev_mode = false; G.god_mode = false
 	G.player_hp = 100
@@ -4019,12 +3781,6 @@ func _v021_checks() -> void:
 	bc.apply_fade(fake, 0.0)
 	var om := fmi.get_surface_override_material(0) as BaseMaterial3D
 	_a(faded_ok and om != null and om.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED and is_equal_approx(om.albedo_color.a, 1.0), 21053)
-	# v0.21 c4: пластины вплотную уменьшаются и опускаются, при отходе возвращаются
-	var fpl := Node3D.new(); fpl.name = "Plate0"; fpl.position = Vector3(0, 1.25, 1.72); fake.add_child(fpl)
-	bc.apply_fade(fake, bc.FADE_MAX)
-	var squashed: bool = fpl.scale.x < 0.6 and fpl.position.y < 0.7
-	bc.apply_fade(fake, 0.0)
-	_a(squashed and is_equal_approx(fpl.scale.x, 1.0) and is_equal_approx(fpl.position.y, 1.25), 21060)
 	fake.queue_free()
 	# острова: текстура атласа (UV2 — тайл), остров старта всегда есть, очередь подгрузки с запасом за туманом
 	sc.update_islands(Vector3.ZERO)
@@ -4065,8 +3821,7 @@ func _v021_checks() -> void:
 	var fa: Dictionary = {}
 	for o in Obj.LIST: if str(o.id) == "first_anchor": fa = o
 	_a(bool(fa.get("dream", false)) and not str(fa.how).contains("выбрать Клин"), 21038)
-	var BM: GDScript = load("res://scripts/block_mother.gd")
-	_a(is_equal_approx(float(BM.MELEE_RANGE), 2.9), 21039)
+	# v0.22: дистанция ближнего боя Матери v0.21 (MELEE_RANGE/оболочка) ушла вместе с откатом к v0.11.
 	# иконка .exe и окна
 	var ep := ConfigFile.new(); var has_ep := ep.load("res://export_presets.cfg") == OK # в .pck пресетов нет
 	_a(FileAccess.file_exists("res://assets/icon/icon.ico") and (not has_ep or str(ep.get_value("preset.0.options", "application/icon", "")) == "res://assets/icon/icon.ico" and bool(ep.get_value("preset.0.options", "application/modify_resources", false))) and str(ProjectSettings.get_setting("application/config/icon")) == "res://assets/icon/icon_256.png", 21040)
@@ -4075,3 +3830,37 @@ func _v021_checks() -> void:
 	print("SMOKE: v0.21 c3: world islands + collision / island tp / bosscam + fade / no tutorial chat spam / scene cleanup / short cheat card OK")
 	print("SMOKE: v0.21 c2: wake tools hidden in tutorial / caption / anchor hint / dream flora / decor+hudfocus console / dream objectives / mother distance / exe icon OK")
 	print("SMOKE: v0.21 c1: tutorial focus HUD / starter slot 5 / hp bars / music guard / unique uids / opaque settings / camp sign / dream console OK")
+	await _v022_checks()
+
+
+func _v022_checks() -> void:
+	## v0.22: откат боссов к v0.11 + агрессия Анаконды на факелы, раздельные инвентари, факелы, экономика осыпи,
+	## время Яви ×4 во Сне, кнопки мыши, отдача/откидывание, урон от падения, снос рамки, кровать без окна.
+	var G: Node = root.get_node("GameState")
+	G.reset_state(); G.dev_mode = false; G.day_time = 1200.0
+	var host := Node3D.new(); root.add_child(host)
+	var pl := CharacterBody3D.new(); pl.add_to_group("player"); host.add_child(pl)
+	pl.global_position = Vector3(30, 0, 30)
+	var ana: Node3D = load("res://scripts/boss_anaconda.gd").spawn_at(host, Vector3(8, 0, 8), "v22")
+	await process_frame
+	ana._head.global_position = Vector3(8.5, 0.6, 8.5)
+	# 3 факела рядом — агрессии нет; 4 — есть, цель — ближайший факел
+	for i in range(3): G.wake_blocks[Vector3i(10 + i, 0, 8)] = {"kind": "torch"}
+	_a(not ana.update_torch_aggro(), 22001)
+	G.wake_blocks[Vector3i(8, 0, 11)] = {"kind": "torch"}
+	_a(ana.update_torch_aggro() and ana.has_torch_aggro() and ana.aggro_events == 1, 22002)
+	# выныривание под факелом ломает факелы в радиусе укуса
+	ana._emerge = Vector3(11.5, 0, 8.5)
+	ana._start_burst(pl)
+	_a(ana.torches_broken_aggro >= 2 and not G.wake_blocks.has(Vector3i(11, 0, 8)) and not ana.has_torch_aggro(), 22003)
+	# стана от света нет
+	ana._emerge = Vector3(8.5, 0, 8.5)
+	G.wake_blocks[Vector3i(8, 0, 8)] = {"kind": "torch"}
+	ana._after_burst()
+	_a(ana.state == ana.S.REST and not ana.is_vulnerable(), 22004)
+	ana.leave("")
+	G.wake_blocks.clear()
+	host.queue_free()
+	await process_frame
+	print("SMOKE: v0.22: bosses v0.11 + anaconda torch aggro, no light stun OK")
+
