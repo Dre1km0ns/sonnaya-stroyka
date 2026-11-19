@@ -3914,23 +3914,24 @@ func crack_cells() -> Array:
 	return out
 
 
-func _dream_beacons() -> Array:
-	var out: Array = []
+func _dream_guards() -> Array:
+	## [маяки, источники света] Сна — один проход по блокам на тик кошмара.
+	var beacons: Array = []; var lights: Array = []
 	for c in dream_blocks:
-		if str(dream_blocks[c].get("kind", "")) == "beacon": out.append(c)
-	return out
+		var k := str(dream_blocks[c].get("kind", ""))
+		if k == "beacon": beacons.append(c)
+		elif DREAM_LIGHT_KINDS.has(k): lights.append(c)
+	return [beacons, lights]
 
 
-func dream_guarded(c: Vector3i, beacons: Array = []) -> bool:
-	for b in beacons:
+func dream_guarded(c: Vector3i, guards: Array = []) -> bool:
+	if guards.is_empty(): guards = _dream_guards()
+	for b in guards[0]:
 		var d: Vector3i = c - b
 		if maxi(absi(d.x), maxi(absi(d.y), absi(d.z))) <= BEACON_GUARD_RADIUS: return true
-	var r := LIGHT_GUARD_RADIUS
-	for x in range(-r, r + 1):
-		for y in range(-r, r + 1):
-			for z in range(-r, r + 1):
-				var n: Variant = dream_blocks.get(c + Vector3i(x, y, z))
-				if n != null and DREAM_LIGHT_KINDS.has(str(n.get("kind", ""))): return true
+	for l in guards[1]:
+		var d2: Vector3i = c - l
+		if maxi(absi(d2.x), maxi(absi(d2.y), absi(d2.z))) <= LIGHT_GUARD_RADIUS: return true
 	return false
 
 
@@ -3942,27 +3943,28 @@ func nightmare_tick() -> Dictionary:
 	if dream_cracks.is_empty():
 		last_nightmare = {"eaten": 0, "guarded": 0, "cracks": 0}
 		return last_nightmare
-	var beacons := _dream_beacons()
+	var guards := _dream_guards()
 	var keys: Array = dream_cracks.keys(); keys.sort()
 	var r := NIGHTMARE_RADIUS
 	for k in keys:
 		var cc := key_cell(str(k))
 		dream_cracks[k]["nights"] = int(dream_cracks[k].get("nights", 0)) + 1
-		var cand: Array = []
+		# ключ сортировки = расстояние·1000 + порядок обхода (x,y,z) — детерминированно и без строк
+		var cand := PackedInt32Array(); var cells: Array = []
 		for x in range(-r, r + 1):
 			for y in range(-r, r + 1):
 				for z in range(-r, r + 1):
 					var c := cc + Vector3i(x, y, z)
 					var d: Variant = dream_blocks.get(c)
-					if d == null or str(d.get("kind", "")) != "drift" or d.get("anchored", false) or d.has("root"): continue
-					cand.append([absi(x) + absi(y) + absi(z), c])
-		cand.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and str(a[1]) < str(b[1])))
+					if d == null or d.get("kind", "") != "drift" or d.get("anchored", false) or d.has("root"): continue
+					cand.append((absi(x) + absi(y) + absi(z)) * 1000 + cells.size()); cells.append(c)
+		cand.sort()
 		var bites := 0
 		for e in cand:
 			if bites >= NIGHTMARE_BITES: break
-			var c2: Vector3i = e[1]
+			var c2: Vector3i = cells[e % 1000]
 			if not dream_blocks.has(c2): continue
-			if dream_guarded(c2, beacons): guarded += 1; continue
+			if dream_guarded(c2, guards): guarded += 1; continue
 			dream_blocks.erase(c2); eaten.append(c2); bites += 1
 	nightmare_eaten += eaten.size()
 	if not eaten.is_empty():

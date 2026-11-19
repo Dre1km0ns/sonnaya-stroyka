@@ -3227,10 +3227,11 @@ func _v015_checks() -> void:
 	cf.camera_provider = func() -> Camera3D: return cam
 	root.add_child(cf)
 	await process_frame
+	var m0: int = cf.marks_shown; var a0: int = cf.arcs_shown   # v0.18: фон прошлых тестов мог уже нанести урон — считаем от базы
 	G.hit_marker.emit("core")
-	_a(cf.current_marker() == "core" and cf.marks_shown == 1, 15030)
+	_a(cf.current_marker() == "core" and cf.marks_shown == m0 + 1, 15030)
 	G.player_hurt_from.emit(Vector3(5, 0, 0), 20)
-	_a(cf.arcs_shown == 1 and absf(cf.last_arc_angle() - PI * 0.5) < 0.01, 15031)
+	_a(cf.arcs_shown == a0 + 1 and absf(cf.last_arc_angle() - PI * 0.5) < 0.01, 15031)
 	# v0.18: шагаем время детерминированно (было create_timer(1.4) — флаки при медленных кадрах, ~1 из 3 прогонов)
 	# посторонний урон от узлов прошлых тестов (player_hurt_from) давал случайную дугу — изолируем слой на время проверки покоя
 	G.player_hurt_from.disconnect(cf.show_hurt_from); G.hit_marker.disconnect(cf.show_marker)
@@ -3245,7 +3246,7 @@ func _v015_checks() -> void:
 	_a(cf.draw_count == dc, 15033)
 	G.player_hurt_from.connect(cf.show_hurt_from); G.hit_marker.connect(cf.show_marker)
 	G.hit_marker.emit("no_such_kind")
-	_a(cf.marks_shown == 1, 15034)
+	_a(cf.marks_shown == m0 + 1, 15034)   # неизвестный вид маркера не показывается
 	cf.queue_free(); cam.queue_free()
 	await process_frame
 	print("SMOKE: v0.15 hit markers / sealed+core window bar / windup pre-shadow / hurt direction / feedback idle OK")
