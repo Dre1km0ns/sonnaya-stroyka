@@ -22,14 +22,14 @@ const TOOL_CONFIG := {
 	# кулак оказывался на 0.25 ед. модели НИЖЕ навершия, и меч «висел в воздухе». Хват — центр рукояти.
 	"sword3":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, 0.16, 0.0),
 		"swing_time": 0.24, "wind": Vector3(18, -18, -14), "swing": Vector3(-64, 36, 32), "speed": 1.1},
-	"torch":    {"pos": Vector3(0.30, -0.36, -0.48), "rot": Vector3(-14, 0, 10), "scale": 0.55, "grip": Vector3(0.0, -0.16, 0.0),
+	"torch":    {"pos": Vector3(0.30, -0.36, -0.48), "rot": Vector3(-14, 0, 10), "scale": 0.36, "grip": Vector3(0.0, -0.16, 0.0),
 		"swing_time": 0.22, "wind": Vector3(10, 0, 0), "swing": Vector3(-30, 0, 6), "speed": 1.0},
 	# v0.23: блок в руке — маленький куб в кулаке
-	"block":    {"pos": Vector3(0.30, -0.34, -0.50), "rot": Vector3(-10, -20, 0), "scale": 1.0, "grip": Vector3(0.0, 0.0, 0.0),
-		"swing_time": 0.22, "wind": Vector3(12, 0, 0), "swing": Vector3(-36, 0, 0), "speed": 1.0, "hold": Vector3(-90, 0, 0)},
+	"block":    {"pos": Vector3(0.30, -0.34, -0.50), "rot": Vector3(-10, -20, 0), "scale": 1.0, "grip": Vector3(0.0, -0.11, 0.0),
+		"swing_time": 0.22, "wind": Vector3(12, 0, 0), "swing": Vector3(-36, 0, 0), "speed": 1.0},
 	# v0.23: любой другой предмет (зелья, яйцо, слитки, реагенты) — плоская иконка в кулаке
-	"item":     {"pos": Vector3(0.30, -0.34, -0.50), "rot": Vector3(0, -20, 0), "scale": 1.0, "grip": Vector3(0.0, -0.08, 0.0),
-		"swing_time": 0.22, "wind": Vector3(12, 0, 0), "swing": Vector3(-36, 0, 0), "speed": 1.0, "hold": Vector3(-90, 0, 0)},
+	"item":     {"pos": Vector3(0.30, -0.34, -0.50), "rot": Vector3(0, -20, 0), "scale": 1.0, "grip": Vector3(0.0, -0.13, 0.0),
+		"swing_time": 0.22, "wind": Vector3(12, 0, 0), "swing": Vector3(-36, 0, 0), "speed": 1.0},
 }
 ## v0.13: диапазон рукояти по Y в координатах модели (проверяется smoke: grip обязан лежать внутри).
 const HANDLE_Y := {
@@ -37,10 +37,10 @@ const HANDLE_Y := {
 	"sword": Vector2(-0.40, -0.17), "sword2": Vector2(-0.40, -0.17),
 	"sword3": Vector2(0.04, 0.28),
 	"torch": Vector2(-0.40, 0.10),
-	"block": Vector2(-0.12, 0.12),
+	"block": Vector2(-0.20, 0.20),
 	"item": Vector2(-0.20, 0.20),
 }
-const BLOCK_SIZE := 0.22
+const BLOCK_SIZE := 0.13
 var block_kind := ""
 var item_kind := ""
 const WALL_PROBE := 0.85
@@ -131,7 +131,7 @@ func set_tool(id: String) -> void:
 		item_kind = id
 		var sp := models["item"].get_node("Sprite") as Sprite3D
 		sp.texture = load("res://scripts/item_db.gd").icon(id)
-		sp.pixel_size = 0.30 / maxf(1.0, float(sp.texture.get_width())) if sp.texture else 0.01
+		sp.pixel_size = 0.13 / maxf(1.0, float(sp.texture.get_width())) if sp.texture else 0.01
 		id = "item"
 	elif id == current and hand_root.visible == TOOL_CONFIG.has(id):
 		return
@@ -288,6 +288,7 @@ func _build_model(id: String) -> Node3D:
 			sp.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 			sp.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 			sp.double_sided = true
+			sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 			sp.shaded = false
 			sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(sp)
