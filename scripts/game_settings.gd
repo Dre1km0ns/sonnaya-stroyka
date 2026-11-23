@@ -36,8 +36,9 @@ const BINDABLE := [
 	["sprint", "Бег", "key", KEY_SHIFT],
 	["fly_down", "Вниз в полёте", "key", KEY_CTRL],
 	["toggle_fly", "Полёт во сне", "key", KEY_V],
-	["attack_break", "Поставить, удерживать — сломать, удар", "mouse", MOUSE_BUTTON_LEFT],
-	["use_place", "Использовать", "mouse", MOUSE_BUTTON_RIGHT],
+	["attack_break", "Удар и сломать", "mouse", MOUSE_BUTTON_LEFT],
+	["use_place", "Использовать и поставить", "mouse", MOUSE_BUTTON_RIGHT],
+	["drop_item", "Выбросить предмет, с Ctrl — всю стопку", "key", KEY_Q],
 	["interact", "Взаимодействие: кровать — сон, верстак, станок", "key", KEY_E],
 	["open_inventory", "Инвентарь", "key", KEY_I],
 	["use_heal", "Лечение: само выберет зелье", "key", KEY_H],
@@ -239,10 +240,21 @@ func apply_bindings() -> void:
 				InputMap.action_add_event(a, make_event({"type": "key", "code": int(extra)}))
 
 
+## v0.23: пары действий из разных миров, которым можно делить клавишу (Q: выбросить в Яви, якорь во Сне).
+const SHARED_KEYS := [["drop_item", "anchor_place"]]
+
+
+static func shares_key(a: String, b: String) -> bool:
+	for pair in SHARED_KEYS:
+		if (pair[0] == a and pair[1] == b) or (pair[0] == b and pair[1] == a):
+			return true
+	return false
+
+
 func find_conflict(action: String, b: Dictionary) -> String:
 	for row in BINDABLE:
 		var a: String = row[0]
-		if a != action and bindings.get(a, {}) == b:
+		if a != action and bindings.get(a, {}) == b and not shares_key(a, action):
 			return a
 	return ""
 

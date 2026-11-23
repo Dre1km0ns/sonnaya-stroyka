@@ -83,6 +83,7 @@ func _ready() -> void:
 		gsets.settings_changed.connect(_apply_settings)
 	_start_music()
 	_spawn_saved_graves()
+	build.spawn_saved_drops()
 	if loaded:
 		player.global_position = player.global_position
 	if not GameState.player_died.is_connected(_on_player_died):

@@ -2602,13 +2602,82 @@ func _v011_scene_checks() -> void:
 	G.select_item_slot(4); build._update_hand_tools()
 	_a(vm.current == "torch" and vm.get_node("HandRoot/GripPivot/SwingPivot/HeldLight").visible, 11107)
 	G.select_item_slot(5); build._update_hand_tools()
-	_a(vm.current == "" and not vm.hand_root.visible, 11108)
+	var s5 := str(G.get_selected_item().get("id", ""))
+	_a((vm.current == "" and not vm.hand_root.visible) if s5 == "" else (vm.current in ["item", "block"] and vm.hand_root.visible), 11108)
 	G.select_item_slot(1); build._update_hand_tools()
-	var hand_pos: Vector3 = vm.hand_root.position
 	build._play_tool_swing()
 	_a(vm.swinging and vm.swing_count >= 1, 11109)
 	await create_timer(0.7).timeout
-	_a(not vm.swinging and vm.swing_pivot.rotation.length() < 0.001 and vm.hand_root.position.distance_to(hand_pos) < 0.05, 11110)
+	var sk11: Node3D = vm.hand_socket()
+	_a(not vm.swinging and vm.swing_pivot.rotation.length() < 0.001 and sk11 != null and vm.hand_root.global_position.distance_to(sk11.global_position) < 0.01, 11110)
+	# v0.23: предмет в кисти руки — во время замаха меч остаётся в кисти
+	G.select_item_slot(0); build._update_hand_tools()
+	build._play_tool_swing()
+	await create_timer(0.08).timeout
+	var sk23: Node3D = vm.hand_socket()
+	_a(sk23 != null and vm.hand_root.global_position.distance_to(sk23.global_position) < 0.01 and vm.swing_pivot.rotation.length() < 0.001 and vm.arms.current_clip() == "attack-melee-right", 23001)
+	await create_timer(0.7).timeout
+	# блок в руке и любой предмет в руке
+	G.select_item_slot(5); build._update_hand_tools()
+	_a(vm.current == "block" and vm.block_kind == "stone" and vm.hand_root.visible, 23002)
+	G.set_slot(6, {"id": "heal1", "name": "Зелье", "count": 2}); G.select_item_slot(6); build._update_hand_tools()
+	_a(vm.current == "item" and vm.item_kind == "heal1" and vm.hand_root.visible, 23003)
+	build.show_in_hand("heal2", 0.5, "drink"); build._update_hand_tools()
+	_a(vm.current == "item" and vm.item_kind == "heal2" and vm.arms.last_action == "drink", 23004)
+	await create_timer(0.6).timeout
+	build._update_hand_tools()
+	_a(vm.item_kind == "heal1", 23005)
+	# удар в воздух
+	var air0: int = build.air_swings
+	build._place_cooldown = 0.0
+	build.swing_air()
+	_a(build.air_swings == air0 + 1 and build._place_cooldown >= build.AIR_SWING_COOLDOWN - 0.001 and vm.arms.last_action == "break", 23006)
+	# выбрасывание: Q — одна штука, Ctrl+Q — стопка, задержка подбора
+	for dn in get_nodes_in_group("dropped_item"): dn.free()
+	G.dropped_items.clear()
+	G.select_item_slot(5)
+	var d1: Node3D = build.drop_selected(false)
+	_a(d1 != null and d1.item_id() == "stone" and d1.item_count() == 1 and G.count_item("stone") == 9 and G.dropped_items.size() == 1 and not d1.can_pick_up(), 23007)
+	d1.collect()
+	_a(G.count_item("stone") == 9 and is_instance_valid(d1) and not d1.collected, 23008)
+	var d2: Node3D = build.drop_selected(true)
+	_a(d2 != null and d2.item_count() == 9 and G.count_item("stone") == 0 and G.dropped_items.size() == 2, 23009)
+	var p0: Vector3 = d2.global_position
+	await create_timer(0.3).timeout
+	_a(d2.global_position.distance_to(p0) > 0.3, 23010)
+	d2.pickup_delay = 0.0; d2.collect()
+	_a(G.count_item("stone") == 9 and d2.collected and G.dropped_items.size() == 1, 23011)
+	# прочность инструмента сохраняется при выбросе и подборе
+	G.set_slot(7, {"id": "pickaxe2", "name": "Каменная кирка", "count": 1, "durability": 17}); G.select_item_slot(7)
+	var d3: Node3D = build.drop_selected(false)
+	_a(d3 != null and str(G.get_slot(7).get("id", "")) == "", 23012)
+	d3.pickup_delay = 0.0; d3.collect()
+	var found_dur := -1
+	for i23 in range(G.ITEM_SLOT_COUNT):
+		if str(G.get_slot(i23).get("id", "")) == "pickaxe2" and int(G.get_slot(i23).get("durability", 0)) == 17: found_dur = 17
+	_a(found_dur == 17, 23013)
+	# инвентарь: щелчок за окном выбрасывает взятый предмет
+	var inv: Node = get_first_node_in_group("inventory_ui")
+	if inv:
+		inv.open()
+		inv._held = {"id": "torch", "name": "Факел", "count": 3}; inv._held_from = 4
+		var ev := InputEventMouseButton.new(); ev.button_index = MOUSE_BUTTON_RIGHT; ev.pressed = true
+		inv._on_outside_input(ev)
+		_a(int(inv._held.get("count", 0)) == 2, 23014)
+		ev.button_index = MOUSE_BUTTON_LEFT
+		inv._on_outside_input(ev)
+		_a(inv._held.is_empty() and G.dropped_items.size() == 3, 23015)
+		inv.close()
+	# в сохранении мира
+	var sv23: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	_a(int(sv23.version) == 17 and (sv23.dropped_items as Array).size() == 3, 23016)
+	await create_timer(0.1).timeout
+	_a(build.spawn_saved_drops() == 3, 23017)
+	await create_timer(0.05).timeout
+	for dn2 in get_nodes_in_group("dropped_item"): dn2.queue_free()
+	G.dropped_items.clear()
+	G.select_item_slot(0); build._update_hand_tools()
+	print("SMOKE: v0.23 hand socket, block/item in hand, drink, air swing, Q/Ctrl+Q/inventory drop, pickup delay, durability, save OK")
 	await _v0111_scene_checks(scene)
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.11 starter camp, no heal slot, weapon switch → ViewModelRig, sword dmg 8/14/24, swing returns to rest OK")
@@ -3572,7 +3641,7 @@ func _v020_checks() -> void:
 	_a(gs.tutorial_done.has("trial") and str(gs.tutorial_current().id) == "anchor", 20008)
 	# сейв посреди обучения (v15) и миграция v14
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
-	_a(int(sv.version) == 16 and bool(sv.tutorial_active) and sv.tutorial_done.size() == 5 and bool(sv.tutorial_gift), 20010)
+	_a(int(sv.version) >= 16 and bool(sv.tutorial_active) and sv.tutorial_done.size() == 5 and bool(sv.tutorial_gift), 20010)
 	var g2: Node = load("res://scripts/game_state.gd").new(); root.add_child(g2); g2.reset_state(); g2.apply_save_dict(sv)
 	_a(g2.tutorial_active and g2.tutorial_done.size() == 5 and str(g2.tutorial_current().id) == "anchor" and g2.tutorial_gift, 20011)
 	sv.version = 14; sv.erase("tutorial_active"); sv.erase("tutorial_done"); sv.erase("tutorial_gift")
@@ -3601,8 +3670,8 @@ func _v020_checks() -> void:
 	var seen := {}; var dup := false
 	for row in GSet.BINDABLE:
 		var key := "%s:%d" % [row[2], int(row[3])]
-		if seen.has(key): dup = true
-		seen[key] = true
+		if seen.has(key) and not GSet.shares_key(str(seen[key]), str(row[0])): dup = true
+		seen[key] = str(row[0])
 	_a(not dup and GSet.SECTIONS.has("dream_palette") and GSet.default_binding("tutorial_skip").code == KEY_F1, 20030)
 	var kb: Node = load("res://scripts/keybind_menu.gd").new(); root.add_child(kb); await process_frame
 	_a(kb.find_child("Section_dream_palette", true, false) != null and kb.find_child("Bind_dream_trial", true, false) != null, 20031)
@@ -4013,7 +4082,7 @@ func _v0221_checks() -> void:
 	G.imprints["ground"] = true
 	G.inv_wake[3] = {"id": "lamp", "name": "Светильник", "count": 2}
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
-	_a(int(sv.version) == 16, 22105)
+	_a(int(sv.version) >= 16, 22105)
 	sv.version = 15
 	G.reset_state(); G.apply_save_dict(sv)
 	_a(str(G.wake_blocks[Vector3i(5, 0, 5)].kind) == "dirt" and str(G.dream_blocks[Vector3i(6, 0, 6)].kind) == "torch" and G.has_imprint("dirt") and not G.imprints.has("ground") and G.count_item("torch") >= 2 and G.count_item("lamp") == 0, 22106)

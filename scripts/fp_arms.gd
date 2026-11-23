@@ -15,6 +15,7 @@ const CLIPS := {
 	"break":  ["attack-melee-right", 1.9, 0.3],
 	"place":  ["interact-right", 2.2, 0.25],
 	"use":    ["interact-right", 1.6, 0.25],
+	"drink":  ["interact-right", 0.9, 0.15],  # v0.23: зелье в кисти подносится ко рту
 }
 const BASE_CLIP := "holding-right"
 
@@ -29,6 +30,10 @@ var _jump := 0.0       # 0…1 — рука подлетает при прыжк
 var _sleep := 0.0      # 0…1 — рука опускается из кадра, когда засыпаешь
 var _sleep_target := 0.0
 var _was_floor := true
+var extra := Vector3.ZERO   # v0.23: отвод от стен (задаёт ViewModelRig)
+var socket: Node3D          # v0.23: точка хвата в кисти правой руки — предмет в руке висит на ней
+## v0.23: кисть — низ меша arm-right (AABB y −1…0.1, x −0.4…0) в его координатах.
+const HAND_SOCKET := Vector3(-0.2, -0.88, 0.0)
 
 
 func _ready() -> void:
@@ -52,6 +57,10 @@ func _ready() -> void:
 		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if GameState and not GameState.world_changed.is_connected(_on_world_changed):
 		GameState.world_changed.connect(_on_world_changed)
+	var arm_r := model.find_child("arm-right", true, false) as Node3D
+	if arm_r:
+		socket = Node3D.new(); socket.name = "HandSocket"; arm_r.add_child(socket)
+		socket.position = HAND_SOCKET
 	ap = model.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap:
 		ap.animation_finished.connect(func(_n: StringName) -> void: _play_base())
@@ -123,5 +132,5 @@ func _process(delta: float) -> void:
 	_jump = maxf(0.0, _jump - delta * 2.6)
 	_sleep = move_toward(_sleep, _sleep_target, delta * 1.6)
 	var j := sin(_jump * PI) * 0.06
-	pivot.position = SHOULDER + sway + Vector3(0, j - _sleep * 0.30, _sleep * 0.10)
+	pivot.position = SHOULDER + sway + extra + Vector3(0, j - _sleep * 0.30, _sleep * 0.10)
 	pivot.rotation_degrees = AIM + rot + Vector3(-_sleep * 40.0 + j * 60.0, 0, 0)

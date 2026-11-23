@@ -35,7 +35,7 @@ func _process(delta: float) -> void:
 			var c: Vector3i = col.get_meta("voxel_cell")
 			var id: String = str(GameState.dream_blocks.get(c, {}).get("kind", ""))
 			if id != "":
-				text = GameState.block_display_name(id) + "\nЛКМ — поставить рядом · удерживай ЛКМ — снять"
+				text = GameState.block_display_name(id) + "\nПКМ — поставить рядом · ЛКМ — снять"
 	_place_below_objectives()
 	if text == _last:
 		return
