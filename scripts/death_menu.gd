@@ -9,6 +9,7 @@ var _info: Label
 
 
 func _ready() -> void:
+	if theme == null: theme = preload("res://scripts/ui_theme.gd").shared()   # v0.24: единый стиль окон
 	add_to_group("death_menu")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

@@ -19,6 +19,9 @@ const HELP := {
 	"camfx": "Камера v0.24: покачивание при ходьбе и тряска от ударов (выключаются в настройках). shake [0..1] — встряхнуть; status. Пример: camfx shake 0.8",
 	"errlog": "Журнал ошибок v0.24: путь к файлу user://logs/errors.log и число ошибок с запуска. Пример: errlog",
 	"explain": "Пояснения v0.24 при первом нажатии M (испытание) и J (просьба Сна). reset — показать снова; status. Пример: explain reset",
+	"variety": "Разнообразие Яви v0.24: густые рощи с высокими деревьями, голые поляны, башни-руины в два этажа, пещерные края с частыми входами. status — что в чанке под тобой и сколько всего в радиусе 12 чанков; find grove|clearing|tower|caves — перенестись к ближайшему. Пример: variety status; variety find tower",
+	"net": "Сетевая игра v0.24 (LAN, до 4 игроков, порт 24567). status — режим, игроки, счётчики синхронизации; host — открыть текущий мир для сети; chat <текст> — написать всем; leave — выйти из сети. Пример: net host; net chat привет",
+	"progress": "Вехи прогресса v0.24 (главное меню → «Прогресс», общие для всех миров). status — какие получены; mark <id> — отметить; reset — стереть все. id: night1 stone_pick metal bow armor night5 mother anaconda burger expert coop. Пример: progress status; progress mark mother",
 	"kit": "Набор v0.24 для проверки: металлическая кирка, металлический меч, металлический лук, стрелы, призывалка, зелья скорости, руда. Пример: kit",
 }
 const COMPLETIONS := ["difficulty", "difficulty status", "difficulty normal", "difficulty expert", "ore find", "ore here", "ore rules",
@@ -27,7 +30,10 @@ const COMPLETIONS := ["difficulty", "difficulty status", "difficulty normal", "d
 	"summoner give", "summoner tokens", "summoner roll mother", "summoner roll anaconda", "speedpotion give ", "speedpotion drink", "speedpotion status",
 	"lizards spawn ", "lizards status", "kit", "weather clear", "weather rain", "weather fog", "weather status",
 	"mobs spawn jumper", "mobs spawn archer", "mobs spawn thief", "mobs status", "bossatk pillars", "bossatk venom",
-	"drops status", "drops age ", "camfx shake ", "camfx status", "errlog", "explain reset", "explain status"]
+	"drops status", "drops age ", "camfx shake ", "camfx status", "errlog", "explain reset", "explain status",
+	"net status", "net host", "net chat ", "net leave",
+	"variety status", "variety find grove", "variety find clearing", "variety find tower", "variety find caves",
+	"progress status", "progress reset", "progress mark night1", "progress mark mother", "progress mark burger"]
 static var extra_help: Dictionary = {}
 static var extra_completions: Array = []
 static var handlers: Dictionary = {}   # имя → Callable(console, a) -> String (регистрируют следующие этапы)
@@ -232,4 +238,72 @@ static func run(con: Node, a: PackedStringArray) -> String:
 				GameState.explained = {}
 				return "Пояснения M и J покажутся снова."
 			return "Показаны пояснения: %s" % (", ".join(GameState.explained.keys()) if not GameState.explained.is_empty() else "ещё нет")
+		"progress":
+			var PS: GDScript = load("res://scripts/progress_store.gd")
+			if sub == "reset":
+				PS.reset()
+				return "Вехи стёрты."
+			if sub == "mark":
+				var id := a[2] if a.size() > 2 else ""
+				var ok := false
+				for m in PS.LIST: ok = ok or m[0] == id
+				if not ok: return "Ошибка: нет вехи «%s»." % id
+				return "Веха «%s» отмечена." % PS.title_of(id) if PS.mark(id) else "Веха уже была."
+			var done: Dictionary = PS.load_all()
+			var names: Array = []
+			for k in done: names.append(PS.title_of(k))
+			return "Вехи: %d из %d · %s" % [done.size(), PS.LIST.size(), ", ".join(names) if not names.is_empty() else "пока нет"]
+		"variety":
+			var cmv: Node = null
+			for c in con.get_tree().get_nodes_in_group("chunk_manager"):
+				if not bool(c.get("is_dream_layer")) and not bool(c.get("panorama_mode")): cmv = c
+			if cmv == null or p == null: return "Ошибка: нет мира Яви."
+			var here := Vector2i(floori(p.global_position.x / 16.0), floori(p.global_position.z / 16.0))
+			var cnt := {"grove": 0, "clearing": 0, "tower": 0, "caves": 0}
+			var best := {}
+			for dx in range(-12, 13):
+				for dz in range(-12, 13):
+					var cc := here + Vector2i(dx, dz)
+					var tags: Array = []
+					var fk: String = cmv.forest_kind(cc)
+					if fk != "": tags.append(fk)
+					if cmv.cave_rich(cc): tags.append("caves")
+					if cmv.chunk_has_ruin(cc):
+						for h in cmv.ruin_plan(cc):
+							if int(h.shape) == 3: tags.append("tower")
+					for t in tags:
+						cnt[t] += 1
+						var d2 := dx * dx + dz * dz
+						if not best.has(t) or d2 < int(best[t][1]): best[t] = [cc, d2]
+			if sub == "find":
+				var want := a[2] if a.size() > 2 else ""
+				if not best.has(want): return "Ошибка: рядом нет «%s». Варианты: grove, clearing, tower, caves." % want
+				var bc: Vector2i = best[want][0]
+				var wx := bc.x * 16 + 8
+				var wz := bc.y * 16 + 8
+				p.global_position = Vector3(wx + 0.5, float(cmv.height_at(wx, wz)) + 12.0, wz + 0.5)
+				return "Перенёс к «%s» (чанк %d, %d)." % [{"grove": "роща", "clearing": "поляна", "tower": "башня", "caves": "пещерный край"}[want], bc.x, bc.y]
+			var kind_here: String = cmv.forest_kind(here)
+			return "Под тобой: %s%s · в радиусе: рощ %d, полян %d, башен %d, пещерных краёв %d" % [
+				{"grove": "густая роща", "clearing": "поляна", "": "обычный лес"}[kind_here], ", пещерный край" if cmv.cave_rich(here) else "",
+				cnt.grove, cnt.clearing, cnt.tower, cnt.caves]
+		"net":
+			var ns := con.get_node_or_null("/root/NetSession")
+			if ns == null: return "Ошибка: сеть недоступна."
+			if sub == "host":
+				if ns.active(): return "Сеть уже открыта (%s)." % ("хост" if ns.is_host() else "клиент")
+				var err: String = ns.host()
+				return err if err != "" else "Мир открыт для сети: порт %d." % ns.PORT
+			if sub == "chat":
+				if not ns.active(): return "Ошибка: сначала net host или подключись к игре."
+				ns.send_chat(" ".join(a.slice(2)))
+				return "Отправлено."
+			if sub == "leave":
+				ns.leave()
+				return "Сеть закрыта."
+			var names2: Array = []
+			for id in ns.peers: names2.append(str(ns.peers[id].get("name", "?")))
+			return "Сеть: %s · игроков %d (%s) · мобов-прокси %d · блоков принято %d · ударов отправлено/принято %d/%d · HP босса ×%.1f" % [
+				{"": "выкл", "host": "хост", "client": "клиент"}[ns.mode], ns.player_count(), ", ".join(names2) if not names2.is_empty() else "только ты",
+				ns.proxies.size(), int(ns.stats.blocks_in), int(ns.stats.hits_sent), int(ns.stats.hits_recv), GameState.boss_player_scale()]
 	return "Ошибка: неизвестная команда v0.24."

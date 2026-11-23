@@ -261,6 +261,10 @@ func _start_music() -> void:
 		var w: Node = load("res://scripts/weather.gd").new()
 		w.name = "Weather"
 		add_child(w)
+	if not has_node("Milestones"):
+		var ms: Node = load("res://scripts/progress_store.gd").new()
+		ms.name = "Milestones"
+		add_child(ms)
 	if not has_node("DreamLife"):
 		var dl: Node = load("res://scripts/dream_life.gd").new()
 		dl.name = "DreamLife"

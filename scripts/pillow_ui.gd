@@ -11,6 +11,7 @@ var _hint: Label
 
 
 func _ready() -> void:
+	if theme == null: theme = preload("res://scripts/ui_theme.gd").shared()   # v0.24: единый стиль окон
 	add_to_group("pillow_ui")
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE

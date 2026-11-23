@@ -1643,7 +1643,7 @@ func _v08_checks() -> void:
 				shapes[int(plan[0].shape)] = true
 				if int(plan[0].w)>=10:
 					large += 1
-	_a(shapes.size()==3 and large>0 and large<ruins/5,8064)
+	_a(shapes.size()==4 and shapes.has(3) and large>0 and large<ruins/5,8064)
 	print("SMOKE: v08 world samples=10000 ruins=",ruins," settlements=",settlements," large=",large," dev_settlement_distance=",dist," houses=",houses.size())
 	cm.queue_free()
 	# Torch collision: 1/15, 5-second successful-break cooldown.

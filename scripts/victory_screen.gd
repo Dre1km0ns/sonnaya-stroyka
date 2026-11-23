@@ -23,6 +23,7 @@ var _wait := -1.0
 
 
 func _ready() -> void:
+	if theme == null: theme = preload("res://scripts/ui_theme.gd").shared()   # v0.24: единый стиль окон
 	add_to_group("victory_screen")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

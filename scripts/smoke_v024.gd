@@ -358,6 +358,55 @@ func _stage2(scene: Node) -> void:
 		G.world_seed = G.DEV_SEED
 		_a(str(con.execute("weather fog")).contains("туман") and str(con.execute("mobs spawn jumper")).contains("Прыгун") and str(con.execute("errlog")).contains("errors.log") and str(con.execute("help mobs")).contains("Воришка"), 24125)
 		con.execute("weather clear")
+		_a(str(con.execute("net status")).contains("выкл") and str(con.execute("help net")).contains("24567"), 24126)
+		var ns: Node = scene.get_node("/root/NetSession")
+		_a(ns != null and not ns.is_client() and ns.player_count() == 1 and G.boss_player_scale() == 1.0, 24127)
+		var vs := str(con.execute("variety status"))
+		_a(vs.contains("в радиусе"), 24128)
+		var cmv: Node = null
+		for c in scene.get_tree().get_nodes_in_group("chunk_manager"):
+			if not bool(c.get("is_dream_layer")) and not bool(c.get("panorama_mode")): cmv = c
+		var gro := 0; var cle := 0; var tw := 0; var rich := 0; var tg := 0; var tc := 0
+		for dx in range(-14, 15):
+			for dz in range(-14, 15):
+				var cc := Vector2i(dx, dz)
+				var fk: String = cmv.forest_kind(cc)
+				if fk == "grove":
+					gro += 1; tg += cmv.tree_plan(cc).size()
+				elif fk == "clearing":
+					cle += 1; tc += cmv.tree_plan(cc).size()
+				if cmv.cave_rich(cc): rich += 1
+				if cmv.chunk_has_ruin(cc):
+					for h in cmv.ruin_plan(cc):
+						if int(h.shape) == 3: tw += 1
+		print("SMOKE24 variety groves=%d clearings=%d towers=%d cave_rich=%d trees_grove=%d trees_clear=%d" % [gro, cle, tw, rich, tg, tc])
+		_a(gro > 0 and cle > 0 and tw > 0 and rich > 0, 24129)
+		_a(gro > 0 and cle > 0 and float(tg) / gro > 2.0 * float(tc) / cle + 1.0, 24130)
+		var PS: GDScript = load("res://scripts/progress_store.gd")
+		PS.reset()
+		var md: bool = G.mother_defeated
+		G.mother_defeated = true
+		_a("mother" in PS.current_conditions() and PS.mark("mother") and not PS.mark("mother") and PS.load_all().has("mother"), 24131)
+		_a(str(con.execute("progress status")).contains("Мать блоков"), 24132)
+		G.mother_defeated = md
+		PS.reset()
+		# п.25: у каждого предмета своя иконка; п.26: все действия переназначения есть в InputMap, Enter только у чата
+		var IDB: GDScript = load("res://scripts/item_db.gd")
+		var no_icon: Array = []
+		for id in IDB.ITEMS.keys():
+			if not ResourceLoader.exists("res://assets/icons/%s.png" % id): no_icon.append(id)
+		for sp in IDB.SPECIAL:
+			if not ResourceLoader.exists("res://assets/icons/%s.png" % sp.id): no_icon.append(sp.id)
+		_a(no_icon.is_empty(), 24133)
+		var GSet2: Node = scene.get_node("/root/GameSettings")
+		var bad_act: Array = []
+		var enters := 0
+		for b in GSet2.BINDABLE:
+			if not InputMap.has_action(b[0]) or InputMap.action_get_events(b[0]).is_empty(): bad_act.append(b[0])
+			if b[2] == "key" and int(b[3]) == KEY_ENTER: enters += 1
+		_a(bad_act.is_empty() and enters == 1 and InputMap.has_action("net_chat"), 24134)
+		var ui_t: Theme = load("res://scripts/ui_theme.gd").shared()
+		_a(ui_t != null and ui_t == load("res://scripts/ui_theme.gd").shared(), 24135)
 		G.world_seed = ws
 		G.dev_mode = false
 	for m in T.get_nodes_in_group("wake_mob"): m.queue_free()

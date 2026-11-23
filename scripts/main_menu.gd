@@ -160,6 +160,7 @@ func _build_ui() -> void:
 	_screens["create"] = _build_create_screen()
 	_screens["howto"] = _build_howto_screen()
 	_screens["join"] = _build_join_screen()
+	_screens["progress"] = _build_progress_screen()
 	for k in _screens.keys():
 		_ui.add_child(_screens[k])
 	var ver := Label.new()
@@ -206,6 +207,9 @@ func _build_main_screen() -> Control:
 	_main_btn(box, "Играть", _on_play)
 	_main_btn(box, "Создать сетевую игру", _on_host_game)
 	_main_btn(box, "Подключиться", func() -> void: _show("join"))
+	_main_btn(box, "Прогресс", func() -> void:
+		_refresh_progress()
+		_show("progress"))
 	_main_btn(box, "Как играть", func() -> void: _show("howto"))
 	_main_btn(box, "Настройки", _open_settings)
 	_main_btn(box, "Выход", func() -> void: GameSettings.safe_quit(0))
@@ -465,6 +469,48 @@ var _join_status: Label
 var _join_list: ItemList
 var _join_found: Array = []
 var _host_banner: Label
+
+
+var _progress_box: VBoxContainer
+var _progress_head: Label
+
+
+func _build_progress_screen() -> Control:
+	var pr := _panel_screen("Прогресс", 640)
+	var box: VBoxContainer = pr[1]
+	_progress_head = Label.new(); _progress_head.name = "ProgressHead"
+	_progress_head.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
+	box.add_child(_progress_head)
+	_progress_box = VBoxContainer.new(); _progress_box.name = "ProgressList"
+	_progress_box.add_theme_constant_override("separation", 6)
+	box.add_child(_progress_box)
+	var back := Button.new(); back.text = "Назад"; back.custom_minimum_size = Vector2(0, 44)
+	back.pressed.connect(func() -> void: _show("main"))
+	box.add_child(back)
+	_refresh_progress()
+	return pr[0]
+
+
+func _refresh_progress() -> void:
+	if _progress_box == null: return
+	for c in _progress_box.get_children(): c.queue_free()
+	var PS: GDScript = load("res://scripts/progress_store.gd")
+	var done: Dictionary = PS.load_all()
+	var n := 0
+	for m in PS.LIST:
+		var row := HBoxContainer.new(); row.add_theme_constant_override("separation", 12)
+		var mark := Label.new(); mark.custom_minimum_size = Vector2(30, 0)
+		var ok := done.has(m[0])
+		if ok: n += 1
+		mark.text = "✔" if ok else "○"
+		mark.add_theme_color_override("font_color", Color(0.55, 1.0, 0.6) if ok else Color(0.5, 0.48, 0.58))
+		row.add_child(mark)
+		var t := Label.new(); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		t.text = "%s — %s" % [m[1], m[2]] + ("  · %s" % done[m[0]] if ok else "")
+		t.add_theme_color_override("font_color", Color(0.95, 0.93, 0.98) if ok else Color(0.62, 0.6, 0.7))
+		row.add_child(t)
+		_progress_box.add_child(row)
+	_progress_head.text = "Вехи: %d из %d — общие для всех миров." % [n, PS.LIST.size()]
 
 
 func _on_host_game() -> void:
