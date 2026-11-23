@@ -67,13 +67,16 @@ const COMMAND_HELP := {
 "knockback":"Откидывание мобов от удара v0.22: сила по оружию, боссов не откидывает; отдача руки. status, on/off. Пример: knockback; knockback off",
 "aggro":"Агрессия Анаконды на факелы v0.22: больше 3 факелов рядом — она злится и ломает их; стана от света нет. Пример: aggro",
 "arms":"Руки от первого лица v0.22, модель Kenney Blocky Characters CC0. status, play attack|break|place|use|jump|sleep|wake. Пример: arms; arms play attack",
-"mouse":"Кнопки мыши v0.22.1: ЛКМ — нажать: поставить, удерживать: сломать, с мечом — удар; ПКМ — только использовать; переназначаются в настройках. Пример: mouse",
+"mouse":"Кнопки мыши v0.23, как в v0.22: ЛКМ — удар и сломать с любым предметом, удар в воздух тоже; ПКМ — использовать и поставить; во Сне ПКМ ставит, ЛКМ снимает; переназначаются в настройках. Пример: mouse",
 "stamina":"Стамина v0.22.1: в Яви бег 10 с, восстановление с нуля до полной 20 с, устал — бег снова с 25 %; полоска над HP. status, full, zero, inf on|off. Пример: stamina; stamina zero; stamina inf on",
 "walltorch":"Настенные факелы v0.22.1: факел на боковой грани блока стоит наискосок, как в Minecraft; без опоры падает. status — сколько настенных; test — поставить блок и факел на него рядом с тобой. Пример: walltorch; walltorch test",
 "chatlog":"Чат v0.22.1: в чате только сообщения боссов, призыв яйцом, зелья под подушкой и подсказки строительства во Сне. chatlog — последние скрытые сообщения, chatlog 30 — больше. Пример: chatlog; chatlog 30",
 "stations":"Станции v0.22.1: верстак, кровать, станки, сундук, дверь, маяк, ловец идей копируются в Явь, оригинал остаётся во Сне. Первая копия оплачена предметом, поставленным во Сне, следующие стоят 1 такой предмет из инвентаря Яви. Пример: stations",
 "camp":"Стартовый лагерь v0.22.1: стоит на земле, у спавна нет озёр. status — сколько блоков висит; lower — опустить висящие на 1. Пример: camp; camp lower",
 "land":"Земля v0.22.1: холм, грунт и земля — один блок «Земля» (dirt), сверху трава, под блоком — земля. Светоблоки и светильник удалены, в сейвах стали факелами. status — алиасы; migrate — перевести мир ещё раз. Пример: land; land migrate",
+"drop":"Выбрасывание предметов v0.23, как в Minecraft: Q — одну штуку из выбранного слота, Ctrl+Q — всю стопку, щелчок за окном инвентаря — взятый предмет. Предмет летит вперёд, 2 с не подбирается, хранится в сохранении мира. Во Сне не выбрасывается. status — сколько лежит; one / all — выбросить из выбранного слота; spawn <предмет> [n] — положить перед собой; clear — убрать все. Пример: drop; drop all; drop spawn torch 5",
+"swing":"Замах v0.23: ЛКМ бьёт с любым предметом в руке, без цели — удар в воздух с перезарядкой 0.28 с. status — счётчики; air — замахнуться в воздух. Пример: swing; swing air",
+"hand":"Предмет в руке v0.23: меч, кирка, факел или блок держится в кисти руки Kenney и двигается вместе с ней. status — что в руке и расстояние до кисти. Пример: hand",
 "hudfocus":"Фокус HUD обучения v0.21: что сейчас скрыто (цели, якорная панель, колонка Гвоздь/Клин/Якорь3/Маяк, цена якоря). Пример: hudfocus",
 }
 var history: Array[String] = []
@@ -187,6 +190,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","dreamdecor island","dreamdecor home","hudfocus","bosscam","bosscam on","bosscam off","bosscam status"]: all.append(command)
 	for command in ["stamina","stamina full","stamina zero","stamina inf on","stamina inf off","walltorch","walltorch test","chatlog","chatlog 30","stations","camp","camp lower","land","land migrate"]: all.append(command)
 	for command in ["economy","economy steal ","fall","fall status","fall on","fall off","fall test ","torch","torch status","torch drop","frameclear","timeskip","timeskip status","timeskip x ","timeskip night","dayspawn","knockback","knockback status","knockback on","knockback off","aggro","arms","arms status","arms play attack","arms play break","arms play place","arms play use","arms play jump","arms play sleep","arms play wake","mouse"]: all.append(command)
+	for command in ["drop","drop status","drop one","drop all","drop clear","drop spawn ","swing","swing status","swing air","hand","hand status"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -575,10 +579,56 @@ func _v010_command(a: PackedStringArray) -> String:
 			return _v022_cmd(a, _player())
 		"stamina","walltorch","chatlog","stations","camp","land":
 			return _v0221_cmd(a, _player())
+		"drop","swing","hand":
+			return _v023_cmd(a)
 	return "Ошибка: неизвестная команда. help — список."
 
 
 ## v0.22.1: команды правок владельца.
+func _v023_cmd(a: PackedStringArray) -> String:
+	var sub := a[1] if a.size() > 1 else "status"
+	var b := _build()
+	if b == null: return "Ошибка: нет контроллера строительства."
+	match a[0]:
+		"drop":
+			match sub:
+				"status":
+					return "Выброшено лежит: %d · выброшено всего %d · подобрано %d · задержка подбора %.1f с · можно сейчас: %s" % [GameState.dropped_items.size(), GameState.drops_thrown, GameState.drops_picked, GameState.DROP_PICKUP_DELAY, "да" if GameState.can_drop_items() else "нет, во Сне не выбрасывается"]
+				"one", "all":
+					if not GameState.can_drop_items(): return "Ошибка: во Сне вещи не выбрасываются."
+					var n: Node3D = b.drop_selected(sub == "all")
+					return "Выброшено: %s ×%d" % [n.item_id(), n.item_count()] if n else "Ошибка: выбранный слот пуст."
+				"clear":
+					var c := GameState.dropped_items.size()
+					for d in get_tree().get_nodes_in_group("dropped_item"): d.queue_free()
+					GameState.dropped_items.clear()
+					return "Убрано выброшенных предметов: %d" % c
+				"spawn":
+					if a.size() < 3 or not DB.ITEMS.has(a[2]): return "Ошибка: drop spawn <предмет> [n]; Tab — предметы через give."
+					if not GameState.can_drop_items(): return "Ошибка: во Сне вещи не выбрасываются."
+					var cnt := clampi(int(a[3]) if a.size() > 3 and a[3].is_valid_int() else 1, 1, 999)
+					var pay := {"id": a[2], "name": GameState.block_display_name(a[2]), "count": cnt}
+					if GameState.tool_max(a[2]) > 0: pay["count"] = 1; pay["durability"] = GameState.tool_max(a[2])
+					var n2: Node3D = b.throw_payload(pay)
+					return "Брошено: %s ×%d" % [a[2], int(pay["count"])] if n2 else "Ошибка: некуда бросить."
+			return "Ошибка: drop status|one|all|clear|spawn <предмет> [n]"
+		"swing":
+			if sub == "air":
+				b.swing_air()
+				return "Удар в воздух · всего %d" % b.air_swings
+			if sub == "status":
+				return "Ударов в воздух: %d · перезарядка %.2f с · сейчас %.2f с" % [b.air_swings, b.AIR_SWING_COOLDOWN, b._place_cooldown]
+			return "Ошибка: swing status|air"
+		"hand":
+			var vm = b.viewmodel
+			if vm == null: return "Ошибка: нет модели в руке."
+			var sk: Node3D = vm.hand_socket()
+			var dist := -1.0
+			if sk and vm.hand_root.visible: dist = vm.hand_root.global_position.distance_to(sk.global_position)
+			return "В руке: %s · модель %s · кисть %s · до кисти %.3f" % [str(GameState.get_selected_item().get("id", "пусто")), vm.current if vm.current != "" else "нет", "есть" if sk else "нет", dist]
+	return "Ошибка: " + a[0]
+
+
 func _v0221_cmd(a: PackedStringArray, p: Node3D) -> String:
 	var G := GameState
 	var sub := a[1] if a.size() > 1 else "status"
@@ -720,7 +770,7 @@ func _v022_cmd(a: PackedStringArray, p: Node3D) -> String:
 		"mouse":
 			var gs := get_node_or_null("/root/GameSettings")
 			if gs == null: return "Ошибка: нет настроек."
-			return "Поставить / сломать / удар: %s · Использовать: %s · порог удержания %.2f с · менять в Настройках → Управление" % [gs.key_label("attack_break"), gs.key_label("use_place"), preload("res://scripts/build_controller.gd").TAP_TIME]
+			return "Удар / сломать: %s · Использовать / поставить: %s · выбросить: %s · менять в Настройках → Управление" % [gs.key_label("attack_break"), gs.key_label("use_place"), gs.key_label("drop_item")]
 	return "Ошибка: help " + a[0]
 
 

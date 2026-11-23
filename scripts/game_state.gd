@@ -101,7 +101,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 16 # v0.22.1: «Земля», без светоблоков; v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
+const SAVE_FORMAT := 17 # v0.23: выброшенные предметы в мире; v0.22.1: «Земля», без светоблоков; v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -428,6 +428,7 @@ func reset_state() -> void:
 	collected_eggs = {}
 	spawn_point = DEFAULT_SPAWN
 	graves = []
+	dropped_items = []
 	death_open = false
 	pillow_open = false
 	_boss_count = 0
@@ -1881,7 +1882,7 @@ func on_mother_killed() -> void:
 	heart_structure = true
 	unlock_zone("stone_garden")
 	if first:
-		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ЛКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
+		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ПКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -2366,7 +2367,7 @@ func enter_dream() -> void:
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
 	if not tutorial_focus(): # v0.21: во время обучения клавиши вводит только его панель
-		set_hint("Сон помнит всё построенное. ЛКМ — блок %s, удерживай ЛКМ — снять, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
+		set_hint("Сон помнит всё построенное. ПКМ — блок %s, ЛКМ — снять, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
 
 
 func resolve_wake(abort_transfer:bool=false) -> Dictionary:
@@ -2618,6 +2619,7 @@ func to_save_dict() -> Dictionary:
 		"collected_eggs": collected_eggs.keys(),
 		"spawn_point": [spawn_point.x, spawn_point.y, spawn_point.z],
 		"graves": _graves_to_json(),
+		"dropped_items": _drops_to_json(),
 		"block_stash": block_stash.duplicate(),
 		"dream_exit_count": dream_exit_count,
 		"collected_reagent_ids": collected_reagent_ids.keys(),
@@ -2790,6 +2792,7 @@ func apply_save_dict(data: Dictionary) -> void:
 		active_bed = ""
 		spawn_point = creation_spawn
 	_graves_from_json(data.get("graves", []))
+	_drops_from_json(data.get("dropped_items", []))
 	_boss_count = 0
 	death_open = false
 	pillow_open = false
@@ -2854,6 +2857,107 @@ func _slots_into(src: Variant, dst: Array) -> void:
 		var s: Variant = src[i]
 		if typeof(s) == TYPE_DICTIONARY and str(s.get("id", "")) != "" and int(s.get("count", 0)) > 0:
 			dst[i] = s.duplicate(true)
+
+
+# --- v0.23: выброшенные предметы (Q / Ctrl+Q / из окна инвентаря), как в Minecraft ---
+## Запись: {"id", "count", "durability"?, "pos": Vector3}. Узлы dropped_item.gd держат ссылку на свою запись.
+const DROP_PICKUP_DELAY := 2.0
+const DROP_MAX := 256
+var dropped_items: Array = []
+var drops_thrown := 0
+var drops_picked := 0
+
+
+func take_from_slot(index: int, amount: int) -> Dictionary:
+	## Забирает amount штук из слота и возвращает их как предмет-полезную нагрузку ({} если пусто).
+	_ensure_inventory()
+	if index < 0 or index >= ITEM_SLOT_COUNT or amount <= 0:
+		return {}
+	var s: Dictionary = item_slots[index]
+	var id := str(s.get("id", ""))
+	var have := int(s.get("count", 0))
+	if id == "" or have <= 0:
+		return {}
+	var n := mini(amount, have)
+	var out := s.duplicate(true)
+	out["count"] = n
+	if not is_infinite_slot(index):
+		if n >= have:
+			item_slots[index] = _empty_slot()
+		else:
+			s["count"] = have - n
+		notify_inventory()
+	return out
+
+
+func can_drop_items() -> bool:
+	## Решение v0.23: во Сне вещи не выбрасываются — там палитра бесплатна и нет подбора с земли.
+	return current_world == World.WAKE and player_hp > 0
+
+
+func register_drop(payload: Dictionary, pos: Vector3) -> Dictionary:
+	var rec := {"id": canon_kind(str(payload.get("id", ""))), "count": int(payload.get("count", 0)), "pos": pos}
+	if payload.has("durability"):
+		rec["durability"] = int(payload["durability"])
+	dropped_items.append(rec)
+	while dropped_items.size() > DROP_MAX:
+		dropped_items.remove_at(0)
+	return rec
+
+
+func unregister_drop(rec: Dictionary) -> void:
+	for i in range(dropped_items.size()):
+		if is_same(dropped_items[i], rec):
+			dropped_items.remove_at(i)
+			return
+
+
+func give_payload(payload: Dictionary) -> int:
+	## Кладёт подобранный предмет в инвентарь. Инструменты/броня сохраняют прочность. Возвращает, сколько вошло.
+	_ensure_inventory()
+	var id := canon_kind(str(payload.get("id", "")))
+	var cnt := int(payload.get("count", 0))
+	if id == "" or cnt <= 0:
+		return 0
+	if tool_max(id) > 0 or payload.has("durability"):
+		for i in range(ITEM_SLOT_COUNT):
+			if str(item_slots[i].get("id", "")) == "":
+				var one := payload.duplicate(true)
+				one["id"] = id
+				one["count"] = 1
+				if not one.has("name"):
+					one["name"] = block_display_name(id)
+				set_slot(i, one)
+				return 1
+		return 0
+	return add_item_count(id, cnt)
+
+
+func _drops_to_json() -> Array:
+	var out: Array = []
+	for d in dropped_items:
+		var p: Vector3 = d["pos"]
+		var o := {"id": d["id"], "count": int(d["count"]), "pos": [snappedf(p.x, 0.01), snappedf(p.y, 0.01), snappedf(p.z, 0.01)]}
+		if d.has("durability"):
+			o["durability"] = int(d["durability"])
+		out.append(o)
+	return out
+
+
+func _drops_from_json(src: Variant) -> void:
+	dropped_items = []
+	if typeof(src) != TYPE_ARRAY:
+		return
+	for d in src:
+		if typeof(d) != TYPE_DICTIONARY or int(d.get("count", 0)) <= 0 or str(d.get("id", "")) == "":
+			continue
+		var pa: Variant = d.get("pos", [])
+		if typeof(pa) != TYPE_ARRAY or (pa as Array).size() < 3:
+			continue
+		var rec := {"id": canon_kind(str(d["id"])), "count": int(d["count"]), "pos": Vector3(float(pa[0]), float(pa[1]), float(pa[2]))}
+		if d.has("durability"):
+			rec["durability"] = int(d["durability"])
+		dropped_items.append(rec)
 
 
 func _graves_to_json() -> Array:
@@ -4343,10 +4447,10 @@ signal tutorial_changed
 
 const TUTORIAL := [
 	{"id": "fly", "title": "Лети", "how": "Во Сне ты летаешь. Пробел — вверх, Ctrl — вниз, WASD — вперёд и вбок. Отлети на 8 блоков."},
-	{"id": "build", "title": "Поставь 5 блоков", "how": "Слот 1 ставит блок дрейфа — он бесплатный. Нажми ЛКМ — поставить, удерживай ЛКМ — снять. Поставь 5 блоков."},
+	{"id": "build", "title": "Поставь 5 блоков", "how": "Слот 1 ставит блок дрейфа — он бесплатный. ПКМ — поставить, ЛКМ — снять. Поставь 5 блоков."},
 	{"id": "frame", "title": "Рамка и заливка", "how": "Наведись на блок: K — первый угол рамки, ещё раз K — второй угол. Потом L — залить рамку целиком."},
 	{"id": "trial", "title": "Испытай фантомами", "how": "M — испытание: фантомы атакуют копию постройки в рамке. Дыры и дрейф — слабые места. Сон не пострадает."},
-	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ЛКМ — поставить его."},
+	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ПКМ — поставить его."},
 	{"id": "anchor", "title": "Закрепи якорем", "how": "Наведись на верстак и нажми Q — закрепить его якорем. Реагенты на первый якорь Сон подарил."},
 	{"id": "wake", "title": "Проснись", "how": "F — проснуться. Закреплённый верстак появится в Яви копией, а оригинал останется во Сне."},
 ]

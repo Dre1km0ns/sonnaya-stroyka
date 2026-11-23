@@ -32,6 +32,7 @@ var _mine_tool := ""
 func setup(p: CharacterBody3D, dream_layer: Node3D) -> void:
 	player = p
 	dream_voxels = dream_layer
+	add_to_group("build_controller")
 	_make_ghost()
 	cracks = load("res://scripts/mining_cracks.gd").new()
 	add_child(cracks)
@@ -62,13 +63,13 @@ func _make_ghost() -> void:
 func _process(delta: float) -> void:
 	if cracks: cracks.visible = false
 	_mine_swing_t = maxf(0.0,_mine_swing_t-delta)
+	_temp_hand_t = maxf(0.0, _temp_hand_t - delta)
 	_place_cooldown = maxf(0.0, _place_cooldown - delta)
 	_update_hand_tools()
 	if player == null or dream_voxels == null:
 		return
 	if GameState.ui_blocked():
 		_mine_elapsed = 0.0
-		_lmb_t = -1.0
 		ghost.visible = false
 		return
 	if Input.is_action_just_pressed("place_beacon"):
@@ -76,69 +77,132 @@ func _process(delta: float) -> void:
 	if not GameState.is_dream():
 		ghost.visible = false
 		update_torch_rings()
-		# v0.22.1: ЛКМ — короткое нажатие ставит блок/факел, удержание ломает, с мечом — удар; ПКМ — только использовать.
+		# v0.23: схема v0.22 — ЛКМ: удар и добыча (с любым предметом в руке, удар в воздух тоже);
+		# ПКМ: использовать (дверь, яйцо) и поставить (блок, факел).
+		if Input.is_action_just_pressed("drop_item"):
+			drop_selected(Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META))
 		var sel := str(GameState.get_selected_item().get("id", ""))
 		var sword := sel == "sword" or sel == "sword2" or sel == "sword3"
-		if Input.is_action_just_pressed("use_place"):
+		if Input.is_action_just_pressed("use_place") and _place_cooldown <= 0.0:
 			if _toggle_aimed_door():
 				_arms("use")
-			elif sel == "anaconda_egg" and _place_cooldown <= 0.0:
+				_place_cooldown = 0.16
+			elif sel == "anaconda_egg":
 				_try_summon_anaconda()
 				_arms("use")
 				_place_cooldown = 0.5
-		var placeable := sel == "torch" or GameState.is_placeable_block(sel)
+			elif sel == "torch":
+				_try_place_torch()
+				_arms("place")
+				_place_cooldown = 0.16
+			elif GameState.is_placeable_block(sel):
+				_try_place_wake_item()
+				_arms("place")
+				_place_cooldown = 0.16
+			return
 		if sword:
-			_lmb_t = -1.0
 			_reset_mining()
 			if _place_cooldown <= 0.0 and Input.is_action_just_pressed("attack_break"):
-				_try_sword()
+				_try_sword()   # замах всегда, даже в воздух
 				_place_cooldown = SWORD_COOLDOWN
 			return
+		if Input.is_action_just_pressed("attack_break") and _place_cooldown <= 0.0:
+			if _try_pick_up_torch():
+				_arms("break")
+				_place_cooldown = 0.16
+				return
+			if not _aim().get("hit", false):
+				swing_air()
+				return
 		if Input.is_action_pressed("attack_break"):
-			_lmb_t = 0.0 if _lmb_t < 0.0 else _lmb_t + delta
-			if not placeable or _lmb_t >= TAP_TIME:
-				if not _lmb_torch_checked:
-					_lmb_torch_checked = true
-					if _try_pick_up_torch():
-						_arms("break")
-						_place_cooldown = 0.16
-						return
-				_tick_mining(delta)
+			_tick_mining(delta)
 			return
-		if _lmb_t >= 0.0 and _lmb_t < TAP_TIME and placeable and _place_cooldown <= 0.0:
-			if sel == "torch":
-				_try_place_torch()
-			else:
-				_try_place_wake_item()
-			_arms("place")
-			_place_cooldown = 0.16
-		_lmb_t = -1.0
-		_lmb_torch_checked = false
 		_reset_mining()
 		return
 	_update_ghost()
-	if Input.is_action_just_pressed("use_place"):
-		_toggle_aimed_door()
-	# Сон: короткое нажатие ЛКМ — поставить, удержание — снимать блоки (по одному каждые 0,2 с).
-	if Input.is_action_pressed("attack_break"):
-		_lmb_t = 0.0 if _lmb_t < 0.0 else _lmb_t + delta
-		if _lmb_t >= TAP_TIME and _place_cooldown <= 0.0:
-			_try_remove()
-			_arms("break")
-			_place_cooldown = DREAM_BREAK_REPEAT
-		return
-	if _lmb_t >= 0.0 and _lmb_t < TAP_TIME and _place_cooldown <= 0.0:
-		_try_place()
-		_arms("place")
+	# Сон (как в v0.22): ПКМ — поставить, ЛКМ — снять; дверь — ПКМ по двери.
+	if Input.is_action_just_pressed("use_place") and _place_cooldown <= 0.0:
+		if not _toggle_aimed_door():
+			_try_place()
+			_arms("place")
 		_place_cooldown = 0.12
-	_lmb_t = -1.0
+	if Input.is_action_just_pressed("attack_break") and _place_cooldown <= 0.0:
+		_try_remove()
+		_arms("break")
+		_place_cooldown = 0.12
 
 
-## v0.22.1: порог «короткое нажатие / удержание» ЛКМ (секунды).
-const TAP_TIME := 0.22
-const DREAM_BREAK_REPEAT := 0.2
-var _lmb_t := -1.0
-var _lmb_torch_checked := false
+## v0.23: выбросить предмет из выбранного слота: Q — одну штуку, Ctrl+Q — всю стопку.
+const DROP_SPEED := 5.0
+const DROP_UP := 2.2
+
+
+func drop_selected(all: bool = false) -> Node3D:
+	if not GameState.can_drop_items():
+		return null
+	var slot := GameState.get_selected_item()
+	var n := int(slot.get("count", 0)) if all else 1
+	var payload := GameState.take_from_slot(GameState.selected_slot, n)
+	if payload.is_empty():
+		return null
+	_arms("use")
+	return throw_payload(payload)
+
+
+func throw_payload(payload: Dictionary, delay: float = GameState.DROP_PICKUP_DELAY) -> Node3D:
+	## Вылетает из-под камеры вперёд по взгляду. Подбор обычный (автоподбор), но не раньше delay секунд.
+	if payload.is_empty() or int(payload.get("count", 0)) <= 0:
+		return null
+	var host := _wake_world()
+	if host == null or player == null:
+		return null
+	var cam := player.get_node_or_null("CameraPivot/Camera3D") as Camera3D
+	var fwd := -player.global_transform.basis.z
+	var origin := player.global_position + Vector3(0, 1.3, 0)
+	if cam:
+		fwd = -cam.global_transform.basis.z
+		origin = cam.global_position - Vector3(0, 0.25, 0)
+	var start := origin + fwd * 0.45
+	var rec := GameState.register_drop(payload, start)
+	var vel := fwd * DROP_SPEED + Vector3(0, DROP_UP, 0)
+	var node := spawn_drop(rec, vel, delay)
+	GameState.drops_thrown += int(payload.get("count", 0))
+	return node
+
+
+func spawn_drop(rec: Dictionary, vel: Vector3 = Vector3.ZERO, delay: float = 0.0) -> Node3D:
+	var host := _wake_world()
+	if host == null:
+		return null
+	var script: GDScript = load("res://scripts/dropped_item.gd")
+	var d: CharacterBody3D = script.new()
+	d.setup(rec, vel, delay)
+	d.position = rec["pos"]
+	host.add_child(d)
+	return d
+
+
+func spawn_saved_drops() -> int:
+	for n in get_tree().get_nodes_in_group("dropped_item"):
+		n.queue_free()
+	var c := 0
+	for rec in GameState.dropped_items:
+		if spawn_drop(rec) != null:
+			c += 1
+	return c
+
+
+## v0.23: удар в воздух — замах рукой/предметом без цели, с перезарядкой.
+const AIR_SWING_COOLDOWN := 0.28
+var air_swings := 0
+
+
+func swing_air() -> void:
+	air_swings += 1
+	_play_tool_swing()
+	_place_cooldown = AIR_SWING_COOLDOWN
+
+
 
 
 func _reset_mining() -> void:
@@ -749,9 +813,23 @@ func _update_hand_tools() -> void:
 	if viewmodel == null:
 		return
 	var id := str(GameState.get_selected_item().get("id", ""))
+	if _temp_hand_t > 0.0:
+		id = _temp_hand
 	if GameState.ui_blocked() or GameState.transfer_ui_open:
 		id = ""
 	viewmodel.set_tool(id)
+
+
+## v0.23: на время действия в кисти — другой предмет (зелье при H), анимацию даёт рука.
+var _temp_hand := ""
+var _temp_hand_t := 0.0
+
+
+func show_in_hand(id: String, seconds: float, action: String) -> void:
+	_temp_hand = id
+	_temp_hand_t = seconds
+	_update_hand_tools()
+	_arms(action)
 
 
 func _arms(kind: String) -> void:

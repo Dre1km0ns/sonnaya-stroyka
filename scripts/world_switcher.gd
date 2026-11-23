@@ -45,7 +45,9 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("pillow_check") and not GameState.is_dream() and aimed_bed() != null:
 		open_pillow()
 	if Input.is_action_just_pressed("use_heal") and not GameState.is_dream():
-		GameState.use_heal()
+		if GameState.use_heal():
+			var bc := get_tree().get_first_node_in_group("build_controller")
+			if bc: bc.show_in_hand(GameState.last_heal_choice, 0.8, "drink")
 	if GameState.is_dream() and InputMap.has_action("dream_offer") and Input.is_action_just_pressed("dream_offer"):
 		GameState.offer_request()
 	if GameState.is_dream() and InputMap.has_action("blueprint_save") and Input.is_action_just_pressed("blueprint_save"):

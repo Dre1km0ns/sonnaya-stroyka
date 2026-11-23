@@ -36,6 +36,8 @@ func _build() -> void:
 	dim.color = Color(0.02, 0.02, 0.06, 0.55)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.name = "Outside"
+	dim.gui_input.connect(_on_outside_input)
 	add_child(dim)
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -198,6 +200,37 @@ func close() -> void:
 	GameState.inventory_open = false
 	if not GameState.paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_outside_input(ev: InputEvent) -> void:
+	## v0.23: щелчок за окном с предметом «в руке курсора» выбрасывает его в мир, как в Minecraft:
+	## ЛКМ — всю взятую стопку, ПКМ — одну штуку.
+	var mb := ev as InputEventMouseButton
+	if mb == null or not mb.pressed or _held.is_empty():
+		return
+	if mb.button_index == MOUSE_BUTTON_LEFT:
+		drop_held(false)
+	elif mb.button_index == MOUSE_BUTTON_RIGHT:
+		drop_held(true)
+
+
+func drop_held(one: bool = false) -> bool:
+	if _held.is_empty() or not GameState.can_drop_items():
+		return false
+	var bc := get_tree().get_first_node_in_group("build_controller")
+	if bc == null or not bc.has_method("throw_payload"):
+		return false
+	var payload := _held.duplicate(true)
+	if one:
+		payload["count"] = 1
+	if bc.throw_payload(payload) == null:
+		return false
+	if one and int(_held.get("count", 0)) > 1:
+		_held["count"] = int(_held["count"]) - 1
+	else:
+		_held = {}
+	_refresh()
+	return true
 
 
 func _return_held() -> void:

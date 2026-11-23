@@ -24,6 +24,12 @@ const TOOL_CONFIG := {
 		"swing_time": 0.24, "wind": Vector3(18, -18, -14), "swing": Vector3(-64, 36, 32), "speed": 1.1},
 	"torch":    {"pos": Vector3(0.30, -0.36, -0.48), "rot": Vector3(-14, 0, 10), "scale": 0.55, "grip": Vector3(0.0, -0.16, 0.0),
 		"swing_time": 0.22, "wind": Vector3(10, 0, 0), "swing": Vector3(-30, 0, 6), "speed": 1.0},
+	# v0.23: блок в руке — маленький куб в кулаке
+	"block":    {"pos": Vector3(0.30, -0.34, -0.50), "rot": Vector3(-10, -20, 0), "scale": 1.0, "grip": Vector3(0.0, 0.0, 0.0),
+		"swing_time": 0.22, "wind": Vector3(12, 0, 0), "swing": Vector3(-36, 0, 0), "speed": 1.0, "hold": Vector3(-90, 0, 0)},
+	# v0.23: любой другой предмет (зелья, яйцо, слитки, реагенты) — плоская иконка в кулаке
+	"item":     {"pos": Vector3(0.30, -0.34, -0.50), "rot": Vector3(0, -20, 0), "scale": 1.0, "grip": Vector3(0.0, -0.08, 0.0),
+		"swing_time": 0.22, "wind": Vector3(12, 0, 0), "swing": Vector3(-36, 0, 0), "speed": 1.0, "hold": Vector3(-90, 0, 0)},
 }
 ## v0.13: диапазон рукояти по Y в координатах модели (проверяется smoke: grip обязан лежать внутри).
 const HANDLE_Y := {
@@ -31,8 +37,18 @@ const HANDLE_Y := {
 	"sword": Vector2(-0.40, -0.17), "sword2": Vector2(-0.40, -0.17),
 	"sword3": Vector2(0.04, 0.28),
 	"torch": Vector2(-0.40, 0.10),
+	"block": Vector2(-0.12, 0.12),
+	"item": Vector2(-0.20, 0.20),
 }
+const BLOCK_SIZE := 0.22
+var block_kind := ""
+var item_kind := ""
 const WALL_PROBE := 0.85
+## v0.23: предмет держится в кисти руки модели — HandRoot каждый кадр ставится в HandSocket руки (fp_arms).
+## HOLD_ROT — поворот предмета относительно кисти: рукоять в кулаке, остриё вперёд из кулака.
+const HOLD_ROT := Vector3(90, 0, 0)
+## Замах предмета в кисти — доля прежнего процедурного замаха (основное движение даёт клип руки).
+const WRIST_SWING := 0.0 # v0.23: предмет не вращается сам, только вместе с рукой
 const BOB_AMOUNT := 0.012
 
 var hand_root: Node3D
@@ -53,6 +69,7 @@ var arms: Node3D
 
 func _ready() -> void:
 	name = "ViewModelRoot"
+	process_priority = 50   # v0.23: после AnimationPlayer руки — предмет не отстаёт от кисти на кадр
 	hand_root = Node3D.new(); hand_root.name = "HandRoot"; add_child(hand_root)
 	grip_pivot = Node3D.new(); grip_pivot.name = "GripPivot"; hand_root.add_child(grip_pivot)
 	swing_pivot = Node3D.new(); swing_pivot.name = "SwingPivot"; grip_pivot.add_child(swing_pivot)
@@ -99,7 +116,24 @@ func config(id: String) -> Dictionary:
 
 
 func set_tool(id: String) -> void:
-	if id == current and hand_root.visible == TOOL_CONFIG.has(id):
+	var is_block := id != "" and id != "block" and not TOOL_CONFIG.has(id) and GameState != null and GameState.is_placeable_block(id)
+	if is_block:
+		if current == "block" and block_kind == id and hand_root.visible:
+			return
+		block_kind = id
+		var bm := models["block"].get_node("Mesh") as MeshInstance3D
+		bm.mesh = BlockTex.cube_mesh(id, Vector3.ONE * BLOCK_SIZE, GameState.is_dream())
+		bm.material_override = BlockTex.dream_material() if GameState.is_dream() and BlockTex.dream_tinted(id) else null
+		id = "block"
+	elif id != "" and id != "item" and not TOOL_CONFIG.has(id):
+		if current == "item" and item_kind == id and hand_root.visible:
+			return
+		item_kind = id
+		var sp := models["item"].get_node("Sprite") as Sprite3D
+		sp.texture = load("res://scripts/item_db.gd").icon(id)
+		sp.pixel_size = 0.30 / maxf(1.0, float(sp.texture.get_width())) if sp.texture else 0.01
+		id = "item"
+	elif id == current and hand_root.visible == TOOL_CONFIG.has(id):
 		return
 	current = id if TOOL_CONFIG.has(id) else ""
 	for k in models:
@@ -114,6 +148,7 @@ func set_tool(id: String) -> void:
 	var c: Dictionary = TOOL_CONFIG[current]
 	hand_root.position = c.pos
 	hand_root.rotation_degrees = c.rot
+	follow_hand()
 	var m: Node3D = models[current]
 	m.scale = Vector3.ONE * float(c.scale)
 	m.position = -Vector3(c.grip) * float(c.scale)
@@ -139,19 +174,21 @@ func play_recoil(solid_hit: bool = true) -> void:
 	_do_recoil(solid_hit)
 
 
+## v0.23: у предмета нет своей анимации — он сидит в кисти, всё движение даёт рука.
+## Отдача — короткий толчок всей руки (вместе с предметом).
+var kick_offset := Vector3.ZERO
+
+
 func _do_recoil(solid_hit: bool) -> void:
 	if current == "" or not is_inside_tree():
 		return
 	if _tween and _tween.is_valid():
 		_tween.kill()
 	swinging = false
-	var back := 0.07 if solid_hit else 0.035
-	var kick := Vector3(16 if solid_hit else 7, -4, -6 if solid_hit else -2)
+	var back := 0.05 if solid_hit else 0.025
 	_tween = create_tween()
-	_tween.tween_property(swing_pivot, "position", Vector3(0, -0.01, back), 0.05).set_trans(Tween.TRANS_QUAD)
-	_tween.parallel().tween_property(swing_pivot, "rotation_degrees", kick, 0.05)
-	_tween.tween_property(swing_pivot, "position", Vector3.ZERO, 0.10).set_trans(Tween.TRANS_SINE)
-	_tween.parallel().tween_property(swing_pivot, "rotation_degrees", Vector3.ZERO, 0.10)
+	_tween.tween_property(self, "kick_offset", Vector3(0, -0.01, back), 0.05).set_trans(Tween.TRANS_QUAD)
+	_tween.tween_property(self, "kick_offset", Vector3.ZERO, 0.10).set_trans(Tween.TRANS_SINE)
 
 
 func play_action(kind: String) -> void:
@@ -160,6 +197,7 @@ func play_action(kind: String) -> void:
 
 
 func play_swing(kind: String = "attack") -> void:
+	## Замах = клип руки; предмет едет в кисти. Отдельного вращения предмета нет.
 	play_action(kind)
 	if current == "":
 		return
@@ -167,17 +205,32 @@ func play_swing(kind: String = "attack") -> void:
 	var t := float(c.swing_time) / maxf(0.1, float(c.speed))
 	if _tween and _tween.is_valid(): _tween.kill()
 	swing_pivot.rotation = Vector3.ZERO
+	kick_offset = Vector3.ZERO
 	swinging = true
 	swing_count += 1
 	_tween = create_tween()
-	_tween.tween_property(swing_pivot, "rotation_degrees", Vector3(c.wind), t * 0.25).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_tween.tween_property(swing_pivot, "rotation_degrees", Vector3(c.swing), t * 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	_tween.tween_property(swing_pivot, "rotation_degrees", Vector3.ZERO, t * 0.40).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_tween.tween_interval(t)
 	_tween.tween_callback(func() -> void: swinging = false)
+
+
+func hand_socket() -> Node3D:
+	return arms.socket if arms != null and "socket" in arms else null
+
+
+func follow_hand() -> void:
+	## v0.23: предмет — в кисти. HandRoot = HandSocket руки (без масштаба модели) × HOLD_ROT × поправка предмета.
+	var sk := hand_socket()
+	if sk == null or not sk.is_inside_tree() or not is_inside_tree():
+		return
+	var c: Dictionary = TOOL_CONFIG.get(current, {})
+	var hold: Vector3 = HOLD_ROT + Vector3(c.get("hold", Vector3.ZERO))
+	var b := sk.global_transform.basis.orthonormalized() * Basis.from_euler(hold * (PI / 180.0))
+	hand_root.global_transform = Transform3D(b, sk.global_position)
 
 
 func _process(delta: float) -> void:
 	if current == "" or not is_inside_tree():
+		if arms and "extra" in arms: arms.extra = kick_offset
 		return
 	var c: Dictionary = TOOL_CONFIG[current]
 	# Отвод от стен: короткий луч из камеры; ближе WALL_PROBE — рука уходит назад и вниз.
@@ -199,6 +252,10 @@ func _process(delta: float) -> void:
 		if sp > 0.5 and not bool(player.get("flying") if "flying" in player else false):
 			_bob_t += delta * sp * 1.6
 			bob = Vector3(cos(_bob_t) * BOB_AMOUNT, absf(sin(_bob_t)) * BOB_AMOUNT, 0.0)
+	if hand_socket() != null:
+		if arms and "extra" in arms: arms.extra = Vector3(-0.04, -0.10, 0.26) * retract + kick_offset
+		follow_hand()
+		return
 	hand_root.position = Vector3(c.pos) + bob + Vector3(-0.04, -0.10, 0.26) * retract
 	hand_root.rotation_degrees = Vector3(c.rot) + Vector3(18, 0, 0) * retract
 
@@ -222,6 +279,19 @@ func _build_model(id: String) -> Node3D:
 			fl.position = mi.position
 			fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(fl)
+		"block":
+			mi.mesh = BlockTex.cube_mesh("planks", Vector3.ONE * BLOCK_SIZE)
+			root.add_child(mi)
+		"item":
+			var sp := Sprite3D.new()
+			sp.name = "Sprite"
+			sp.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+			sp.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+			sp.double_sided = true
+			sp.shaded = false
+			sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			root.add_child(sp)
+			mi.free()
 		_:
 			mi.mesh = BlockTex.tool_mesh(id)
 			root.add_child(mi)
