@@ -36,6 +36,8 @@ func _fget(nm: String) -> String:
 	return FileAccess.get_file_as_string(DIR + nm) if _has(nm) else ""
 const DROP_POS := Vector3(48.5, 1.2, -44.5)   # далеко от спавна — клиент не подберёт сам
 const DIG := Vector3i(-20, -1, 17)
+var _has_drop_logged := false
+
 func _world_sig() -> String:
 	## v0.25: подпись мира — сид и рельеф Яви на сетке 60×60 вокруг спавна (должны совпасть у хоста и клиента).
 	var cm: Node = null
@@ -151,8 +153,12 @@ func _client() -> void:
 	_a(await _until(func() -> bool: return gs.removed_terrain.has(DIG), 10.0), "host_dig_arrived")
 	_a(await _until(func() -> bool:
 		for r in gs.dropped_items:
-			if str(r.get("id", "")) == "stone" and (r.get("pos", Vector3.ZERO) as Vector3).distance_to(DROP_POS) < 0.5: return true
+			var dp: Vector3 = r.get("pos", Vector3.ZERO)
+			if str(r.get("id", "")) == "stone" and Vector2(dp.x - DROP_POS.x, dp.z - DROP_POS.z).length() < 1.0: return true   # падает на землю — сверяем по горизонтали
 		return false, 10.0), "host_drop_arrived")
+	if not _has_drop_logged:
+		_has_drop_logged = true
+		print("MP drops at client: ", gs.dropped_items.map(func(r): return [r.get("id", ""), r.get("pos", Vector3.ZERO)]))
 	var hav: Node = ns.avatars.values()[0] if not ns.avatars.is_empty() else null
 	_a(hav != null and hav.get_node_or_null("Model") != null and hav.get_node("Model").has_method("play_state") and absf(float(hav.get_node("Model").call("height")) - 1.75) < 0.01, "avatar_chunky_175")
 	_a(await _until(func() -> bool: return hav != null and "metal_helmet" in (hav.get_node("Model").get("armor_ids") as Array), 10.0), "avatar_armor")

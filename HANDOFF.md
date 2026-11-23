@@ -1,3 +1,36 @@
+# Передача работы — Сонная стройка v0.25 (выпущена 23.11.2026)
+
+Обновлено: 23.11.2026, МСК. v0.25 слита в `main`, тег `v0.25`. Полный список изменений — CHANGELOG_V0.25.md. Следующая версия — 0.26. Разделы v0.24 и v0.23 ниже в силе (запуск, сборка, правила владельца).
+
+## Как проверить v0.25
+- Парс, смоук, бот 40 мин, Windows — как в разделе v0.24 ниже. Проверки v0.25 в `scripts/smoke_v024.gd` (код 25001 — консоль v0.25) и в смоуке Матери (900 HP).
+- Сеть: `tools/mp_smoke.gd` (host и client) — проверяет общий мир (`same_world_seed_and_terrain`), раскопку и дроп хоста у клиента, рост и броню аватара, удар, модели мобов и босса с именем. С окном: `DISPLAY=:77 … --rendering-method gl_compatibility … -- --role=host --shot=/workspace/shots/v025/15_mp.png` (клиент пишет `_client.png`).
+- Кадры: `DISPLAY=:77 XDG_DATA_HOME=/tmp/xs godot --path . --rendering-method gl_compatibility -s res://tools/v025_screens.gd -- --out=/workspace/shots/v025` (22–33).
+
+## Что в v0.25 (где код)
+- **Общий мир**: корень — `main.gd` (клиент не создаёт временный мир 1337, ждёт мир хоста). Строки мобов в `net_session._mob_list`: [10] пресет модели, [11] счётчик атак, [12] доп. данные (точки Анаконды, фаза Бургера, масштаб Матери).
+- **Модели у клиента**: `net_proxy.gd` (толстый пресет, Мать — greenblob, Анаконда — `boss_anaconda._build_body`, Бургер — `_build_saucer` ×2 и Антон с фазы 2), имя на полосе — `boss_title()`.
+- **Игроки**: капсула 1,75 м, камера 1,55 м (`scenes/player.tscn`); `net_avatar.gd` — толстячок `player`, броня `set_armor`, действия `NetSession.local_action` (удар, ломать, ставить, выстрел).
+- **Мобы**: `scripts/chunky_body.gd` — пресеты, `make()`, `play_state()` (attack, jump, crouch, draw, hurt, place, death, walk, idle). Подключение: `enemy_visuals.attach_chunky`, `wake_mob._build`, `lizard_minion`, `clown_bomb`. Консоль `chunky`.
+- **Боссы**: `block_mother.gd` (MAX_HP 900, P2 594, P3 297, `phase_speed`), `boss_anaconda.gd` (`phase_speed`, кружит в REST/STUNNED), `boss_burger.gd` (HOVER_H 13.5, SAUCER_SCALE 2, CHASE_FAR/NEAR/MAX, `roll_drops` → только нос). Призывалка — `game_state.roll_boss_token`, миграция `migrate_v025_items` (вызов в `save_system`).
+- **Урон раз в секунду**: `GameState.DAMAGE_TICK`, `_src_hit` в `_damage_player_core`.
+- **Лук**: `gear.BOWS` (cd, range), `bow_controller.fire`, `arrow.gd` (range_m, прямой полёт 75 %, урон до 80 %), `viewmodel_rig` (масштаб 0.8, разворот).
+- **Карта**: `scripts/world_map.gd`, клавиши `world_map` (Tab) и `goals_panel` (F2) в `game_settings.BINDABLE`, состояние в секции `hud`. Консоль `map`.
+- **Иконки**: `tools/make_v025_art.py` (зелье скорости, металлическая броня), после — `godot --headless --path . --import`.
+- **Консоль**: `scripts/console_v025.gd` (регистрируется в `dev_console._ready` через `console_v024.extra_help/handlers`): `map`, `chunky`, `bowinfo`, `dmgtick`, `chase`, `mpsync`.
+
+## Известные недочёты v0.25
+1. Мать блоков и Анаконда в сети по-прежнему бьют только хоста (урон через `GameState.damage_player` локально).
+2. Блоклинги остаются блоками (это блоки), черви Анаконды — прежние модели.
+3. Сеть проверена двумя процессами на одной машине (mp_smoke с окном и без), настоящей партии по LAN не было.
+4. Exe не запускался на настоящей Windows (проверка — смоук внутри exe через `--main-pack` в Linux).
+5. Одинаковый вид блоков в слоте, инвентаре и руке проверен кадрами на досках и бревне, остальные блоки — по общему атласу, отдельными кадрами не сверялись.
+6. Кадр 33 (удар аватара) снят в момент, когда замах уже закончился; сама анимация проверена в mp_smoke (`avatar_swing`, `client_swing_seen`).
+7. Смоук после «SMOKE: OK» иногда падает при выходе («corrupted size vs. prev_size») — это при освобождении движка, на результат не влияет.
+8. Бот 40 мин (BOT OK, 41,8 игровой минуты, 0 провалов, p50 3,3 мс, p99 18,2 мс): один долгий кадр 3,4 с — снова при переносе башни 5×4×5 (100 блоков) из Сна в Явь, как в v0.24 (п. 8). Не исправлено.
+
+---
+
 # Передача работы — Сонная стройка v0.24 (выпущена 23.11.2026)
 
 Обновлено: 23.11.2026, МСК. v0.24 слита в `main`, тег `v0.24`. Полный список изменений — CHANGELOG_V0.24.md, баланс — BALANCE_V0.24.md, титры — CREDITS.md. Следующая версия — 0.25. Раздел v0.23 сохранён ниже (правила владельца, сборка, старые пути кода — всё в силе).
