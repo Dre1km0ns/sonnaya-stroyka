@@ -887,7 +887,7 @@ func _combat_feedback(res: Dictionary, target: Node) -> void:
 	if bounce:
 		Sfx.play("break_stone", get_tree().root if is_inside_tree() else null)
 	else:
-		Sfx.play("break_wood", get_tree().root if is_inside_tree() else null)
+		Sfx.play("hit", get_tree().root if is_inside_tree() else null, -2.0, randf_range(0.9, 1.1))   # v0.24: свой звук удара
 	if target and target.has_method("on_hit_feedback"):
 		target.on_hit_feedback(res)
 	if dealt > 0 and knockback_enabled and target is CharacterBody3D and player and not _is_boss(target):

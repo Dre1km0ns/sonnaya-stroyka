@@ -542,6 +542,7 @@ func _start_slam(p: Vector3) -> void:
 
 
 func _slam_impact() -> void:
+	GameState.shake(0.8)
 	_shadow.visible = false
 	Sfx.play3d(self, "res://assets/audio/sfx_slam.ogg", 4.0, 90.0)
 	BreakFx.puff(get_parent(), _slam_point + Vector3(0, 0.3, 0), Color(0.7, 0.6, 0.45), 26)
@@ -989,6 +990,7 @@ func _start_jump() -> void:
 
 
 func _land_jump() -> void:
+	GameState.shake(0.6)
 	Sfx.play3d(self, "res://assets/audio/sfx_slam.ogg", 2.0, 80.0)
 	var at := global_position
 	for pl in CU.players(get_tree()):

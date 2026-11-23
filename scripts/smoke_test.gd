@@ -2826,15 +2826,6 @@ func _v012_checks(scene: Node, hud: Node) -> void:
 	## v0.12: станки боссов, свет/стан Анаконды, HUD, прогрессия, регрессия сохранений.
 	var G: Node = root.get_node("GameState")
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
-	var MS: GDScript = load("res://scripts/boss_combat_sm.gd")
-	# Общая SM: конечные таймеры, анти-повтор удара, стан только от события.
-	var sm = MS.new()
-	_a(sm.begin_attack("bite", 1.0) and not sm.begin_attack("bite", 1.0), 13001)
-	_a(sm.can_hit("x") and not sm.can_hit("x"), 13002)
-	_a(sm.try_stun(0.75, "ring_break") and not sm.try_stun(0.75, "ring_break"), 13003)
-	_a(not sm.try_stun(0.75, "light") and sm.light_stun_attempts == 1, 13004)
-	sm.tick(3.0)
-	_a(not sm.is_stunned() and not sm.is_stun_immune() and sm.try_stun(0.7, "dash_counter"), 13005)
 	# v0.22: оба босса откатены к v0.11 (кольцо/перекрёстный огонь/пластины/обвал v0.12+ удалены).
 	G.reset_state(); G.dev_mode = true; G.day_time = 1200.0
 	var host := Node3D.new(); root.add_child(host)

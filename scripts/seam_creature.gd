@@ -114,8 +114,13 @@ func take_damage(amount: int) -> void:
 
 func _die() -> void:
 	_dead = true
-	GameState.reward_kill(false, "Шовник")
-	_Vis.play_state(self, "death", true)
+	GameState.reward_kill(false, "Шовник", self)
+	if _Vis.play_state(self, "death", true) == "":
+		load("res://scripts/mob_fx.gd").death(self, Color(0.45, 0.35, 0.6))
+	else:
+		load("res://scripts/sfx.gd").play("mob_die", get_tree().root, -4.0)
+		var hb := get_node_or_null("HPBar")
+		if hb: hb.visible = false
 	collision_layer = 0
 	collision_mask = 0
 	set_physics_process(false)

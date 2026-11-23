@@ -584,6 +584,7 @@ func _refresh_inv() -> void:
 	_dev_badge.visible = GameState.dev_mode
 	for i in range(_hotbar.size()):
 		var d: Dictionary = GameState.get_slot(i)
+		_hotbar[i].dream_tint = GameState.is_dream()
 		if GameState.palette_slot_active(i):
 			# v0.22: честный хотбар Сна — в слоте 1 виден текущий материал палитры, ставится бесконечно
 			_hotbar[i].set_item(GameState.dream_palette_kind(), 0, i == GameState.selected_slot, true)

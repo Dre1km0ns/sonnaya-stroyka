@@ -12,6 +12,7 @@ var kind := "arrow"
 var shooter: Node3D = null
 var stuck := false
 var hit_target: Node = null
+var hostile := false   # v0.24: стрела моба-стрелка — бьёт игроков, не мобов, не подбирается
 var _t := 0.0
 var _mesh: MeshInstance3D
 
@@ -43,10 +44,14 @@ func _physics_process(delta: float) -> void:
 		return
 	visible = true
 	if stuck:
+		if hostile and _t > 6.0:
+			queue_free()
+			return
 		if _t > STUCK_LIFE:
 			queue_free()
 			return
-		_try_pickup()
+		if not hostile:
+			_try_pickup()
 		return
 	if _t > MAX_FLIGHT:
 		queue_free()
@@ -77,6 +82,15 @@ static func _seg_dist(p: Vector3, a: Vector3, b: Vector3) -> float:
 
 
 func _check_targets(from: Vector3, to: Vector3) -> bool:
+	if hostile:
+		for p in CU.players(get_tree()):
+			var pc: Vector3 = (p as Node3D).global_position + Vector3(0, 0.9, 0)
+			if _seg_dist(pc, from, to) <= 0.55:
+				CU.hurt(p, damage, "Стрелок", from)
+				Sfx.play("arrow_hit", get_tree().root)
+				queue_free()
+				return true
+		return false
 	# слабые точки (Бургер) — приоритетнее тела
 	for wp in get_tree().get_nodes_in_group("weak_point"):
 		if not is_instance_valid(wp) or not (wp as Node3D).is_visible_in_tree():
@@ -125,3 +139,4 @@ func _try_pickup() -> void:
 
 
 const Sfx := preload("res://scripts/sfx.gd")
+const CU := preload("res://scripts/combat_util.gd")

@@ -98,7 +98,7 @@ func _die() -> void:
 	dead = true
 	collision_layer = 0
 	GameState.lizards_killed += 1
-	GameState.reward_kill(false, "Ящерка")
+	GameState.reward_kill(false, "Ящерка", self)
 	Sfx.play3d(self, "res://assets/audio/sfx_mob_die.ogg", -6.0, 30.0, 1.4)
 	BreakFx.puff(get_parent(), hit_center(), Color(0.45, 0.6, 0.35), 12)
 	var n := 0

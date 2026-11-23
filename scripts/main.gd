@@ -255,6 +255,14 @@ func _start_music() -> void:
 	var mc: Node = script.new()
 	mc.name = "MusicController"
 	add_child(mc)
+	if not has_node("Weather"):
+		var w: Node = load("res://scripts/weather.gd").new()
+		w.name = "Weather"
+		add_child(w)
+	if not has_node("DreamLife"):
+		var dl: Node = load("res://scripts/dream_life.gd").new()
+		dl.name = "DreamLife"
+		add_child(dl)
 
 
 func _want_shots() -> bool:

@@ -269,6 +269,11 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 		return
 	if try_spawn_blockolith(pos) != null:
 		return
+	var wk: String = load("res://scripts/wake_mob.gd").roll_kind(randf(), awake_time)
+	if wk != "":
+		load("res://scripts/wake_mob.gd").spawn(wake_root, pos, wk)
+		load("res://scripts/seam_effect.gd").spawn(wake_root, pos)
+		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos
 	if elite and e.has_method("configure_elite"):

@@ -5,8 +5,6 @@ extends CharacterBody3D
 ##   "minion"     — боевой выводок Матери (как раньше).
 ##   "blockolith" — Блоколит: нейтральный бродяга Яви (после первой победы над Матерью заменяет 1/120 обычных спавнов).
 ##                  Не атакует, не исчезает по таймеру; его убийство вызывает Мать блоков.
-##   "carrier"    — Носильщик (фаза II Матери): бежит к осколку, несёт его к Матери; доставка чинит одну пластину.
-##                  Убийство носильщика отменяет починку.
 const _Nav := preload("res://scripts/enemy_navigation.gd")
 const _Vis := preload("res://scripts/enemy_visuals.gd")
 const BlockTex := preload("res://scripts/block_tex.gd")
@@ -33,13 +31,9 @@ var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var mode := "minion"
 var mother: Node3D = null
 var fragment_at: Vector3 = Vector3.ZERO
-var carrying := false
-var delivered := false
 var _wander_dir := Vector3.ZERO
 var _wander_t := 0.0
 const BLOCKOLITH_HP := 40
-const CARRIER_HP := 24
-const CARRIER_SPEED := 3.0
 const BLOCKOLITH_SPEED := 1.4
 
 
@@ -50,9 +44,6 @@ func configure(m: String, boss: Node3D = null, fragment: Vector3 = Vector3.ZERO)
 	if mode == "blockolith":
 		max_hp = BLOCKOLITH_HP
 		hp = BLOCKOLITH_HP
-	elif mode == "carrier":
-		max_hp = CARRIER_HP
-		hp = CARRIER_HP
 
 
 func is_neutral() -> bool:
@@ -62,8 +53,6 @@ func is_neutral() -> bool:
 func _ready() -> void:
 	if mode == "blockolith":
 		add_to_group("blockolith")
-	elif mode == "carrier":
-		add_to_group("mother_carrier")
 	else:
 		add_to_group("blockling")
 	add_to_group("enemy")
@@ -73,7 +62,7 @@ func _ready() -> void:
 	model.name = "Model"
 	add_child(model)
 	var body := MeshInstance3D.new()
-	var look: Array = {"blockolith": ["ruin", 0.8], "carrier": ["stone", 0.66]}.get(mode, ["dirt", 0.62])
+	var look: Array = {"blockolith": ["ruin", 0.8]}.get(mode, ["dirt", 0.62])
 	var sz: float = look[1]
 	body.mesh = BlockTex.cube_mesh(str(look[0]), Vector3(sz, sz, sz))
 	if mode == "blockolith":
@@ -166,9 +155,6 @@ func _physics_process(delta: float) -> void:
 	if mode == "blockolith":
 		_tick_wander(delta)
 		return
-	if mode == "carrier":
-		_tick_carrier(delta)
-		return
 	if _life > LIFETIME:
 		crumble()
 		return
@@ -220,62 +206,3 @@ func _tick_wander(delta: float) -> void:
 	move_and_slide()
 	if _wander_dir.length() > 0.1:
 		_Nav.face_dir(self, _wander_dir, delta, 4.0)
-
-
-func carrier_target() -> Vector3:
-	if not carrying:
-		return fragment_at
-	return mother.global_position if mother != null and is_instance_valid(mother) else global_position
-
-
-func _tick_carrier(delta: float) -> void:
-	## Носильщик: к осколку → подбирает → к Матери → доставка (Мать чинит пластину). Не кусает.
-	if mother == null or not is_instance_valid(mother) or _life > 40.0:
-		crumble()
-		return
-	var to := carrier_target() - global_position
-	to.y = 0.0
-	if not carrying and to.length() < 0.8:
-		carrying = true
-		var frag := MeshInstance3D.new()
-		frag.name = "Fragment"
-		frag.mesh = BlockTex.cube_mesh("ruin", Vector3(0.4, 0.4, 0.4))
-		frag.position = Vector3(0, 0.95, 0)
-		add_child(frag)
-	elif carrying and to.length() < float(mother.get("hit_radius")) + 0.9:
-		delivered = true
-		if mother.has_method("on_carrier_delivered"):
-			mother.on_carrier_delivered(self)
-		crumble()
-		return
-	_gravity_step(delta)
-	var dir := to.normalized() if to.length() > 0.05 else Vector3.ZERO
-	velocity.x = dir.x * CARRIER_SPEED
-	velocity.z = dir.z * CARRIER_SPEED
-	if is_on_floor() and is_on_wall():
-		velocity.y = HOP_UP
-	move_and_slide()
-	if dir.length() > 0.1:
-		_Nav.face_dir(self, dir, delta, 8.0)
-
-
-func tick_carrier_for_sim(delta: float) -> void:
-	## Для headless-симуляции без физики: двигаемся напрямую.
-	if _dead:
-		return
-	_life += delta
-	if mother == null or not is_instance_valid(mother):
-		crumble()
-		return
-	var to := carrier_target() - global_position
-	to.y = 0.0
-	if not carrying and to.length() < 0.8:
-		carrying = true
-	elif carrying and to.length() < float(mother.get("hit_radius")) + 0.9:
-		delivered = true
-		if mother.has_method("on_carrier_delivered"):
-			mother.on_carrier_delivered(self)
-		crumble()
-		return
-	if to.length() > 0.05:
-		global_position += to.normalized() * minf(to.length(), CARRIER_SPEED * delta)

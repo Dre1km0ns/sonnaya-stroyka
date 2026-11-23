@@ -2534,7 +2534,7 @@ func kill_fatigue_mult() -> float:
 	return maxf(KILL_FATIGUE_MIN, 1.0 - KILL_FATIGUE_STEP * float(recent))
 
 
-func reward_kill(is_boss: bool = false, who: String = "") -> int:
+func reward_kill(is_boss: bool = false, who: String = "", drop_from: Node3D = null) -> int:
 	var amount := 0
 	var note := ""
 	if is_boss:
@@ -2546,7 +2546,10 @@ func reward_kill(is_boss: bool = false, who: String = "") -> int:
 			note = " · фарм ×%.1f" % mult
 		kill_log.append(_clock)
 	if not dev_mode:
-		add_item_count("dust", amount)
+		if drop_from != null and is_instance_valid(drop_from) and not is_boss and not is_dream():
+			load("res://scripts/mob_fx.gd").drop_dust(drop_from, amount)   # v0.24: осыпь видно — она выпадает из моба
+		else:
+			add_item_count("dust", amount)
 		if not is_dream():
 			gain_lucidity((LUCID_ANACONDA if who == "Анаконда" else LUCID_MOTHER) if is_boss else LUCID_KILL * kill_fatigue_mult(), "", true)
 	var prefix := (who + " повержен: ") if who != "" else ""
@@ -2954,6 +2957,8 @@ func _drops_to_json() -> Array:
 		var o := {"id": d["id"], "count": int(d["count"]), "pos": [snappedf(p.x, 0.01), snappedf(p.y, 0.01), snappedf(p.z, 0.01)]}
 		if d.has("durability"):
 			o["durability"] = int(d["durability"])
+		if d.has("age"):
+			o["age"] = snappedf(float(d["age"]), 0.1)
 		out.append(o)
 	return out
 
@@ -2971,6 +2976,8 @@ func _drops_from_json(src: Variant) -> void:
 		var rec := {"id": canon_kind(str(d["id"])), "count": int(d["count"]), "pos": Vector3(float(pa[0]), float(pa[1]), float(pa[2]))}
 		if d.has("durability"):
 			rec["durability"] = int(d["durability"])
+		if d.has("age"):
+			rec["age"] = float(d["age"])
 		dropped_items.append(rec)
 
 
@@ -4327,6 +4334,7 @@ func request_text() -> String:
 
 
 func offer_request() -> bool:
+	explain_once("request", "Просьба Сна: принеси из Яви то, что просит Сон, — за каждую исполненную просьбу растёт ясность и лимит чертежей.")
 	if not is_dream():
 		set_hint("Просьбу Сна исполняют во Сне клавишей J.", false); return false
 	ensure_request()
@@ -4390,6 +4398,7 @@ func _region_sig(lo: Vector3i, hi: Vector3i) -> int:
 
 
 func run_trial() -> Dictionary:
+	explain_once("trial", "Испытание рамки: фантомы штурмуют постройку внутри рамки — если она выдержит, Сон даст бонус ясности.")
 	if not is_dream():
 		set_hint("Испытание проводят во Сне.", false); return {}
 	if not frame_complete():
@@ -4653,6 +4662,8 @@ func _load_v020(data: Dictionary) -> void:
 
 # ===================================================================== v0.24
 ## Сложность мира (выбор при создании, хранится в сейве), финальный босс, зелье скорости, сеть.
+signal camera_shake(strength: float)
+signal weather_changed(kind: String)
 signal difficulty_changed(mode: String)
 signal burger_state_changed(state: String)
 signal victory
@@ -4737,6 +4748,8 @@ func tick_v024(delta: float) -> void:
 
 
 func _reset_v024() -> void:
+	explained = {}
+	weather = "clear"; weather_left = 0.0; weather_rain_k = 0.0; weather_fog_k = 0.0
 	difficulty = "normal"
 	burger_defeated = false
 	burger_kills = 0
@@ -4749,7 +4762,7 @@ func _reset_v024() -> void:
 
 func v024_to_dict() -> Dictionary:
 	return {"difficulty": difficulty, "burger_defeated": burger_defeated, "burger_kills": burger_kills,
-		"victory_seen": victory_seen, "speed_potion_t": speed_potion_t, "lizards_killed": lizards_killed, "stats": v024_stats.duplicate(true)}
+		"victory_seen": victory_seen, "speed_potion_t": speed_potion_t, "lizards_killed": lizards_killed, "stats": v024_stats.duplicate(true), "explained": explained.duplicate(), "weather": weather, "weather_left": weather_left}
 
 
 func _load_v024(d: Dictionary) -> void:
@@ -4760,6 +4773,11 @@ func _load_v024(d: Dictionary) -> void:
 	speed_potion_t = float(d.get("speed_potion_t", 0.0))
 	lizards_killed = int(d.get("lizards_killed", 0))
 	v024_stats = (d.get("stats", {}) as Dictionary).duplicate(true)
+	explained = (d.get("explained", {}) as Dictionary).duplicate()
+	weather = str(d.get("weather", "clear"))
+	weather_left = float(d.get("weather_left", 0.0))
+	weather_rain_k = 1.0 if weather == "rain" else 0.0
+	weather_fog_k = 1.0 if weather == "fog" else (0.25 if weather == "rain" else 0.0)
 
 
 func stat_add(key: String, n: int = 1) -> void:
@@ -4817,7 +4835,38 @@ func on_burger_killed(drops: Array = []) -> void:
 		victory.emit()
 
 
+var weather := "clear"          # v0.24: погода Яви (scripts/weather.gd)
+var weather_left := 0.0
+var weather_rain_k := 0.0
+var weather_fog_k := 0.0
+
+
+func weather_dim() -> float:
+	return 0.0 if is_dream() else clampf(weather_rain_k * 0.45 + weather_fog_k * 0.25, 0.0, 0.6)
+
+
+var explained: Dictionary = {}   # v0.24: одноразовые пояснения (M, J), хранятся в сейве
+
+
+func explain_once(key: String, text: String) -> bool:
+	## v0.24: однострочное пояснение при первом использовании — всплывает над хотбаром, в чат не идёт.
+	if explained.has(key):
+		return false
+	explained[key] = true
+	unlock_announced.emit(text)
+	return true
+
+
+func shake(strength: float) -> void:
+	## v0.24: тряска камеры (0.1 — лёгкая, 1.0 — сильная). Выключается в настройках.
+	camera_shake.emit(clampf(strength, 0.0, 1.5))
+
+
 func _v024_on_hurt(dealt: int) -> void:
+	var tr := get_tree()
+	if tr:
+		Sfx.play("hurt", tr.root, -3.0, randf_range(0.9, 1.1))
+	shake(clampf(float(dealt) / 25.0, 0.15, 1.0))
 	## Нос клоуна в инвентаре: 10 % шанс, что при уроне появится дружественный клоун и взорвётся на враге.
 	if dealt <= 0 or count_item("clown_nose") <= 0 or randf() >= 0.1:
 		return

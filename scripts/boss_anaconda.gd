@@ -93,6 +93,8 @@ var _emerge: Vector3 = Vector3.ZERO
 var _crack: MeshInstance3D = null
 var _rocks: Array = []                 # [{shadow, at, t}]
 var _dives: int = 0
+var spits_used := 0   # v0.24: «Ядовитый плевок» с фазы 2, каждый второй выход
+var _rests := 0
 var _no_minion_dives: int = 0
 var _pending_transition: int = 0
 var _dmg_acc: float = 0.0
@@ -517,6 +519,16 @@ func _after_burst() -> void:
 	# v0.22: стана от света нет — после выныривания она всегда просто лежит (REST), свет её только жжёт.
 	attack_log["rest"] += 1
 	_enter(S.REST)
+	_rests += 1
+	if phase >= 2 and _rests % 2 == 0:
+		start_spit(_player())
+
+
+func start_spit(player: Node3D) -> Node3D:
+	if player == null or _head == null:
+		return null
+	spits_used += 1
+	return load("res://scripts/boss_extra_attacks.gd").venom(_world(), _head, player.global_position, func(p: Vector3) -> float: return _floor_at(p))
 
 
 func _rest_dir() -> Vector3:
