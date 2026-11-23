@@ -36,7 +36,7 @@ func _ready() -> void:
 func _build() -> void:
 	match kind:
 		"block_mother":
-			_model = _Vis.attach_model(self, "res://assets/models/greenblob.glb", 3.2)
+			_model = _Vis.attach_chunky(self, "mother")
 		"boss_anaconda":
 			var a: Node3D = load("res://scripts/boss_anaconda.gd").new()
 			a.call("_build_body")

@@ -54,6 +54,33 @@ func _go() -> void:
 		for m in models: m.play_state("attack", true)
 		for i in 9: await process_frame
 		await _shot("44_group%d_attack" % gi)
+	# v0.25.1: боссы — Анаконда, Мать блоков, блоклинг, ящерка
+	for m in models: m.visible = false
+	var A: Node3D = load("res://scripts/boss_anaconda.gd").new()
+	A.process_mode = Node.PROCESS_MODE_DISABLED
+	A._build_body()
+	w.add_child(A)
+	A._head.position = Vector3(-3.0, 1.6, 1.5)
+	A._head.rotation.y = PI + 0.5
+	var segs: Array = A._segs
+	for i in segs.size():
+		(segs[i] as Node3D).position = Vector3(-3.0 + sin(i * 0.5) * 1.2 + i * 0.1, 0.7 - minf(i, 3) * 0.05, 1.5 - (i + 1) * 1.0)
+	var M: Node3D = Chunky.make("mother")
+	w.add_child(M); M.position = Vector3(2.5, 0, 0); M.rotation.y = -0.4
+	var L: Node3D = Chunky.make("lizard")
+	w.add_child(L); L.position = Vector3(0.2, 0, 2.5); L.rotation.y = 0.9
+	var BL: Node3D = load("res://scripts/blockling.gd").new()
+	BL.process_mode = Node.PROCESS_MODE_DISABLED
+	w.add_child(BL); BL.position = Vector3(4.6, 0, 1.5)
+	cam.fov = 45; cam.position = Vector3(0.5, 3.2, 10); cam.look_at(Vector3(0.5, 1.0, 0))
+	await _shot("48_bosses")
+	M.play_state("attack", true); L.play_state("attack", true)
+	cam.position = Vector3(3.5, 2.0, 6.5); cam.look_at(Vector3(2.0, 1.3, 0))
+	for i in 9: await process_frame
+	await _shot("49_mother_attack")
+	cam.position = Vector3(-0.5, 2.4, 6); cam.look_at(Vector3(-2.5, 1.0, 0))
+	await _shot("50_anaconda_lizard")
+	A.visible = false; M.visible = false; L.visible = false; BL.visible = false
 	# игроки в броне
 	for m in models: m.visible = false
 	var sets := [["wood_helmet", "wood_chest", "wood_legs", "wood_boots"], ["metal_helmet", "metal_chest", "metal_legs", "metal_boots"], ["scale_helmet", "scale_chest"], []]

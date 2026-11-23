@@ -21,7 +21,8 @@ const PRESETS := {
 	"clown": {"h": 1.35, "look": "clown", "suit": Color(0.66, 0.57, 0.32), "suit2": Color(0.5, 0.21, 0.2), "skin": Color(0.9, 0.86, 0.8), "head": "clown", "weapon": "dynamite", "eye": Color(0.08, 0.08, 0.1)},
 	"clown_shard": {"h": 1.05, "look": "clown", "suit": Color(0.5, 0.36, 0.6), "suit2": Color(0.32, 0.24, 0.42), "skin": Color(0.9, 0.86, 0.8), "head": "clown", "weapon": "none", "eye": Color(0.08, 0.08, 0.1)},
 	"clown_friend": {"h": 1.35, "look": "clown", "suit": Color(0.4, 0.6, 0.38), "suit2": Color(0.26, 0.4, 0.26), "skin": Color(0.9, 0.86, 0.8), "head": "clown", "weapon": "none", "eye": Color(0.08, 0.08, 0.1)},
-	"lizard": {"h": 0.7, "look": "lizard", "suit": Color(0.36, 0.44, 0.28), "suit2": Color(0.62, 0.6, 0.45), "skin": Color(0.4, 0.48, 0.3), "head": "lizard", "weapon": "claws", "eye": Color(1.0, 0.65, 0.2), "tail": true},
+	"mother": {"h": 3.0, "look": "golem", "suit": Color(0.44, 0.44, 0.42), "suit2": Color(0.3, 0.36, 0.24), "skin": Color(0.5, 0.49, 0.46), "head": "golem", "weapon": "none", "eye": Color(0.55, 1.0, 0.45)},
+	"lizard": {"h": 1.2, "look": "lizard", "suit": Color(0.36, 0.44, 0.28), "suit2": Color(0.62, 0.6, 0.45), "skin": Color(0.4, 0.48, 0.3), "head": "lizard", "weapon": "claws", "eye": Color(1.0, 0.65, 0.2), "tail": true},
 	"anton": {"h": 3.85, "suit": Color(1.0, 0.82, 0.2), "suit2": Color(0.95, 0.25, 0.35), "skin": Color(0.93, 0.74, 0.6), "head": "clown", "weapon": "none", "eye": Color(0.05, 0.05, 0.08), "arm_r": 1.4},
 	"player": {"h": 1.8, "look": "human", "suit": Color(0.3, 0.4, 0.55), "suit2": Color(0.3, 0.25, 0.2), "skin": Color(0.86, 0.68, 0.54), "head": "hair", "weapon": "held", "eye": Color(0.1, 0.1, 0.12)},
 }
@@ -479,6 +480,9 @@ func _build_slim() -> void:
 	if look == "lizard":
 		_build_lizard(body, suit, suit2, skin, eye, eye_e)
 		return
+	if look == "golem":
+		_build_golem(body, suit, suit2, skin, eye)
+		return
 	var bulky := look == "brute"
 	var tw := 1.25 if bulky else (0.86 if look in ["skeleton", "imp"] else 1.0)
 	var leg_h := 1.95 if look == "frog" else 1.75
@@ -696,3 +700,40 @@ func _armor_slim(ids: Array) -> void:
 		elif id.ends_with("_boots") and rig.has("hip_r"):
 			for k in ["hip_r", "hip_l"]:
 				_tb(rig[k], "ArmorBoot", Vector3(0.56, 0.4, 0.66), Vector3(0, -1.55, 0.06), kd, col.darkened(0.1))
+
+
+func _build_golem(body: Node3D, suit: Color, moss: Color, skin: Color, eye: Color) -> void:
+	## Мать блоков (t148u): каменный голем из блоков — мох, светящееся ядро в груди, кулаки-валуны.
+	var lean := _part(body, "Lean", Vector3(0, 1.4, 0))
+	rig["lean"] = lean
+	spec["lean"] = 0.12
+	_tb(lean, "Torso", Vector3(2.0, 1.5, 1.2), Vector3(0, 0.8, 0), "metal", suit)
+	_tb(lean, "Chest2", Vector3(1.6, 0.6, 0.3), Vector3(0, 1.1, 0.62), "bone", skin)
+	_tb(lean, "Core", Vector3(0.5, 0.5, 0.12), Vector3(0, 1.0, 0.8), "skin", eye, Vector3.ZERO, 0.8)
+	_tb(lean, "Moss", Vector3(1.0, 0.18, 1.25), Vector3(-0.45, 1.6, 0), "scale", moss)
+	_tb(lean, "Moss2", Vector3(0.6, 0.5, 0.1), Vector3(0.6, 0.4, 0.62), "scale", moss)
+	_tb(lean, "Hips", Vector3(1.6, 0.4, 1.0), Vector3(0, 0.0, 0), "metal", suit.darkened(0.15))
+	var head := _part(lean, "Head", Vector3(0, 1.55, 0.15))
+	rig["head"] = head
+	_tb(head, "Face", Vector3(0.9, 0.75, 0.8), Vector3(0, 0.38, 0.1), "bone", skin)
+	_tb(head, "Brow", Vector3(1.0, 0.16, 0.3), Vector3(0, 0.62, 0.42), "metal", suit.darkened(0.2))
+	for sd in [-1.0, 1.0]:
+		_tb(head, "Eye", Vector3(0.18, 0.12, 0.05), Vector3(sd * 0.2, 0.45, 0.51), "skin", eye, Vector3.ZERO, 0.8)
+	_tb(head, "Mouth", Vector3(0.5, 0.08, 0.05), Vector3(0, 0.16, 0.51), "skin", Color(0.1, 0.1, 0.1))
+	_tb(head, "HeadMoss", Vector3(0.95, 0.14, 0.85), Vector3(0, 0.8, 0.1), "scale", moss)
+	for sd in [1.0, -1.0]:
+		var right: bool = sd > 0.0
+		var sh := _part(lean, "ShoulderR" if right else "ShoulderL", Vector3(-sd * 1.35, 1.35, 0))
+		_tb(sh, "Pauldron", Vector3(0.9, 0.6, 0.95), Vector3(0, 0.05, 0), "metal", suit.darkened(0.1))
+		_tb(sh, "Upper", Vector3(0.62, 0.9, 0.62), Vector3(0, -0.5, 0), "metal", suit)
+		var el := _part(sh, "Elbow", Vector3(0, -0.95, 0))
+		_tb(el, "Fore", Vector3(0.6, 0.7, 0.6), Vector3(0, -0.35, 0), "metal", suit.darkened(0.08))
+		var fist := _tb(el, "Fist", Vector3(0.85, 0.7, 0.85), Vector3(0, -0.95, 0.05), "bone", skin)
+		rig["sh_r" if right else "sh_l"] = sh
+		rig["el_r" if right else "el_l"] = el
+		rig["fist_r" if right else "fist_l"] = fist
+		var hip := _part(_root, "HipR" if sd < 0 else "HipL", Vector3(sd * 0.5, 1.4, 0))
+		_tb(hip, "Leg", Vector3(0.7, 1.1, 0.7), Vector3(0, -0.6, 0), "metal", suit.darkened(0.1))
+		_tb(hip, "Boot", Vector3(0.85, 0.32, 1.0), Vector3(0, -1.24, 0.08), "bone", skin.darkened(0.1))
+		rig["hip_r" if sd < 0 else "hip_l"] = hip
+	rig["hold"] = rig.fist_r
