@@ -354,10 +354,10 @@ func _run() -> void:
 	_a(not hhit.is_empty(), 345)
 	_a(hhit.collider != null, 346)
 	_a(hhit.collider.has_meta("terrain_chunk"), 347)
-	_a(str(hhit["kind"]) == "hill", 348)
+	_a(str(hhit["kind"]) == "dirt", 348)   # v0.22.1: холм стал «Землёй»
 	var hmined: Vector3i = hhit["cell"]
 	_a(hmined == hill_cell, 350)
-	_a(cm.mine_terrain_at(hmined, "hill"), 351)
+	_a(cm.mine_terrain_at(hmined, "dirt"), 351)
 	_a(not cm.has_terrain_visual(hmined), 352)
 	cm.rebuild_chunk(cm.world_to_chunk(Vector3(hmined.x, 0, hmined.z)))
 	_a(not cm.has_terrain_visual(hmined), 354)
@@ -399,7 +399,7 @@ func _run() -> void:
 	gs_r2.apply_save_dict(terrain_blob)
 	_a(gs_r2.is_terrain_removed(hmined), 391)
 	_a(gs_r2.is_terrain_removed(rmined), 392)
-	_a(str(gs_r2.terrain_removed_kind(hmined)) == "hill", 393)
+	_a(str(gs_r2.terrain_removed_kind(hmined)) == "dirt", 393)   # v0.22.1: старый "hill" мигрирует в "dirt"
 	_a(str(gs_r2.terrain_removed_kind(rmined)) == "ruin", 394)
 	var hud_packed = load("res://scenes/hud.tscn")
 	if hud_packed:
@@ -916,7 +916,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 			spawned_at = i
 			break
 	_a(spawned_at == -1 and G.deep_threat < 100.0, 877)   # 120 блоков без удачного броска → Матери нет (шкала сбрасывается на 100)
-	_a(not G.on_block_mined_at(Vector3i(0, -2, 0), "stone", 0.009) and G.boss_next_mine and chats.any(func(t): return G.BOSS_OMEN_TEXT in str(t)), 878)
+	_a(not G.on_block_mined_at(Vector3i(0, -2, 0), "stone", 0.009) and G.boss_next_mine and not chats.any(func(t): return G.BOSS_OMEN_TEXT in str(t)) and G.muted_chat.any(func(t): return G.BOSS_OMEN_TEXT in str(t)), 878)   # v0.22.1: предвестие не в чате
 	_a(G.on_block_mined_at(Vector3i(1, -2, 0), "stone", 0.99) and not G.boss_next_mine, 879)   # предвестие → Мать на следующем блоке
 	_a(not G.on_block_mined_at(Vector3i(2, -2, 0), "stone", 0.0101), 8790)
 	_a(G.BOSS_OMEN_TEXT == "Вы слышите разъярённые крики убитой горем матери", 880)
@@ -1170,7 +1170,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.set_hint("Шовник украл блок!", false)
 	_a(chats.is_empty(), 1119)
 	G.reward_kill(true, "Мать блоков")
-	_a(chats.size() == 1, 1121)
+	_a(chats.is_empty() and G.muted_chat.size() > 0, 1121)   # v0.22.1: в чате только сообщения боссов из списка
 	G.chat_message.disconnect(cb)
 	# --- Боссы: лимит 2 врага; Мать: кулдаун сутки ---
 	var td: GDScript = load("res://scripts/threat_director.gd")
@@ -1231,7 +1231,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(cm.terrain_kind_at(Vector3i(3, -31, 3)) == "bedrock", 1179)
 	_a(not G.remove_terrain_cell(Vector3i(3, -31, 3), "bedrock"), 1180)
 	_a(cm.terrain_kind_at(Vector3i(3, -30, 3)) in ["stone", "deep_stone"], 1181)
-	_a(cm.terrain_kind_at(Vector3i(3, -1, 3)) == "ground", 1182)
+	_a(cm.terrain_kind_at(Vector3i(3, -1, 3)) == "dirt", 1182)
 	_a(cm.floor_y_below(Vector3(3.5, -29.0, 3.5), 5) >= -30.0, 1183)
 	# Частоты генерации (не загружая меши): руины ~5%, гнёзда ~1/3 от руин.
 	var stats: Dictionary = cm.generation_stats(30)
@@ -1423,12 +1423,12 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(s1 != null and G.count_item("anaconda_egg") == 1, 1370)
 	_a(AS.summon_with_egg(host2, pl, null) == null and G.count_item("anaconda_egg") == 1, 1371)   # уже здесь
 	s1._die()
-	_a(G.count_item("anaconda_egg") == 2, 1373)          # +1 яйцо в награду
+	_a(G.count_item("anaconda_egg") == 1, 1373)          # v0.22.1: яйца в награду больше нет
 	_a(not ("anaconda_cooldown" in G), 1374)
 	await create_timer(1.6).timeout
 	var s2: Node3D = AS.summon_with_egg(host2, pl, null)
 	await process_frame
-	_a(s2 != null and G.count_item("anaconda_egg") == 1, 1378)   # сразу после убийства — снова можно
+	_a(s2 != null and G.count_item("anaconda_egg") == 0, 1378)   # сразу после убийства — снова можно
 	s2.leave("")
 	await create_timer(1.4).timeout
 	G.day_time = 500.0
@@ -1472,7 +1472,7 @@ func _v08_checks() -> void:
 	G.reset_state()
 	G.dev_mode = false
 	_a(G.SAVE_FORMAT >= 11, 8001)
-	for pair in [["ground",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
+	for pair in [["dirt",0.6],["leaves",0.2],["log",2.0],["planks",2.0],["stone",1.5],["deep_stone",3.0],["sand",0.5]]:
 		_a(is_equal_approx(Rules.hardness(pair[0]),pair[1]),8002)
 	_a(is_equal_approx(Rules.seconds("stone","pickaxe"),3.0),8003)
 	_a(is_equal_approx(Rules.seconds("stone","pickaxe2"),1.5),8004)
@@ -1786,10 +1786,10 @@ func _v09_checks() -> void:
 	var M := preload("res://scripts/mining_rules.gd")
 	var Nav: GDScript = load("res://scripts/enemy_navigation.gd")
 	# Exact mining/harvest numbers, including the last durability point.
-	_a(is_equal_approx(M.seconds("dirt",""),0.75) and is_equal_approx(M.seconds("log",""),3.0),9001)
+	_a(is_equal_approx(M.seconds("dirt",""),0.9) and is_equal_approx(M.seconds("log",""),3.0),9001)
 	_a(is_equal_approx(M.seconds("stone",""),7.5) and not M.drops("stone",""),9002)
 	_a(M.seconds("stone","pickaxe")==3.0 and M.seconds("stone","pickaxe2")==1.5,9003)
-	_a(M.seconds("dirt","pickaxe")==3.75 and M.seconds("ground","pickaxe2")==1.875,9004)
+	_a(M.seconds("dirt","pickaxe")==3.75 and M.seconds("dirt","pickaxe2")==1.875,9004)
 	for i in range(4):
 		for tier in ["wood","scale"]:
 			var id: String = tier+"_"+A.PARTS[i]
@@ -1932,7 +1932,7 @@ func _v09_checks() -> void:
 	var cell := Vector3i(20,1,8)
 	G.wake_blocks[cell] = {"kind":"dirt"}
 	var cache := {}
-	Nav.advance_mob_mining(creature,cell,"dirt",1.49,cache)
+	Nav.advance_mob_mining(creature,cell,"dirt",1.79,cache)   # v0.22.1: Земля 0.6 → моб 1.8 с
 	_a(G.wake_blocks.has(cell),9047)
 	Nav.advance_mob_mining(creature,cell,"dirt",0.02,cache)
 	_a(not G.wake_blocks.has(cell),9048)
@@ -2012,7 +2012,7 @@ func _v09_checks() -> void:
 	var tid2 := WorkerThreadPool.add_task(job2.run)
 	WorkerThreadPool.wait_for_task_completion(tid)
 	WorkerThreadPool.wait_for_task_completion(tid2)
-	_a(job._ug_tiles(Vector3i(0,-5,0),false)==preload("res://scripts/block_tex.gd").faces_for("dirt") and job._ug_tiles(Vector3i(0,-17,0),false)==preload("res://scripts/block_tex.gd").faces_for("stone"),9074)
+	_a(job._ug_tiles(Vector3i(0,-5,0),false)==preload("res://scripts/block_tex.gd").faces_for("dirt",false,false) and job._ug_tiles(Vector3i(0,-17,0),false)==preload("res://scripts/block_tex.gd").faces_for("stone"),9074)
 	_a(job.result.worker_id!=OS.get_main_thread_id() and cm.worker_chunk_count>=9 and cm.last_worker_id!=OS.get_main_thread_id(),9051)
 	_a(job.result.solids==job2.result.solids and job.result.geometry.stream.v==job2.result.geometry.stream.v,9052)
 	_a(job.grass_tint(4,5)==job2.grass_tint(4,5) and job.grass_tint(4,5)!=job.grass_tint(40,50),9053)
@@ -2378,7 +2378,7 @@ func _v010_transfer_checks() -> void:
 	key.keycode=KEY_Y;_a(not G.transfer_ui_open and not paused,10088)
 	_a(DisplayServer.get_name()=="headless" or Input.mouse_mode==Input.MOUSE_MODE_CAPTURED,100881)
 	G.remove_shape(G.wake_blocks,far+Vector3i.UP);scene.switcher.enter_dream();_a(G.try_place_anchor(far),10089)
-	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and not ui.panel.visible and not paused and not G.dream_blocks.has(far) and not G.dream_blocks.has(far+Vector3i.UP) and int(success.moved)==1,10090) # v0.16: дверь уникальна — перенесена; площадка Сна осталась
+	var success:Dictionary=scene.switcher.wake_up();_a(success.ok and success.transferred==1 and not ui.panel.visible and not paused and G.dream_blocks.has(far) and G.dream_blocks.has(far+Vector3i.UP) and int(success.moved)==1 and G.wake_blocks.has(far),10090) # v0.22.1: дверь скопирована в Явь, оригинал остался во Сне
 	_a(not paused and not G.transfer_ui_open,10091)
 	var console:Node=get_first_node_in_group("dev_console")
 	for command in ["help transfer","transfer plan","transfer risk","transfer cancel"]:_a(not console.execute(command).begins_with("Ошибка"),10092)
@@ -2442,7 +2442,7 @@ func _v011_checks() -> void:
 	_a(cr.ok and cr.transferred == 1 and int(cr.chest_moved) == 1 and int(cr.chest_returned) == 0, 11016)
 	_a(str(gs.wake_blocks.get(dc,{}).get("kind","")) == "chest" and gs.world_storage.has("w:310,5,310") and int(gs.world_storage["w:310,5,310"][0].count) == 7, 11017)
 	# v0.16: незаякоренный сундук остаётся во Сне вместе с содержимым.
-	_a(not gs.world_storage.has("d:310,5,310") and gs.world_storage.has("d:320,5,320") and int(gs.world_storage["d:320,5,320"][0].count) == 4 and gs.dream_blocks.has(lost) and not gs.dream_blocks.has(dc), 11018)
+	_a(not gs.world_storage.has("d:310,5,310") and gs.world_storage.has("d:320,5,320") and int(gs.world_storage["d:320,5,320"][0].count) == 4 and gs.dream_blocks.has(lost) and gs.dream_blocks.has(dc), 11018)   # v0.22.1: сундук скопирован, содержимое ушло в Явь
 	# --- 16.3 Дом 100+ блоков с дверью и сундуком → перенос целиком, цель «Убежище» ---
 	gs.reset_state(); gs.dev_mode = false; gs.enter_dream()
 	var base := Vector3i(400, 10, 400)
@@ -2471,7 +2471,7 @@ func _v011_checks() -> void:
 	gs.inv_wake[20] = {"id":"planks","name":"Доски","count":100}; gs.inv_wake[21] = {"id":"stone","name":"Камень","count":100}
 	var need: Dictionary = gs.materialize_cost(gs.transfer_plan().roots)
 	var hr: Dictionary = gs.resolve_wake()
-	_a(hr.ok and hr.transferred == roots and gs.dream_blocks.size() == house_cells.size() - 3 and gs.wake_blocks.size() == house_cells.size() and int(hr.chest_moved) == 1 and int(hr.moved) == 2, 11022)
+	_a(hr.ok and hr.transferred == roots and gs.dream_blocks.size() == house_cells.size() and gs.wake_blocks.size() == house_cells.size() and int(hr.chest_moved) == 1 and int(hr.moved) == 2, 11022)
 	_a(gs._inv_count(gs.inv_wake, "planks") == 100 - int(need.planks) and gs._inv_count(gs.inv_wake, "stone") == 100 - int(need.stone) and hr.materials == need, 110221)
 	_a(gs.wake_build_count() >= 100 and gs.wake_kind_count("door") == 1 and int(gs.world_storage["w:" + gs.cell_key(hc)][3].count) == 9, 11023)
 	gs._objectives_eval(true)
@@ -2738,9 +2738,9 @@ func _v0111_scene_checks(scene: Node) -> void:
 	g3.apply_save_dict(sv)
 	_a(g3.heart_light and g3.heart_structure, 12101)
 	g3.queue_free()
-	_a(G.recipe_available(_rec(G, "lumen"), {"is_dream": true}) and G.is_placeable_block("lumen"), 12102)
+	_a(_rec(G, "lumen").is_empty() and not G.is_placeable_block("lumen"), 12102)   # v0.22.1: светоблоки удалены
 	G.heart_light = false
-	_a(not G.recipe_available(_rec(G, "lumen"), {"is_dream": true}), 12103)
+	_a(_rec(G, "lumen_cold").is_empty(), 12103)
 	G.heart_structure = false
 	_a(G.wedge_size() == G.WEDGE_SIZE, 12104)
 	host.queue_free()
@@ -2802,10 +2802,10 @@ func _v012_checks(scene: Node, hud: Node) -> void:
 	# Прогрессия: светильник / подпорка.
 	G.dev_mode = false
 	G.heart_light = false; G.heart_structure = false
-	_a(not G.recipe_available(_rec(G, "lamp"), {"is_dream": true}), 13050)
+	_a(_rec(G, "lamp").is_empty(), 13050)   # v0.22.1: светильник удалён
 	_a(not G.recipe_available(_rec(G, "strut"), {"is_dream": true}), 13051)
 	G.heart_light = true; G.heart_structure = true
-	_a(G.recipe_available(_rec(G, "lamp"), {"is_dream": true}) and G.is_placeable_block("lamp"), 13052)
+	_a(not G.is_placeable_block("lamp"), 13052)
 	_a(G.recipe_available(_rec(G, "strut"), {"is_dream": true}) and G.is_placeable_block("strut"), 13053)
 	_a(G.wedge_size() == G.WEDGE_SIZE + 2, 13054)
 	# Регрессия сейва (сердца + новые флаги).
@@ -3112,7 +3112,7 @@ func _v016_checks() -> void:
 	gs.select_anchor(gs.AnchorType.NAIL); gs.nails = 1; gs.pouch.reagent1 = 20; gs.clarity = 80.0
 	_a(gs.try_place_anchor(wb) and gs.try_place_anchor(wb + Vector3i.RIGHT), 16050)
 	var ru: Dictionary = gs.resolve_wake()
-	_a(int(ru.moved) == 1 and int(ru.copied) == 1 and not gs.dream_blocks.has(wb) and gs.dream_blocks.has(wb + Vector3i.RIGHT) and gs.wake_kind_count("workbench") == 1 and gs.nails == 1, 16051)
+	_a(int(ru.moved) == 1 and int(ru.copied) == 2 and gs.dream_blocks.has(wb) and not gs.dream_blocks[wb].has("paid") and gs.dream_blocks.has(wb + Vector3i.RIGHT) and gs.wake_kind_count("workbench") == 1 and gs.nails == 1, 16051)
 	# 9) Материал пропал между якорем и пробуждением — блок остаётся только во Сне, ничего не ломается.
 	gs.enter_dream(); gs.add_item_count("stone", 0)
 	var b3 := Vector3i(680, 6, 680)
@@ -3264,7 +3264,7 @@ func _v017_checks() -> void:
 	for i in range(8): gs.save_blueprint()
 	_a(gs.blueprints.size() == gs.BLUEPRINT_AFTER_MOTHER, 17035)
 	# вставка: занятые клетки и материалы без отпечатка пропускаются; одна операция отмены
-	gs.blueprints.append({"name": "Тест", "rel": true, "size": [2, 1, 1], "blocks": {"0,0,0": "stone", "1,0,0": "lumen"}})
+	gs.blueprints.append({"name": "Тест", "rel": true, "size": [2, 1, 1], "blocks": {"0,0,0": "stone", "1,0,0": "mossy_ruin"}})
 	gs.blueprint_shown = gs.blueprints.size() - 1
 	gs.paste_rot = 0
 	var pu: int = gs.undo_size()
@@ -3364,7 +3364,7 @@ func _v018_checks() -> void:
 	_a(JSON.stringify(copy.to_save_dict().dream_blocks) == JSON.stringify(gs.to_save_dict().dream_blocks), 18012)
 	copy.queue_free()
 	# защита: светоблок в радиусе 3 и маяк во Сне
-	gs.dream_blocks[c + Vector3i(6, 0, 0)] = {"kind": "lumen", "anchored": false, "mutant": false}
+	gs.dream_blocks[c + Vector3i(6, 0, 0)] = {"kind": "torch", "anchored": false, "mutant": false}
 	var r2: Dictionary = gs.nightmare_tick()
 	_a(int(r2.eaten) == 1 and int(r2.guarded) == 1 and gs.dream_blocks.has(c + Vector3i(3, 0, 0)) and not gs.dream_blocks.has(c + Vector3i(-3, 0, 0)), 18013)   # светоблок на +6 защищает только +3
 	gs.dream_blocks.erase(c + Vector3i(6, 0, 0))
@@ -3392,7 +3392,7 @@ func _v018_checks() -> void:
 	gs.on_mother_killed()
 	_a(gs.dream_zones == ["stone_garden"] and gs.has_imprint("ruin") and gs.has_imprint("strut") and is_equal_approx(gs.dream_clarity_max(), m0 + gs.ZONE_LUCID_BONUS) and gs.dream_sky()[0] != sky0[0], 18030)
 	gs.on_anaconda_killed()
-	_a(gs.dream_zones.size() == 2 and gs.has_imprint("lumen") and gs.has_imprint("lamp") and not gs.unlock_zone("light_garden"), 18031)
+	_a(gs.dream_zones.size() == 2 and gs.has_imprint("torch") and not gs.has_imprint("lamp") and not gs.unlock_zone("light_garden"), 18031)
 	# 5) Просьбы Сна.
 	gs.reset_state(); gs.dev_mode = false; gs.clarity = 10.0
 	var rq: Dictionary = gs.ensure_request()
@@ -3416,7 +3416,7 @@ func _v018_checks() -> void:
 	sv.version = 12; sv.erase("dream_zones"); sv.erase("dream_cracks"); sv.erase("dream_request"); sv.erase("requests_done")
 	sv.imprints = ["log"]; sv.anaconda_defeated = true
 	gs.reset_state(); gs.apply_save_dict(sv)
-	_a(gs.dream_zones.size() == 2 and gs.has_imprint("ruin") and gs.has_imprint("lumen") and gs.has_imprint("log") and gs.dream_cracks.is_empty() and gs.requests_done == 0, 18052)
+	_a(gs.dream_zones.size() == 2 and gs.has_imprint("ruin") and gs.has_imprint("torch") and gs.has_imprint("log") and gs.dream_cracks.is_empty() and gs.requests_done == 0, 18052)
 	gs.queue_free(); await process_frame
 	# 7) Сцена: узел трещин, небо сада, J отдаёт просьбу настоящим вводом.
 	var G: Node = root.get_node("GameState")
@@ -3484,7 +3484,7 @@ func _v019_checks() -> void:
 	_a(not T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8)).held, 19012)
 	# свет закрывает дыру: фантомы сгорают
 	g2.reset_state(); _v019_house(g2, Vector3i.ZERO, "stone", 2, true)
-	for p in [Vector3i(4, 1, -2), Vector3i(1, 1, -2), Vector3i(7, 1, -2)]: g2.dream_blocks[p] = {"kind": "lumen", "anchored": false, "mutant": false}
+	for p in [Vector3i(4, 1, -2), Vector3i(1, 1, -2), Vector3i(7, 1, -2)]: g2.dream_blocks[p] = {"kind": "torch", "anchored": false, "mutant": false}
 	var rl: Dictionary = T.run(g2.dream_blocks, Vector3i.ZERO, Vector3i(8, 3, 8))
 	_a(rl.held and int(rl.burned) > 0, 19013)
 	# частичная слабость: одна секция дрейфа в каменной стене — прогрызут (не держит), а с 2 светоблоками у неё держит
@@ -3572,7 +3572,7 @@ func _v020_checks() -> void:
 	_a(gs.tutorial_done.has("trial") and str(gs.tutorial_current().id) == "anchor", 20008)
 	# сейв посреди обучения (v15) и миграция v14
 	var sv: Dictionary = JSON.parse_string(JSON.stringify(gs.to_save_dict()))
-	_a(int(sv.version) == 15 and bool(sv.tutorial_active) and sv.tutorial_done.size() == 5 and bool(sv.tutorial_gift), 20010)
+	_a(int(sv.version) == 16 and bool(sv.tutorial_active) and sv.tutorial_done.size() == 5 and bool(sv.tutorial_gift), 20010)
 	var g2: Node = load("res://scripts/game_state.gd").new(); root.add_child(g2); g2.reset_state(); g2.apply_save_dict(sv)
 	_a(g2.tutorial_active and g2.tutorial_done.size() == 5 and str(g2.tutorial_current().id) == "anchor" and g2.tutorial_gift, 20011)
 	sv.version = 14; sv.erase("tutorial_active"); sv.erase("tutorial_done"); sv.erase("tutorial_gift")
@@ -3811,7 +3811,7 @@ func _v021_checks() -> void:
 	G.skip_tutorial(); G.milestones.erase("first_dream"); G.milestones_mark("first_dream")
 	var after_chat := chat_seen.filter(func(t): return str(t).begins_with("✔")).size()
 	G.chat_message.disconnect(cb)
-	_a(tut_chat == 0 and after_chat == 1, 21054)
+	_a(tut_chat == 0 and after_chat == 0, 21054)   # v0.22.1: «✔» больше не в чате
 	var dw: Node = load("res://scenes/world_dream.tscn").instantiate()
 	_a(dw.get_node_or_null("Hint") == null and dw.get_node_or_null("PillarA") == null, 21055)
 	dw.free()
@@ -3832,6 +3832,7 @@ func _v021_checks() -> void:
 	print("SMOKE: v0.21 c2: wake tools hidden in tutorial / caption / anchor hint / dream flora / decor+hudfocus console / dream objectives / mother distance / exe icon OK")
 	print("SMOKE: v0.21 c1: tutorial focus HUD / starter slot 5 / hp bars / music guard / unique uids / opaque settings / camp sign / dream console OK")
 	await _v022_checks()
+	await _v0221_checks()
 
 
 func _v022_checks() -> void:
@@ -3984,3 +3985,98 @@ func _v022_scene_checks() -> void:
 	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
 	print("SMOKE: v0.22 scene: no wake summary / no camp sign / bed no prompt / day spawn −75% / torch support / fall damage / frame clear / time ×4 / dust economy / mouse LMB-RMB / recoil+knockback / FP arms / console OK")
 
+
+
+func _v0221_checks() -> void:
+	## v0.22.1: чат/подсказки, Земля, без светоблоков, копия станций, стамина, настенные факелы, лагерь, озёра, подпорка, консоль.
+	var G: Node = root.get_node("GameState")
+	var BT := preload("res://scripts/block_tex.gd")
+	var VW: GDScript = load("res://scripts/voxel_world.gd")
+	G.reset_state(); G.dev_mode = false
+	# чат: только помеченные сообщения; подсказки Яви не идут в чат
+	var seen: Array = []
+	var cb := func(t: String, _c: Color = Color.WHITE) -> void: seen.append(t)
+	G.chat_message.connect(cb)
+	G.chat("шум"); G.set_hint("Нет места")
+	_a(seen.is_empty() and G.muted_chat.has("шум"), 22101)
+	G.chat("Мать блоков пришла за своим!", Color.WHITE, true)
+	_a(seen.size() == 1, 22102)
+	G.chat_message.disconnect(cb)
+	# рецепты без хвостов, без скобок
+	for r in G.recipe_defs():
+		var nm := str(r.get("name", ""))
+		_a(not nm.contains("·") and not nm.contains("(") and not nm.contains("урона") and not nm.contains("ячеек"), 22103)
+	# Земля и миграция
+	_a(G.canon_kind("hill") == "dirt" and G.canon_kind("ground") == "dirt" and G.canon_kind("lumen") == "torch" and G.canon_kind("lamp") == "torch" and G.canon_kind("stone") == "stone", 22104)
+	G.wake_blocks[Vector3i(5, 0, 5)] = {"kind": "hill", "mutant": false}
+	G.dream_blocks[Vector3i(6, 0, 6)] = {"kind": "lumen_cold", "anchored": false, "mutant": false}
+	G.imprints["ground"] = true
+	G.inv_wake[3] = {"id": "lamp", "name": "Светильник", "count": 2}
+	var sv: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	_a(int(sv.version) == 16, 22105)
+	sv.version = 15
+	G.reset_state(); G.apply_save_dict(sv)
+	_a(str(G.wake_blocks[Vector3i(5, 0, 5)].kind) == "dirt" and str(G.dream_blocks[Vector3i(6, 0, 6)].kind) == "torch" and G.has_imprint("dirt") and not G.imprints.has("ground") and G.count_item("torch") >= 2 and G.count_item("lamp") == 0, 22106)
+	_a(not G.is_placeable_block("lumen") and not G.is_placeable_block("hill") and G.block_display_name("dirt") == "Земля", 22107)
+	# станции: копия, оригинал остаётся; без предмета в Яви — не копируется
+	G.reset_state(); G.dev_mode = false; G.enter_dream()
+	var wb := Vector3i(300, 6, 300)
+	G.place_dream_block(wb, "workbench")
+	_a(G.dream_blocks[wb].get("paid", false), 22110)
+	G.dream_blocks[wb].anchored = true
+	G.pending_anchors = [{"type": 2, "cells": [wb], "receipt": {"dev": true}}]
+	var r1: Dictionary = G.resolve_wake()
+	_a(r1.ok and G.wake_kind_count("workbench") == 1 and G.dream_blocks.has(wb) and not G.dream_blocks[wb].has("paid"), 22111)
+	G.wake_blocks.clear(); G.enter_dream()
+	G.dream_blocks[wb].anchored = true
+	G.pending_anchors = [{"type": 2, "cells": [wb], "receipt": {"dev": true}}]
+	_a(int(G.materialize_cost([wb]).get("workbench", 0)) == 1, 22112)
+	var r2: Dictionary = G.resolve_wake()
+	_a(G.wake_kind_count("workbench") == 0 and int(r2.unpaid) == 1, 22113)
+	G.enter_dream(); G.dream_blocks[wb].anchored = true
+	G.pending_anchors = [{"type": 2, "cells": [wb], "receipt": {"dev": true}}]
+	G.inv_wake[7] = {"id": "workbench", "name": "Верстак", "count": 1}
+	G.resolve_wake()
+	_a(G.wake_kind_count("workbench") == 1 and G._inv_count(G.inv_wake, "workbench") == 0 and G.dream_blocks.has(wb), 22114)
+	var sv2: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
+	G.reset_state(); G.apply_save_dict(sv2)
+	_a(not G.dream_blocks[wb].get("paid", false), 22115)   # оплата не восстанавливается при загрузке
+	# стамина: 10 с бега до нуля, 20 с до полной
+	G.reset_state()
+	for i in range(100): G.tick_stamina(0.1, true)
+	_a(G.stamina <= 0.001 and G.stamina_tired and not G.can_sprint(), 22120)
+	for i in range(50): G.tick_stamina(0.1, false)
+	_a(G.can_sprint() and is_equal_approx(snappedf(G.stamina, 0.01), 0.25), 22121)
+	for i in range(150): G.tick_stamina(0.1, false)
+	_a(G.stamina >= 0.999, 22122)
+	# настенный факел: наклон к опоре сбоку, на полу — прямо
+	_a(VW.wall_dir(Vector3i(1, 0, 0), {"kind": "torch", "attach": [0, 0, 0]}) == Vector3i(-1, 0, 0) and VW.wall_dir(Vector3i(1, 1, 0), {"kind": "torch", "attach": [1, 0, 0]}) == Vector3i.ZERO, 22123)
+	# Сон фиолетовый, подпорка со своей текстурой, Анаконда 15 сегментов
+	_a(BT.dream_tinted("stone") and not BT.dream_tinted("drift") and BT.faces_for("strut") != BT.faces_for("planks"), 22124)
+	_a(load("res://scripts/boss_anaconda.gd").SEGMENTS == 15, 22125)
+	# сцена: лагерь на земле, у спавна нет озёр, HUD, консоль
+	G.reset_state()
+	G.begin_world("v0221 test", "", "6767676767", G.DEV_SEED, true)
+	var scene: Node = load("res://scenes/main.tscn").instantiate(); scene.set_meta("smoke", true); root.add_child(scene); current_scene = scene
+	for i in range(3): await process_frame
+	scene.player.set_physics_process(false); scene.threat.set_process(false)
+	var cm: Node = scene.wake_chunks
+	for cc in [Vector2i(0, 0), Vector2i(-1, 0), Vector2i(0, -1), Vector2i(-1, -1)]: _a(not cm.chunk_has_lake(cc), 22130)
+	var camp_n := 0; var floating := 0
+	for c in G.wake_blocks:
+		if G.wake_blocks[c].get("camp", false):
+			camp_n += 1
+			if c.y != int(cm.height_at(c.x, c.z)) and not G.wake_blocks.has(c + Vector3i.DOWN): floating += 1
+	_a(camp_n > 0 and floating == 0, 22131)
+	var hud: Node = scene.get_node("HUD")
+	_a(hud.find_child("StaminaBar", true, false) != null, 22132)
+	var con: Node = get_first_node_in_group("dev_console")
+	for cmd in ["stamina", "stamina zero", "stamina full", "stamina inf on", "stamina inf off", "walltorch", "chatlog", "stations", "camp", "land"]:
+		var out: String = con.execute(cmd)
+		if out.begins_with("Ошибка"): print("DBG22133 ", cmd, " → ", out)
+		_a(not out.begins_with("Ошибка"), 22133)
+	for h in ["stamina", "walltorch", "chatlog", "stations", "camp", "land"]:
+		_a(con.execute("help " + h).contains("Пример"), 22134)
+	_a(con.completion_candidates("stamina").size() >= 4, 22135)
+	scene.queue_free(); await process_frame; current_scene = null; G.reset_state()
+	print("SMOKE: v0.22.1: chat whitelist / no recipe suffixes / Земля + migration / station copy for 1 wake item / stamina 10+20 s / wall torch / purple dream / strut tile / 15 segments / camp on ground / no spawn lakes / console OK")

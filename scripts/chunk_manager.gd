@@ -379,6 +379,9 @@ func load_all_pending() -> void:
 func chunk_has_lake(coord: Vector2i) -> bool:
 	if _is_settlement(coord):
 		return false
+	# v0.22.1: у спавна (|x|, |z| ≤ 14 — четыре чанка вокруг 0,0) озёр нет: вода не лезет под лагерь.
+	if coord.x in [-1, 0] and coord.y in [-1, 0]:
+		return false
 	return maxi(absi(coord.x), absi(coord.y)) >= 1 and _chunk_hash(coord, 11) > 0.82
 
 

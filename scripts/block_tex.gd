@@ -6,7 +6,7 @@ const TILES := ["grass_top", "grass_side", "dirt", "stone", "brick", "brick_moss
 	"leaves", "sand", "water", "dream_top", "dream_side", "dream_dirt", "drift", "drift_dream",
 	"drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch",
 	"bedrock", "nest", "egg", "bed_top", "bed_side", "deep_stone", "grave", "lathe_top", "lathe_side", "blanket", "mattress",
-	"blade2", "scale", "scale_head", "tool_wood", "tool_stone"]
+	"blade2", "scale", "scale_head", "tool_wood", "tool_stone", "strut"] # v0.22.1: своя текстура подпорки
 
 static var _mat: ShaderMaterial = null
 static var _water: Dictionary = {}
@@ -118,7 +118,7 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 		"beacon":
 			return _all(tile("beacon"))
 		"strut":
-			return _all(tile("planks"))
+			return _all(tile("strut"))
 		"mouth":
 			return _all(tile("mouth"))
 		"torch":

@@ -1393,13 +1393,13 @@ func _build_starter_camp() -> void:
 			continue
 		var top: int = int(wake_chunks.height_at(x, z))
 		for h in range(int(e[2])):
-			var c := Vector3i(x, top + 1 + h, z)
+			var c := Vector3i(x, top + h, z) # v0.22.1: на землю, а не на блок выше
 			if GameState.place_wake_block(c, str(e[3])):
 				GameState.wake_blocks[c]["camp"] = true
 				wake_voxels.add_block(c, GameState.wake_blocks[c])
 				placed += 1
 	for t in [Vector2i(-4, -7), Vector2i(4, -7), Vector2i(2, -1)]:
-		var tc := Vector3i(t.x, int(wake_chunks.height_at(t.x, t.y)) + 1, t.y)
+		var tc := Vector3i(t.x, int(wake_chunks.height_at(t.x, t.y)), t.y)
 		if GameState.place_wake_block(tc, "torch"):
 			GameState.wake_blocks[tc]["camp"] = true
 			wake_voxels.add_block(tc, GameState.wake_blocks[tc])

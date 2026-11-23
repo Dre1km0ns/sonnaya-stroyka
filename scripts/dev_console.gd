@@ -67,7 +67,13 @@ const COMMAND_HELP := {
 "knockback":"Откидывание мобов от удара v0.22: сила по оружию, боссов не откидывает; отдача руки. status, on/off. Пример: knockback; knockback off",
 "aggro":"Агрессия Анаконды на факелы v0.22: больше 3 факелов рядом — она злится и ломает их; стана от света нет. Пример: aggro",
 "arms":"Руки от первого лица v0.22, модель Kenney Blocky Characters CC0. status, play attack|break|place|use|jump|sleep|wake. Пример: arms; arms play attack",
-"mouse":"Кнопки мыши v0.22: ЛКМ — удар и сломать, ПКМ — использовать и поставить; переназначаются в настройках. Пример: mouse",
+"mouse":"Кнопки мыши v0.22.1: ЛКМ — нажать: поставить, удерживать: сломать, с мечом — удар; ПКМ — только использовать; переназначаются в настройках. Пример: mouse",
+"stamina":"Стамина v0.22.1: в Яви бег 10 с, восстановление с нуля до полной 20 с, устал — бег снова с 25 %; полоска над HP. status, full, zero, inf on|off. Пример: stamina; stamina zero; stamina inf on",
+"walltorch":"Настенные факелы v0.22.1: факел на боковой грани блока стоит наискосок, как в Minecraft; без опоры падает. status — сколько настенных; test — поставить блок и факел на него рядом с тобой. Пример: walltorch; walltorch test",
+"chatlog":"Чат v0.22.1: в чате только сообщения боссов, призыв яйцом, зелья под подушкой и подсказки строительства во Сне. chatlog — последние скрытые сообщения, chatlog 30 — больше. Пример: chatlog; chatlog 30",
+"stations":"Станции v0.22.1: верстак, кровать, станки, сундук, дверь, маяк, ловец идей копируются в Явь, оригинал остаётся во Сне. Первая копия оплачена предметом, поставленным во Сне, следующие стоят 1 такой предмет из инвентаря Яви. Пример: stations",
+"camp":"Стартовый лагерь v0.22.1: стоит на земле, у спавна нет озёр. status — сколько блоков висит; lower — опустить висящие на 1. Пример: camp; camp lower",
+"land":"Земля v0.22.1: холм, грунт и земля — один блок «Земля» (dirt), сверху трава, под блоком — земля. Светоблоки и светильник удалены, в сейвах стали факелами. status — алиасы; migrate — перевести мир ещё раз. Пример: land; land migrate",
 "hudfocus":"Фокус HUD обучения v0.21: что сейчас скрыто (цели, якорная панель, колонка Гвоздь/Клин/Якорь3/Маяк, цена якоря). Пример: hudfocus",
 }
 var history: Array[String] = []
@@ -179,6 +185,7 @@ func completion_candidates(prefix: String) -> Array[String]:
 			all.append("fill "+id)
 			all.append("hardness "+id)
 	for command in ["clarity","clarity max","clarity ","imprint list","imprint all","imprint ","palette","palette ","frame show","frame clear","frame here ","frame ","dreamfill","dreamfill clear","dreamfill ","crack list","crack add ","crack patch","crack clear","nightmare now","nightmare last","garden list","garden stone","garden light","garden reset","request","request new","request fill","request offer","trial run","trial last","trial grade","tutorial","tutorial start","tutorial skip","tutorial next","tutorial step ","blueprint list","blueprint save","blueprint show ","blueprint paste","blueprint rotate","blueprint clear","undo ","undo redo ","mirror","mirror off","dreamdecor","dreamdecor status","dreamdecor rebuild","dreamdecor off","dreamdecor on","dreamdecor island","dreamdecor home","hudfocus","bosscam","bosscam on","bosscam off","bosscam status"]: all.append(command)
+	for command in ["stamina","stamina full","stamina zero","stamina inf on","stamina inf off","walltorch","walltorch test","chatlog","chatlog 30","stations","camp","camp lower","land","land migrate"]: all.append(command)
 	for command in ["economy","economy steal ","fall","fall status","fall on","fall off","fall test ","torch","torch status","torch drop","frameclear","timeskip","timeskip status","timeskip x ","timeskip night","dayspawn","knockback","knockback status","knockback on","knockback off","aggro","arms","arms status","arms play attack","arms play break","arms play place","arms play use","arms play jump","arms play sleep","arms play wake","mouse"]: all.append(command)
 	all.append("setblock air")
 	all.append("fill air")
@@ -566,7 +573,73 @@ func _v010_command(a: PackedStringArray) -> String:
 			return _dream_cmd(a, _player())
 		"economy","fall","torch","frameclear","timeskip","dayspawn","knockback","aggro","arms","mouse":
 			return _v022_cmd(a, _player())
+		"stamina","walltorch","chatlog","stations","camp","land":
+			return _v0221_cmd(a, _player())
 	return "Ошибка: неизвестная команда. help — список."
+
+
+## v0.22.1: команды правок владельца.
+func _v0221_cmd(a: PackedStringArray, p: Node3D) -> String:
+	var G := GameState
+	var sub := a[1] if a.size() > 1 else "status"
+	var b := _build()
+	match a[0]:
+		"stamina":
+			match sub:
+				"full": G.stamina = 1.0; G.stamina_tired = false
+				"zero": G.stamina = 0.0; G.stamina_tired = true
+				"inf":
+					if a.size() < 3 or not a[2] in ["on", "off"]: return "Ошибка: stamina inf on|off"
+					G.stamina_infinite = a[2] == "on"
+				"status": pass
+				_: return "Ошибка: stamina [status|full|zero|inf on|off]"
+			G.stamina_changed.emit(G.stamina, G.stamina_tired)
+			return "Стамина %d%%%s%s · бег %d с, восстановление %d с" % [roundi(G.stamina * 100.0), " · устал" if G.stamina_tired else "", " · бесконечная" if G.stamina_infinite else "", int(G.STAMINA_RUN_SECONDS), int(G.STAMINA_RECOVER_SECONDS)]
+		"walltorch":
+			if sub == "test":
+				if p == null or b == null or G.is_dream(): return "Ошибка: только в Яви."
+				var base := Vector3i(floori(p.global_position.x) + 2, floori(p.global_position.y), floori(p.global_position.z))
+				if G.wake_blocks.has(base) or G.wake_blocks.has(base + Vector3i(-1, 0, 0)): return "Ошибка: место занято."
+				if not G.place_wake_block(base, "planks"): return "Ошибка: блок не встал."
+				var tc := base + Vector3i(-1, 0, 0)
+				if not G.place_wake_block(tc, "torch"): return "Ошибка: факел не встал."
+				G.wake_blocks[tc]["attach"] = [base.x, base.y, base.z]
+				var vox: Node = b._wake_voxels()
+				if vox: vox.sync_cells([base, tc])
+				return "Блок %s и настенный факел %s" % [base, tc]
+			var n := 0; var total := 0
+			for c in G.wake_blocks:
+				if str(G.wake_blocks[c].get("kind", "")) == "torch":
+					total += 1
+					if preload("res://scripts/voxel_world.gd").wall_dir(c, G.wake_blocks[c]) != Vector3i.ZERO: n += 1
+			return "Факелов: %d · на стенах: %d · наклон %d°" % [total, n, roundi(rad_to_deg(preload("res://scripts/voxel_world.gd").WALL_TORCH_TILT))]
+		"chatlog":
+			var k := int(sub) if sub.is_valid_int() else 10
+			var tail := G.muted_chat.slice(maxi(0, G.muted_chat.size() - k))
+			return "Скрыто сообщений: %d\n%s" % [G.muted_chat.size(), "\n".join(tail)]
+		"stations":
+			var paid := 0; var unpaid := 0
+			for c in G.dream_blocks:
+				var d: Dictionary = G.dream_blocks[c]
+				if G.UNIQUE_KINDS.has(str(d.get("kind", ""))) and not d.has("root"):
+					if d.get("paid", false): paid += 1
+					else: unpaid += 1
+			return "Станций во Сне: %d · первая копия оплачена: %d · копия за предмет Яви: %d" % [paid + unpaid, paid, unpaid]
+		"camp":
+			var floating := 0
+			for c in G.wake_blocks:
+				if G.wake_blocks[c].get("camp", false) and not G.wake_blocks.has(c + Vector3i.DOWN) and c.y > 0: floating += 1
+			if sub == "lower":
+				var m := G.lower_floating_camp()
+				var vw: Node = b._wake_voxels() if b else null
+				if vw: vw.sync_from_state()
+				return "Опущено блоков лагеря: %d" % m
+			return "Блоков лагеря: %d · висят: %d" % [G.wake_blocks.keys().filter(func(c): return G.wake_blocks[c].get("camp", false)).size(), floating]
+		"land":
+			if sub == "migrate":
+				return "Переведено записей: %d" % G.migrate_v0221()
+			return "Алиасы: %s · отпечатки: %s" % [str(G.KIND_ALIASES), ", ".join(G.imprints.keys())]
+	return "Ошибка: " + a[0]
 
 
 ## v0.22: команды новых систем.
@@ -647,7 +720,7 @@ func _v022_cmd(a: PackedStringArray, p: Node3D) -> String:
 		"mouse":
 			var gs := get_node_or_null("/root/GameSettings")
 			if gs == null: return "Ошибка: нет настроек."
-			return "ЛКМ-действие «удар / сломать»: %s · ПКМ-действие «использовать / поставить»: %s · менять в Настройках → Управление" % [gs.key_label("attack_break"), gs.key_label("use_place")]
+			return "Поставить / сломать / удар: %s · Использовать: %s · порог удержания %.2f с · менять в Настройках → Управление" % [gs.key_label("attack_break"), gs.key_label("use_place"), preload("res://scripts/build_controller.gd").TAP_TIME]
 	return "Ошибка: help " + a[0]
 
 

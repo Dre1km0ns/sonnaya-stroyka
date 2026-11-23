@@ -350,7 +350,7 @@ func tick(delta: float) -> void:
 		_scan_torches()
 	# Рассвет — уходит.
 	if not GameState.is_night():
-		leave("Анаконда ушла в глубину.")
+		leave("Светает — Анаконда ушла.")
 		return
 	var player := _player()
 	if player == null:
@@ -896,7 +896,7 @@ static func try_spawn(host: Node3D, player: Node3D, chunks: Node) -> Node:
 
 
 static func summon_with_egg(host: Node3D, player: Node3D, chunks: Node) -> Node:
-	## v0.7: Яйцо Анаконды в руке + ЛКМ (явь, ночь) — призыв. Яйцо тратится. Кулдауна нет:
+	## v0.7: Яйцо Анаконды в руке + ПКМ (явь, ночь) — призыв. Яйцо тратится. Кулдауна нет:
 	## убил — получил новое яйцо — можно призвать снова (в ту же или следующую ночь).
 	if host == null or player == null:
 		return null

@@ -68,6 +68,7 @@ func _process(delta: float) -> void:
 		return
 	if GameState.ui_blocked():
 		_mine_elapsed = 0.0
+		_lmb_t = -1.0
 		ghost.visible = false
 		return
 	if Input.is_action_just_pressed("place_beacon"):
@@ -75,50 +76,74 @@ func _process(delta: float) -> void:
 	if not GameState.is_dream():
 		ghost.visible = false
 		update_torch_rings()
-		# v0.22: ЛКМ (attack_break) — удар и добыча; ПКМ (use_place) — использовать и поставить.
-		if Input.is_action_just_pressed("use_place") and _toggle_aimed_door():
-			_arms("use")
-			return
+		# v0.22.1: ЛКМ — короткое нажатие ставит блок/факел, удержание ломает, с мечом — удар; ПКМ — только использовать.
 		var sel := str(GameState.get_selected_item().get("id", ""))
 		var sword := sel == "sword" or sel == "sword2" or sel == "sword3"
-		if (sel == "" or sel == "pickaxe" or sel == "pickaxe2") and Input.is_action_pressed("attack_break"):
-			_tick_mining(delta)
-			return
-		_mine_elapsed = 0.0
-		_mine_cell = Vector3i(99999,99999,99999)
-		if _place_cooldown <= 0.0 and Input.is_action_just_pressed("attack_break"):
-			if sword:
-				_try_sword()
-				_place_cooldown = SWORD_COOLDOWN
-			elif sel == "torch" and _try_pick_up_torch():
-				_arms("break")
-				_place_cooldown = 0.16
-		elif _place_cooldown <= 0.0 and Input.is_action_just_pressed("use_place"):
-			# v0.11: зелья пьются только клавишей H (автовыбор).
-			if sel == "heal1" or sel == "heal2":
-				GameState.set_hint("Зелья пьются клавишей %s — она сама выберет подходящее." % _heal_key(), false)
-			elif sel == "torch":
-				_try_place_torch()
-				_arms("place")
-				_place_cooldown = 0.16
-			elif sel == "anaconda_egg":
+		if Input.is_action_just_pressed("use_place"):
+			if _toggle_aimed_door():
+				_arms("use")
+			elif sel == "anaconda_egg" and _place_cooldown <= 0.0:
 				_try_summon_anaconda()
 				_arms("use")
 				_place_cooldown = 0.5
-			elif GameState.is_placeable_block(sel):
+		var placeable := sel == "torch" or GameState.is_placeable_block(sel)
+		if sword:
+			_lmb_t = -1.0
+			_reset_mining()
+			if _place_cooldown <= 0.0 and Input.is_action_just_pressed("attack_break"):
+				_try_sword()
+				_place_cooldown = SWORD_COOLDOWN
+			return
+		if Input.is_action_pressed("attack_break"):
+			_lmb_t = 0.0 if _lmb_t < 0.0 else _lmb_t + delta
+			if not placeable or _lmb_t >= TAP_TIME:
+				if not _lmb_torch_checked:
+					_lmb_torch_checked = true
+					if _try_pick_up_torch():
+						_arms("break")
+						_place_cooldown = 0.16
+						return
+				_tick_mining(delta)
+			return
+		if _lmb_t >= 0.0 and _lmb_t < TAP_TIME and placeable and _place_cooldown <= 0.0:
+			if sel == "torch":
+				_try_place_torch()
+			else:
 				_try_place_wake_item()
-				_arms("place")
-				_place_cooldown = 0.16
+			_arms("place")
+			_place_cooldown = 0.16
+		_lmb_t = -1.0
+		_lmb_torch_checked = false
+		_reset_mining()
 		return
 	_update_ghost()
-	if Input.is_action_just_pressed("use_place") and _place_cooldown <= 0.0:
+	if Input.is_action_just_pressed("use_place"):
+		_toggle_aimed_door()
+	# Сон: короткое нажатие ЛКМ — поставить, удержание — снимать блоки (по одному каждые 0,2 с).
+	if Input.is_action_pressed("attack_break"):
+		_lmb_t = 0.0 if _lmb_t < 0.0 else _lmb_t + delta
+		if _lmb_t >= TAP_TIME and _place_cooldown <= 0.0:
+			_try_remove()
+			_arms("break")
+			_place_cooldown = DREAM_BREAK_REPEAT
+		return
+	if _lmb_t >= 0.0 and _lmb_t < TAP_TIME and _place_cooldown <= 0.0:
 		_try_place()
 		_arms("place")
 		_place_cooldown = 0.12
-	if Input.is_action_just_pressed("attack_break") and _place_cooldown <= 0.0:
-		_try_remove()
-		_arms("break")
-		_place_cooldown = 0.12
+	_lmb_t = -1.0
+
+
+## v0.22.1: порог «короткое нажатие / удержание» ЛКМ (секунды).
+const TAP_TIME := 0.22
+const DREAM_BREAK_REPEAT := 0.2
+var _lmb_t := -1.0
+var _lmb_torch_checked := false
+
+
+func _reset_mining() -> void:
+	_mine_elapsed = 0.0
+	_mine_cell = Vector3i(99999,99999,99999)
 
 
 func _aim() -> Dictionary:
@@ -151,6 +176,7 @@ func _try_place() -> void:
 	var cell2: Vector3i = dream_voxels.world_to_cell(place_pos2)
 	if not placement_supported(cell2, true):
 		return
+	_last_place_normal = normal
 	_place_at(cell2)
 
 
@@ -178,6 +204,7 @@ func _place_at(cell: Vector3i) -> void:
 	elif GameState.place_dream_block(cell, kind, facing):
 		placed_cells = [cell]
 	if placed_cells.has(cell):
+		if kind == "torch": _attach_dream_torch(cell)
 		if kind == "drift" and GameState.heart_structure and Input.is_action_pressed("sprint"):
 			placed_cells.append_array(mass_place_row(cell, facing))
 		dream_voxels.sync_cells(placed_cells)
@@ -187,6 +214,18 @@ func _place_at(cell: Vector3i) -> void:
 			GameState.set_hint("%s%s" % [GameState.block_display_name(kind), GameState.palette_stock_text(kind)], false)
 	elif not from_palette:
 		GameState.add_item_count(kind, 1)
+
+
+var _last_place_normal := Vector3.UP
+
+
+func _attach_dream_torch(cell: Vector3i) -> void:
+	## v0.22.1: факел Сна на стене — запоминаем опору, при переносе в Явь он останется настенным.
+	var n := Vector3i(roundi(_last_place_normal.x), roundi(_last_place_normal.y), roundi(_last_place_normal.z))
+	if n.y != 0 or n == Vector3i.ZERO or not GameState.dream_blocks.has(cell): return
+	var sup := cell - n
+	if GameState.dream_blocks.has(sup) and str(GameState.dream_blocks[sup].get("kind", "")) != "torch":
+		GameState.dream_blocks[cell]["attach"] = [sup.x, sup.y, sup.z]
 
 
 func mass_place_row(cell: Vector3i, facing: int) -> Array:

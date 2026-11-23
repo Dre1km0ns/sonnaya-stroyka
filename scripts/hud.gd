@@ -275,6 +275,37 @@ func _build_hearts() -> void:
 	_hp_wrap.offset_top = -52.0
 	_hp_wrap.offset_bottom = -18.0
 	root.add_child(_hp_wrap)
+	_build_stamina_bar(root)
+
+
+var _stamina_bar: ProgressBar
+
+
+func _build_stamina_bar(root: Control) -> void:
+	## v0.22.1: полоска стамины прямо над HP.
+	_stamina_bar = ProgressBar.new()
+	_stamina_bar.name = "StaminaBar"
+	_stamina_bar.anchor_top = 1.0; _stamina_bar.anchor_bottom = 1.0
+	_stamina_bar.offset_left = 16.0; _stamina_bar.offset_right = 16.0 + 240.0
+	_stamina_bar.offset_top = -62.0; _stamina_bar.offset_bottom = -55.0
+	_stamina_bar.min_value = 0.0; _stamina_bar.max_value = 1.0; _stamina_bar.step = 0.0
+	_stamina_bar.show_percentage = false
+	_stamina_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg := StyleBoxFlat.new(); bg.bg_color = Color(0.06, 0.06, 0.08, 0.75); bg.set_corner_radius_all(3)
+	var fg := StyleBoxFlat.new(); fg.bg_color = Color(0.98, 0.82, 0.3); fg.set_corner_radius_all(3)
+	_stamina_bar.add_theme_stylebox_override("background", bg)
+	_stamina_bar.add_theme_stylebox_override("fill", fg)
+	root.add_child(_stamina_bar)
+	_stamina_bar.visible = not GameState.is_dream()
+	GameState.stamina_changed.connect(_on_stamina)
+	_on_stamina(GameState.stamina, GameState.stamina_tired)
+
+
+func _on_stamina(v: float, tired: bool) -> void:
+	if _stamina_bar == null: return
+	_stamina_bar.value = v
+	var fg := _stamina_bar.get_theme_stylebox("fill") as StyleBoxFlat
+	if fg: fg.bg_color = Color(0.85, 0.35, 0.25) if tired else Color(0.98, 0.82, 0.3)
 
 
 func _build_heal_indicator() -> void:
@@ -468,6 +499,7 @@ func set_debug(mode: String="toggle") -> bool:
 	_update_debug();return _debug_label.visible
 
 func _on_world(is_dream: bool) -> void:
+	if _stamina_bar: _stamina_bar.visible = not is_dream
 	world_label.text = "СОН" if is_dream else "ЯВЬ"
 	world_label.modulate = Color(0.75, 0.7, 1.0) if is_dream else Color(0.9, 0.8, 0.6)
 	# v0.21: обводка и тень — заголовок читается и на светлом небе Яви.

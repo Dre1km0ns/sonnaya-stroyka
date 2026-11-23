@@ -218,6 +218,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "bed" and not data.get("legacy_compact",false):
 		mi.position.z += 0.5
 	if kind == "door": mi.transform=door_transform(cell,data)
+	if kind == "torch": apply_wall_torch(mi, cell, data)
 	add_child(mi)
 	_meshes[cell] = mi
 	if is_dream_layer and BlockTex.dream_tinted(tex_kind): mi.material_override = BlockTex.dream_material()
@@ -349,6 +350,27 @@ static func door_transform(cell: Vector3i,data: Dictionary) -> Transform3D:
 
 const CHEST_OPEN_DEG := -72.0
 const CHEST_ANIM_SEC := 0.22
+
+
+static func wall_dir(cell: Vector3i, data: Dictionary) -> Vector3i:
+	## v0.22.1: факел на стене — направление к опоре по горизонтали (или ноль, если стоит на полу).
+	var at = data.get("attach", null)
+	if not (at is Array and (at as Array).size() == 3): return Vector3i.ZERO
+	var d := Vector3i(int(at[0]), int(at[1]), int(at[2])) - cell
+	if d.y != 0 or absi(d.x) + absi(d.z) != 1: return Vector3i.ZERO
+	return d
+
+
+const WALL_TORCH_TILT := 0.42  # ~24°, как настенный факел в Minecraft
+
+
+func apply_wall_torch(mi: Node3D, cell: Vector3i, data: Dictionary) -> void:
+	var d := wall_dir(cell, data)
+	if d == Vector3i.ZERO: return
+	var dv := Vector3(d)
+	var axis := dv.cross(Vector3.UP).normalized()
+	mi.basis = Basis(axis, WALL_TORCH_TILT)
+	mi.position = cell_to_world(cell) + dv * 0.34 + Vector3(0, 0.12, 0)
 
 
 func chest_lid(cell: Vector3i) -> Node3D:

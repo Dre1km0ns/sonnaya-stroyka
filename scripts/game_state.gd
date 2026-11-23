@@ -435,6 +435,7 @@ func reset_state() -> void:
 	moon_energy = 0.56
 	day_time = NEW_WORLD_TIME
 	player_hp = PLAYER_MAX_HP
+	stamina = 1.0; stamina_tired = false
 	_combo_log = []
 	_iframes = 0.0
 	boss_next_mine = false
@@ -1880,7 +1881,7 @@ func on_mother_killed() -> void:
 	heart_structure = true
 	unlock_zone("stone_garden")
 	if first:
-		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ПКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
+		var t := "Сердце структуры: во Сне — массовая постановка: Shift+ЛКМ — ряд из 5; якоря шире на 2, перенос без мутаций, подпорки в крафте. Открыто: Алхимический стол и Хилка2, Ловец идей, Архив Снов на 8 чертежей. Блоколиты иногда бродят по Яви."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1891,7 +1892,7 @@ func on_anaconda_killed() -> void:
 	heart_light = true
 	unlock_zone("light_garden")
 	if first:
-		var t := "Сердце света: факелы бесконечны в палитре Сна, на станке открыто чешуйчатое оружие на станке."
+		var t := "Сердце света: факелы бесконечны в палитре Сна, на станке открыто чешуйчатое оружие."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1991,6 +1992,35 @@ func place_wake_block(cell: Vector3i, kind: String, facing: int=0) -> bool:
 
 func is_dream() -> bool:
 	return current_world == World.DREAM
+
+
+# --- v0.22.1: стамина ---
+const STAMINA_RUN_SECONDS := 10.0      # столько можно бежать с полной стамины
+const STAMINA_RECOVER_SECONDS := 20.0  # от нуля до полной без бега
+const STAMINA_RESUME := 0.25           # устал — бег снова доступен с этой доли
+signal stamina_changed(value: float, tired: bool)
+var stamina := 1.0
+var stamina_tired := false
+var stamina_infinite := false
+
+
+func can_sprint() -> bool:
+	return stamina_infinite or (not stamina_tired and stamina > 0.0)
+
+
+func tick_stamina(delta: float, sprinting: bool) -> void:
+	var before := stamina
+	var was := stamina_tired
+	if stamina_infinite:
+		stamina = 1.0; stamina_tired = false
+	elif sprinting:
+		stamina = maxf(0.0, stamina - delta / STAMINA_RUN_SECONDS)
+		if stamina <= 0.0: stamina_tired = true
+	else:
+		stamina = minf(1.0, stamina + delta / STAMINA_RECOVER_SECONDS)
+		if stamina_tired and stamina >= STAMINA_RESUME: stamina_tired = false
+	if not is_equal_approx(before, stamina) or was != stamina_tired:
+		stamina_changed.emit(stamina, stamina_tired)
 
 
 func set_hint(text: String, to_chat: bool = true) -> void:
@@ -2336,7 +2366,7 @@ func enter_dream() -> void:
 	clarity_changed.emit(clarity, dream_clarity_max())
 	world_changed.emit(true)
 	if not tutorial_focus(): # v0.21: во время обучения клавиши вводит только его панель
-		set_hint("Сон помнит всё построенное. ПКМ — блок %s, ЛКМ — снять, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
+		set_hint("Сон помнит всё построенное. ЛКМ — блок %s, удерживай ЛКМ — снять, T — палитра, R/Q — якорь, C — крафт, F — проснуться." % block_display_name(dream_material),false)
 
 
 func resolve_wake(abort_transfer:bool=false) -> Dictionary:
@@ -2780,7 +2810,8 @@ func apply_save_dict(data: Dictionary) -> void:
 	_load_v018(data)
 	_load_v019(data)
 	_load_v020(data)
-	migrate_v0221()
+	migrate_v0221(fmt < 16)
+	if fmt < 16: lower_floating_camp()
 	_loading_save = false
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
@@ -3672,7 +3703,7 @@ func migrate_lanterns() -> int:
 func _load_v016(data: Dictionary, fmt: int) -> void:
 	imprints = {}
 	for k in data.get("imprints", []):
-		if IMPRINT_KINDS.has(str(k)): imprints[str(k)] = true
+		if IMPRINT_KINDS.has(canon_kind(str(k))): imprints[canon_kind(str(k))] = true   # v0.22.1: hill/ground → dirt, lumen/lamp → torch
 	night_awake = maxf(0.0, float(data.get("night_awake", 0.0)))
 	nights_survived = maxi(0, int(data.get("nights_survived", 0)))
 	if fmt < 11:
@@ -4312,10 +4343,10 @@ signal tutorial_changed
 
 const TUTORIAL := [
 	{"id": "fly", "title": "Лети", "how": "Во Сне ты летаешь. Пробел — вверх, Ctrl — вниз, WASD — вперёд и вбок. Отлети на 8 блоков."},
-	{"id": "build", "title": "Поставь 5 блоков", "how": "Слот 1 ставит блок дрейфа — он бесплатный. ПКМ — поставить, ЛКМ — снять. Поставь 5 блоков."},
+	{"id": "build", "title": "Поставь 5 блоков", "how": "Слот 1 ставит блок дрейфа — он бесплатный. Нажми ЛКМ — поставить, удерживай ЛКМ — снять. Поставь 5 блоков."},
 	{"id": "frame", "title": "Рамка и заливка", "how": "Наведись на блок: K — первый угол рамки, ещё раз K — второй угол. Потом L — залить рамку целиком."},
 	{"id": "trial", "title": "Испытай фантомами", "how": "M — испытание: фантомы атакуют копию постройки в рамке. Дыры и дрейф — слабые места. Сон не пострадает."},
-	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ПКМ — поставить его."},
+	{"id": "workbench", "title": "Поставь верстак", "how": "Нажми 5 — в этом слоте лежит идея верстака. ЛКМ — поставить его."},
 	{"id": "anchor", "title": "Закрепи якорем", "how": "Наведись на верстак и нажми Q — закрепить его якорем. Реагенты на первый якорь Сон подарил."},
 	{"id": "wake", "title": "Проснись", "how": "F — проснуться. Закреплённый верстак появится в Яви копией, а оригинал останется во Сне."},
 ]
@@ -4423,7 +4454,7 @@ func _canon_slots(slots: Array) -> int:
 	return n
 
 
-func migrate_v0221() -> int:
+func migrate_v0221(old_save: bool = false) -> int:
 	## v0.22.1: холм и грунт → «Земля» (dirt); светоблоки и светильник → факел; станции во Сне оплачены.
 	var n := 0
 	for src in [wake_blocks, dream_blocks]:
@@ -4433,7 +4464,7 @@ func migrate_v0221() -> int:
 			if KIND_ALIASES.has(k):
 				d["kind"] = canon_kind(k); n += 1
 	for c in dream_blocks:
-		if UNIQUE_KINDS.has(str(dream_blocks[c].get("kind", ""))) and not dream_blocks[c].has("root") and not dream_blocks[c].has("paid"):
+		if old_save and UNIQUE_KINDS.has(str(dream_blocks[c].get("kind", ""))) and not dream_blocks[c].has("root") and not dream_blocks[c].has("paid"):
 			dream_blocks[c]["paid"] = true
 	for dict in [removed_terrain, removed_dream_terrain]:
 		for c in dict:
@@ -4449,6 +4480,23 @@ func migrate_v0221() -> int:
 		if KIND_ALIASES.has(str(k)):
 			var ck := canon_kind(str(k)); block_stash[ck] = int(block_stash.get(ck, 0)) + int(block_stash[k]); block_stash.erase(k); n += 1
 	return n
+
+
+func lower_floating_camp() -> int:
+	## v0.22.1: лагерь до 0.22.1 стоял на блок выше земли — опускаем его блоки (и опоры факелов) на 1.
+	var cells: Array = []
+	for c in wake_blocks:
+		if wake_blocks[c].get("camp", false): cells.append(c)
+	cells.sort_custom(func(a, b): return a.y < b.y)
+	var moved := 0
+	for c in cells:
+		var dn: Vector3i = c + Vector3i.DOWN
+		if wake_blocks.has(dn) or dn.y < 0: continue
+		var d: Dictionary = wake_blocks[c]
+		var at = d.get("attach", null)
+		if at is Array and (at as Array).size() == 3: d["attach"] = [int(at[0]), int(at[1]) - 1, int(at[2])]
+		wake_blocks.erase(c); wake_blocks[dn] = d; moved += 1
+	return moved
 
 
 func _load_v020(data: Dictionary) -> void:

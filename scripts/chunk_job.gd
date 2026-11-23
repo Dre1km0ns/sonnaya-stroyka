@@ -134,6 +134,9 @@ func walk_height_at(wx: int, wz: int) -> int:
 func chunk_has_lake(coord: Vector2i) -> bool:
 	if _is_settlement(coord):
 		return false
+	# v0.22.1: у спавна (|x|, |z| ≤ 14 — четыре чанка вокруг 0,0) озёр нет: вода не лезет под лагерь.
+	if coord.x in [-1, 0] and coord.y in [-1, 0]:
+		return false
 	return maxi(absi(coord.x), absi(coord.y)) >= 1 and _chunk_hash(coord, 11) > 0.82
 
 func chunk_has_ruin(coord: Vector2i) -> bool:
@@ -826,7 +829,7 @@ func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
 	if lake_col and n.y == -2:
 		return BlockTex.faces_for("sand")
 	if n.y == -1:
-		return BlockTex.faces_for("ground", false, true)
+		return BlockTex.faces_for("dirt", false, true)
 	if n.y > -6:
 		return BlockTex.faces_for("dirt", false, false)
 	if n.y <= -18:

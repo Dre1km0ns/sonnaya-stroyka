@@ -98,7 +98,11 @@ func _physics_process(delta: float) -> void:
 	if GameState.ui_blocked():
 		input_dir = Vector2.ZERO
 	var direction := (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
-	var speed := (SPRINT if Input.is_action_pressed("sprint") else SPEED) * _move_factor()
+	# v0.22.1: стамина — в Яви бег 10 с, полное восстановление 20 с; во Сне бег без усталости.
+	var want_sprint := Input.is_action_pressed("sprint") and input_dir.length() > 0.1
+	var sprinting := want_sprint and (GameState.is_dream() or GameState.can_sprint())
+	if not GameState.is_dream(): GameState.tick_stamina(delta, sprinting)
+	var speed := (SPRINT if sprinting else SPEED) * _move_factor()
 
 	if flying:
 		var y_move := 0.0
