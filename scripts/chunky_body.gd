@@ -481,7 +481,7 @@ func _build_slim() -> void:
 		_build_lizard(body, suit, suit2, skin, eye, eye_e)
 		return
 	if look == "golem":
-		_build_golem(body, suit, suit2, skin, eye)
+		_build_cube_mother(body, suit, suit2, skin, eye)
 		return
 	var bulky := look == "brute"
 	var tw := 1.25 if bulky else (0.86 if look in ["skeleton", "imp"] else 1.0)
@@ -736,4 +736,32 @@ func _build_golem(body: Node3D, suit: Color, moss: Color, skin: Color, eye: Colo
 		_tb(hip, "Leg", Vector3(0.7, 1.1, 0.7), Vector3(0, -0.6, 0), "metal", suit.darkened(0.1))
 		_tb(hip, "Boot", Vector3(0.85, 0.32, 1.0), Vector3(0, -1.24, 0.08), "bone", skin.darkened(0.1))
 		rig["hip_r" if sd < 0 else "hip_l"] = hip
+	rig["hold"] = rig.fist_r
+
+
+func _build_cube_mother(body: Node3D, suit: Color, moss: Color, skin: Color, eye: Color) -> void:
+	## Мать блоков (t150u): снова один большой куб, как раньше, но с приглушёнными пиксельными текстурами:
+	## каменные грани, мох сверху, глаза и светящееся ядро на передней грани.
+	var lean := _part(body, "Lean", Vector3(0, 0, 0))
+	rig["lean"] = lean
+	spec["lean"] = 0.0
+	var c := 3.9
+	_tb(lean, "Cube", Vector3(c, c, c), Vector3(0, c * 0.5, 0), "bone", suit)
+	_tb(lean, "Moss", Vector3(c + 0.06, 0.35, c + 0.06), Vector3(0, c - 0.12, 0), "scale", moss)
+	for sd in [-1.0, 1.0]:
+		_tb(lean, "MossDrip", Vector3(0.5, 0.7, 0.08), Vector3(sd * 1.1, c - 0.6, c * 0.5 + 0.03), "scale", moss)
+		_tb(lean, "Eye", Vector3(0.6, 0.38, 0.08), Vector3(sd * 0.8, c * 0.68, c * 0.5 + 0.04), "skin", eye.darkened(0.25), Vector3.ZERO, 0.35)
+		_tb(lean, "Brow", Vector3(0.9, 0.18, 0.14), Vector3(sd * 0.8, c * 0.68 + 0.36, c * 0.5 + 0.06), "metal", suit.darkened(0.3), Vector3(0, 0, sd * 0.2))
+	_tb(lean, "Mouth", Vector3(1.6, 0.22, 0.08), Vector3(0, c * 0.4, c * 0.5 + 0.04), "skin", Color(0.08, 0.08, 0.08))
+	_tb(lean, "Core", Vector3(0.6, 0.6, 0.08), Vector3(0, c * 0.2, c * 0.5 + 0.04), "skin", eye.darkened(0.25), Vector3.ZERO, 0.35)
+	_tb(lean, "Crack", Vector3(0.1, 1.2, 0.06), Vector3(-1.3, c * 0.3, c * 0.5 + 0.035), "skin", suit.darkened(0.45))
+	var head := _part(lean, "Head", Vector3(0, c, 0))
+	rig["head"] = head
+	for sd in [1.0, -1.0]:
+		var right: bool = sd > 0.0
+		var sh := _part(lean, "ShoulderR" if right else "ShoulderL", Vector3(-sd * c * 0.5, c * 0.6, 0))
+		var el := _part(sh, "Elbow", Vector3.ZERO)
+		rig["sh_r" if right else "sh_l"] = sh
+		rig["el_r" if right else "el_l"] = el
+		rig["fist_r" if right else "fist_l"] = el
 	rig["hold"] = rig.fist_r

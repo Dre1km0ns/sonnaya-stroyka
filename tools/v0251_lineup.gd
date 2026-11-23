@@ -81,6 +81,16 @@ func _go() -> void:
 	cam.position = Vector3(-0.5, 2.4, 6); cam.look_at(Vector3(-2.5, 1.0, 0))
 	await _shot("50_anaconda_lizard")
 	A.visible = false; M.visible = false; L.visible = false; BL.visible = false
+	# t150u: Мать блоков снова куб — крупно и рядом с игроком
+	var M2: Node3D = Chunky.make("mother")
+	w.add_child(M2); M2.position = Vector3(0, 0, 0); M2.rotation.y = 0.35
+	var P2: Node3D = Chunky.make("player", {"h": 1.75})
+	w.add_child(P2); P2.position = Vector3(2.4, 0, 1.2); P2.rotation.y = -0.5
+	cam.fov = 40; cam.position = Vector3(1.6, 2.0, 8.5); cam.look_at(Vector3(0.9, 1.3, 0))
+	await _shot("51_mother_cube_player")
+	cam.position = Vector3(0.8, 1.9, 4.6); cam.look_at(Vector3(0, 1.5, 0))
+	await _shot("52_mother_cube_close")
+	M2.visible = false; P2.visible = false
 	# игроки в броне
 	for m in models: m.visible = false
 	var sets := [["wood_helmet", "wood_chest", "wood_legs", "wood_boots"], ["metal_helmet", "metal_chest", "metal_legs", "metal_boots"], ["scale_helmet", "scale_chest"], []]
