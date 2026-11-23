@@ -392,7 +392,7 @@ func _build_chunk_geometry(coord: Vector2i, lake_cells: Dictionary, solids: Dict
 	var st: Dictionary = BlockTex.new_stream()
 	var body: Array = []
 	var tint := 1.0 + 0.025 * float(posmod(coord.x * 3 + coord.y * 7, 5) - 2)
-	var base_col := Color(tint, tint, tint)
+	var base_col := Color(tint, tint, tint, 0.0 if is_dream_layer else 1.0)
 	var ground_tiles: Array = BlockTex.faces_for("ground", is_dream_layer, true)
 	var dirt_tiles: Array = BlockTex.faces_for("ground", is_dream_layer, false)
 	var bed_tiles: Array = BlockTex.faces_for("sand") if not is_dream_layer else dirt_tiles
@@ -440,7 +440,7 @@ func _build_chunk_geometry(coord: Vector2i, lake_cells: Dictionary, solids: Dict
 		var exposed := not (mask & (1 << 2))
 		var col := grass_tint(c.x,c.z) if (kind == "leaves" or (kind in ["dirt","hill","ground"] and exposed)) else Color(tint+noise,tint+noise,tint+noise)
 		var variant := int(_hash01(c.x * 3 + c.y, c.z * 5 - c.y * 2) * 9.0)
-		if is_dream_layer and not kind in ["dirt","hill","ground"]: col *= BlockTex.DREAM_TINT
+		if is_dream_layer and kind in ["dirt","hill","ground"]: col.a = 0.0 # v0.22.1: земля Сна — свои тайлы; остальное красит шейдер Сна
 		if kind == "hill" and c.y < height_at(c.x, c.z) - 2:
 			kind = "stone"
 		elif kind == "nest" or kind == "egg":

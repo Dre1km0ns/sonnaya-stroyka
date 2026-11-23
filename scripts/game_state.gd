@@ -4496,7 +4496,29 @@ func lower_floating_camp() -> int:
 		var at = d.get("attach", null)
 		if at is Array and (at as Array).size() == 3: d["attach"] = [int(at[0]), int(at[1]) - 1, int(at[2])]
 		wake_blocks.erase(c); wake_blocks[dn] = d; moved += 1
+	moved += _lower_dream_pad()
 	return moved
+
+
+func _lower_dream_pad() -> int:
+	## v0.22.1: стартовая площадка Сна 5×5 из дрейфа висела на y=1 — кладём её на землю (y=0), если под ней пусто.
+	var is_pad := func(c: Vector3i) -> bool:
+		return dream_blocks.has(c) and str(dream_blocks[c].get("kind", "")) == "drift" and not dream_blocks.has(c + Vector3i.DOWN)
+	for key in dream_blocks.keys():
+		var c: Vector3i = key
+		if c.y != 1: continue
+		var ok := true
+		for x in range(5):
+			for z in range(5):
+				if not is_pad.call(c + Vector3i(x, 0, z)): ok = false; break
+			if not ok: break
+		if not ok: continue
+		for x in range(5):
+			for z in range(5):
+				var p: Vector3i = c + Vector3i(x, 0, z)
+				dream_blocks[p + Vector3i.DOWN] = dream_blocks[p]; dream_blocks.erase(p)
+		return 25
+	return 0
 
 
 func _load_v020(data: Dictionary) -> void:

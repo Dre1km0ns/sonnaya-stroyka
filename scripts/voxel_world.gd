@@ -153,7 +153,7 @@ func _build_placed_chunk(ck: Vector2i) -> void:
 		# v0.16: во Сне блоки, уже стоящие в Яви тем же материалом, чуть золотятся — видно, что материализовано.
 		if is_dream_layer and tint == Color.WHITE and GameState.wake_blocks.has(c) and str(GameState.wake_blocks[c].get("kind","")) == str(d.get("kind","")): tint = ECHO_TINT
 		if mask==63: continue
-		if is_dream_layer and BlockTex.dream_tinted(kind): tint *= BlockTex.DREAM_TINT
+		if is_dream_layer and not BlockTex.dream_tinted(kind): tint.a = 0.0
 		var tkey := kind
 		if kind == "dirt":
 			# v0.22.1: одна «Земля» — сверху трава, если над ней пусто; под блоком — земля.
@@ -166,6 +166,7 @@ func _build_placed_chunk(ck: Vector2i) -> void:
 		BlockTex.emit_box(stream,Vector3(c)-base,Vector3.ONE,tint,mask,tiles)
 	var root := Node3D.new();root.position=base;root.name="Placed_%d_%d"%[ck.x,ck.y];add_child(root)
 	var mesh := MeshInstance3D.new();mesh.mesh=BlockTex.stream_to_mesh(stream);root.add_child(mesh)
+	if is_dream_layer: mesh.material_override = BlockTex.dream_material() # v0.22.1: все блоки Сна фиолетовые (дрейф уже фиолетовый — почти не меняется)
 	var body := StaticBody3D.new();body.collision_layer=4 if _active() else 0;body.collision_mask=0
 	body.set_meta("_saved_layer",4);body.set_meta("placed_chunk",ck);body.set_meta("is_dream",is_dream_layer);root.add_child(body)
 	# Merge contiguous horizontal solids into collision regions; no per-cube Node.
@@ -287,6 +288,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		var top := MeshInstance3D.new()
 		top.mesh = BlockTex.cube_mesh("workbench", Vector3(1.16, 0.14, 1.16))
 		top.position = Vector3(0, 0.50, 0)
+		if is_dream_layer: top.material_override = BlockTex.dream_material()
 		mi.add_child(top)
 
 	var body := StaticBody3D.new()

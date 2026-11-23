@@ -155,9 +155,15 @@ func enter_dream() -> void:
 	# Стартовая площадка сна у нуля — MVP-стройка; дальше бесконечные чанки.
 	if GameState.dream_blocks.is_empty():
 		GameState._dream_session_blocks = -1000 # v0.20: площадка не засчитывается в обучение «поставь 5 блоков»
+		var dcm: Node = null
+		for cm0 in get_tree().get_nodes_in_group("chunk_manager"):
+			if cm0.is_dream_layer and dream_root.is_ancestor_of(cm0): dcm = cm0
 		for x in range(-2, 3):
 			for z in range(-2, 3):
-				var c := Vector3i(floori(destination.x)+x,floori(destination.y)-2,floori(destination.z)+z)
+				# v0.22.1: площадка лежит на земле Сна, а не висит на блок выше
+				var gx := floori(destination.x)+x; var gz := floori(destination.z)+z
+				var gy := int(dcm.height_at(gx, gz)) if dcm != null and dcm.has_method("height_at") else 0
+				var c := Vector3i(gx,mini(gy,floori(destination.y)-2),gz)
 				GameState.place_dream_block(c, "drift")
 				dream_voxels.add_block(c, GameState.dream_blocks[c])
 		GameState._dream_session_blocks = 0 # площадка — подарок Сна, цель «построй 5 блоков» считает только свои

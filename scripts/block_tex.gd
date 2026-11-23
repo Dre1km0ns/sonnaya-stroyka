@@ -32,7 +32,7 @@ static func material() -> ShaderMaterial:
 
 
 ## v0.22.1: во Сне все блоки фиолетовые, как земля Сна.
-const DREAM_TINT := Color(0.74, 0.56, 1.0)
+const DREAM_TINT := Color(0.72, 0.5, 1.0)
 static var _dream_mat: ShaderMaterial = null
 
 
@@ -40,6 +40,7 @@ static func dream_material() -> ShaderMaterial:
 	if _dream_mat == null:
 		_dream_mat = material().duplicate() as ShaderMaterial
 		_dream_mat.set_shader_parameter("tint", Vector3(DREAM_TINT.r, DREAM_TINT.g, DREAM_TINT.b))
+		_dream_mat.set_shader_parameter("dream", 1.0)
 	return _dream_mat
 
 
@@ -176,7 +177,7 @@ static func emit_box(st: Dictionary, mn: Vector3, size: Vector3, col: Color, ski
 			continue
 		var n: Vector3 = _FACE_N[fi]
 		var shade: float = _FACE_SHADE[fi]
-		var cc := Color(col.r * shade, col.g * shade, col.b * shade, 1.0)
+		var cc := Color(col.r * shade, col.g * shade, col.b * shade, col.a)
 		var t := Vector2(float(tiles[fi]), 0.0)
 		for k in range(4):
 			var c: Vector3 = _FACE_C[fi * 4 + k]
