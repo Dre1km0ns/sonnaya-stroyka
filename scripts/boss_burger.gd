@@ -8,7 +8,6 @@ const _Vis := preload("res://scripts/enemy_visuals.gd")
 const BreakFx := preload("res://scripts/break_fx.gd")
 const CLOWN := preload("res://scripts/clown_bomb.gd")
 const STING := "res://assets/audio/burger_sting.ogg"
-const KENNEY := "res://assets/models/kenney_blocky/character-a.glb"
 
 enum S { SPAWN, HOVER, LASER_AIM, LASER_FIRE, SLAM_AIM, SLAM_FALL, SLAM_RECOVER, RAIN, SPAWN_CLOWNS, RECOMPOSE_OUT, RECOMPOSE_IN, STUNNED,
 	TRANSITION1, ANTON_IDLE, FIST_WIND, FIST_HIT, FIST_RECOVER, CALL, EAT_WALK, EAT_TELEGRAPH, EAT_RECOVER, JUMP, TRANSITION2, SHARDS, LEAVING, DEAD }
@@ -53,7 +52,7 @@ const ANTON_SPEED := 3.2
 const FIST_TELE := 0.7
 const FIST_GAP := 0.4
 const FIST_DMG := 28
-const FIST_RANGE := 3.4
+const FIST_RANGE := 4.3   # pt138u: Антон толстый — радиус тела 1.8, руки длинные
 const FIST_CD := 7.0
 const FIST_RECOVER := 1.8
 const CALL_TELE := 0.8
@@ -102,7 +101,6 @@ var _vuln_t := 0.0
 var _shard_t := 0.0
 var _saucer: Node3D
 var _anton: Node3D
-var _anton_ap: AnimationPlayer
 var _weak: Array = []
 var _regrow_t := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -246,32 +244,147 @@ func _build_saucer() -> void:
 
 
 func _build_anton() -> void:
+	## pt138u: Антон t2x2 — толстяк в духе Пуджа: огромное круглое пузо шире роста, маленькая голова
+	## утоплена в плечи, массивные руки (правая больше), короткие толстые ноги, сутулый. Клоунский костюм.
+	## Своя процедурная анимация (_tick_rig): дыхание, вразвалку, замах/удар правой и левой, прыжок.
 	_anton = Node3D.new(); _anton.name = "Anton"; add_child(_anton)
-	var packed: PackedScene = load(KENNEY)
-	var m: Node3D = packed.instantiate()
-	m.name = "Model"
-	_anton.add_child(m)
-	m.scale = Vector3.ONE * 2.6
-	m.rotation.y = PI
-	_anton_ap = m.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	# клоунский костюм: нос, колпак, жабо, рыжий парик
-	var nose := MeshInstance3D.new(); var ns := SphereMesh.new(); ns.radius = 0.22; ns.height = 0.44
-	nose.mesh = ns; nose.material_override = _mat(Color(1, 0.08, 0.1), 0.6); nose.position = Vector3(0, 2.05, -0.62)
-	_anton.add_child(nose)
-	var hat := MeshInstance3D.new(); var hc := CylinderMesh.new(); hc.top_radius = 0.0; hc.bottom_radius = 0.42; hc.height = 1.0
-	hat.mesh = hc; hat.material_override = _mat(Color(0.3, 0.5, 1.0)); hat.position = Vector3(0, 3.35, 0)
-	_anton.add_child(hat)
-	var pom := MeshInstance3D.new(); var ps := SphereMesh.new(); ps.radius = 0.16; ps.height = 0.32
-	pom.mesh = ps; pom.material_override = _mat(Color(1, 0.9, 0.2), 0.5); pom.position = Vector3(0, 3.9, 0)
-	_anton.add_child(pom)
-	for side in [-1.0, 1.0]:
-		var wig := MeshInstance3D.new(); var ws := SphereMesh.new(); ws.radius = 0.36; ws.height = 0.6
-		wig.mesh = ws; wig.material_override = _mat(Color(1.0, 0.45, 0.1)); wig.position = Vector3(side * 0.62, 2.6, 0.05)
-		_anton.add_child(wig)
-	var ruff := MeshInstance3D.new(); var rt := TorusMesh.new(); rt.inner_radius = 0.3; rt.outer_radius = 0.62
-	ruff.mesh = rt; ruff.material_override = _mat(Color(1, 1, 1)); ruff.position = Vector3(0, 1.55, 0)
-	_anton.add_child(ruff)
+	var suit := Color(1.0, 0.82, 0.2)      # жёлтый комбинезон
+	var suit2 := Color(0.95, 0.25, 0.35)   # красные заплаты
+	var skin := Color(0.93, 0.74, 0.6)
+	_rig["body"] = _part(_anton, "Body", Vector3(0, 0, 0))
+	var body: Node3D = _rig["body"]
+	var belly := _ball(body, "Belly", 1.55, Vector3(0, 2.0, 0.05), suit, Vector3(1.28, 1.0, 1.12))
+	_rig["belly"] = belly
+	# полосы и пуговицы-помпоны на пузе
+	var band := MeshInstance3D.new(); var bt := TorusMesh.new(); bt.inner_radius = 1.72; bt.outer_radius = 1.98
+	band.mesh = bt; band.material_override = _mat(suit2); band.position = Vector3(0, 1.75, 0.05); band.scale = Vector3(1.0, 1.4, 0.9)
+	body.add_child(band)
+	for i in 3:
+		_ball(body, "Button%d" % i, 0.2, Vector3(0, 2.75 - i * 0.55, 1.72 - absf(i - 1) * 0.12), [Color(0.3, 0.5, 1.0), Color(1, 1, 1), Color(0.2, 0.85, 0.4)][i])
+	for sd in [-1.0, 1.0]:
+		_ball(body, "Patch", 0.42, Vector3(sd * 1.25, 2.35, 1.0), suit2, Vector3(1, 1, 0.35))
+	# горб-плечи и голова, утопленная в них, наклонена вперёд
+	_ball(body, "Shoulders", 1.05, Vector3(0, 3.05, -0.1), suit, Vector3(2.2, 0.75, 1.1))
+	var head := _part(body, "Head", Vector3(0, 3.2, 0.75))
+	_rig["head"] = head
+	_ball(head, "Face", 0.5, Vector3(0, 0.15, 0), skin, Vector3(1.05, 0.95, 1.0))
+	var nose := _ball(head, "Nose", 0.2, Vector3(0, 0.12, 0.5), Color(1, 0.08, 0.1), Vector3.ONE, 0.6)
+	nose.name = "ClownNose"
+	for sd in [-1.0, 1.0]:
+		_ball(head, "Eye", 0.07, Vector3(sd * 0.2, 0.32, 0.44), Color(0.05, 0.05, 0.08))
+		_ball(head, "Wig", 0.3, Vector3(sd * 0.48, 0.3, -0.05), Color(1.0, 0.45, 0.1), Vector3(1, 0.85, 1))
+	_ball(head, "Mouth", 0.16, Vector3(0, -0.12, 0.45), Color(0.75, 0.05, 0.1), Vector3(1.8, 0.6, 0.6))
+	var hat := MeshInstance3D.new(); var hc := CylinderMesh.new(); hc.top_radius = 0.0; hc.bottom_radius = 0.32; hc.height = 0.8
+	hat.mesh = hc; hat.material_override = _mat(Color(0.3, 0.5, 1.0)); hat.position = Vector3(0, 0.95, -0.05); hat.rotation.x = -0.25
+	head.add_child(hat)
+	_ball(head, "Pom", 0.13, Vector3(0, 1.38, -0.15), Color(1, 0.9, 0.2), Vector3.ONE, 0.5)
+	var ruff := MeshInstance3D.new(); var rt := TorusMesh.new(); rt.inner_radius = 0.35; rt.outer_radius = 0.72
+	ruff.mesh = rt; ruff.material_override = _mat(Color(1, 1, 1)); ruff.position = Vector3(0, -0.3, -0.05); ruff.scale = Vector3(1, 0.6, 1)
+	head.add_child(ruff)
+	# руки: правая (с крюком-кулачищем) заметно больше левой
+	for sd in [1.0, -1.0]:
+		var big: bool = sd > 0.0
+		var k: float = 1.4 if big else 1.0
+		var sh := _part(body, "ShoulderR" if big else "ShoulderL", Vector3(-sd * 2.35, 2.95, 0.15))
+		var upper := _ball(sh, "Upper", 0.55 * k, Vector3(0, -0.55 * k, 0), suit, Vector3(1, 1.5, 1))
+		var elbow := _part(sh, "Elbow", Vector3(0, -1.15 * k, 0))
+		_ball(elbow, "Fore", 0.5 * k, Vector3(0, -0.45 * k, 0.1), skin, Vector3(1, 1.4, 1))
+		var fist := _ball(elbow, "Fist", 0.55 * k, Vector3(0, -1.0 * k, 0.15), skin, Vector3(1.1, 0.95, 1.1))
+		_ball(elbow, "Cuff", 0.52 * k, Vector3(0, -0.05, 0.05), suit2, Vector3(1.1, 0.4, 1.1))
+		_rig["sh_r" if big else "sh_l"] = sh
+		_rig["el_r" if big else "el_l"] = elbow
+		_rig["fist_r" if big else "fist_l"] = fist
+		upper.name = "UpperR" if big else "UpperL"
+	# короткие толстые ноги
+	for sd in [-1.0, 1.0]:
+		var hip := _part(_anton, "HipR" if sd < 0 else "HipL", Vector3(sd * 0.8, 0.95, 0))
+		_ball(hip, "Leg", 0.5, Vector3(0, -0.35, 0), suit2, Vector3(1, 1.1, 1))
+		_ball(hip, "Boot", 0.45, Vector3(0, -0.78, 0.2), Color(0.2, 0.15, 0.3), Vector3(1.1, 0.55, 1.5))
+		_rig["hip_r" if sd < 0 else "hip_l"] = hip
+	body.rotation.x = 0.18   # сутулость
 	_anton.visible = false
+
+
+var _rig: Dictionary = {}
+var _pose := "idle"
+var _pose_speed := 1.0
+var _pose_t := 0.0
+var _rig_t := 0.0
+var _punch_arm := "r"
+
+
+func _part(parent: Node3D, nm: String, pos: Vector3) -> Node3D:
+	var n := Node3D.new(); n.name = nm; n.position = pos
+	parent.add_child(n)
+	return n
+
+
+func _ball(parent: Node3D, nm: String, r: float, pos: Vector3, col: Color, sc: Vector3 = Vector3.ONE, emit: float = 0.0) -> MeshInstance3D:
+	var mi := MeshInstance3D.new(); mi.name = nm
+	var sm := SphereMesh.new(); sm.radius = r; sm.height = r * 2.0; sm.radial_segments = 20; sm.rings = 10
+	mi.mesh = sm; mi.material_override = _mat(col, emit); mi.position = pos; mi.scale = sc
+	parent.add_child(mi)
+	return mi
+
+
+func anton_size() -> Vector3:
+	## Габариты модели Антона (ширина с руками, рост без колпака, глубина) — для смоука и хитбокса.
+	return Vector3(2.0 * (2.35 + 0.55 * 1.4), 3.2 + 0.65, 1.55 * 1.12 * 2.0)
+
+
+func _tick_rig(delta: float) -> void:
+	if _rig.is_empty() or not _anton.visible:
+		return
+	_rig_t += delta
+	_pose_t += delta * _pose_speed
+	var t := _rig_t
+	var body: Node3D = _rig.body
+	var shr: Node3D = _rig.sh_r; var shl: Node3D = _rig.sh_l
+	var elr: Node3D = _rig.el_r; var ell: Node3D = _rig.el_l
+	var hr: Node3D = _rig.hip_r; var hl: Node3D = _rig.hip_l
+	var breathe := 1.0 + 0.035 * sin(t * 2.4)
+	(_rig.belly as Node3D).scale = Vector3(1.28 * (2.0 - breathe), 1.0 * breathe, 1.12)
+	var tgt := {"body_x": 0.18, "body_z": 0.0, "body_y": 0.0, "shr_x": 0.0, "shr_z": -0.25, "shl_x": 0.0, "shl_z": 0.25,
+		"elr": -0.35, "ell": -0.35, "hr": 0.0, "hl": 0.0}
+	match _pose:
+		"walk":
+			var w := sin(_pose_t * 7.0)
+			tgt.body_z = 0.13 * w            # вразвалку
+			tgt.body_y = absf(w) * 0.08
+			tgt.hr = 0.55 * w; tgt.hl = -0.55 * w
+			tgt.shr_x = -0.45 * w; tgt.shl_x = 0.45 * w
+		"wind":
+			# замах: рука поднята назад, корпус скручен
+			var arm := "shr_x" if _punch_arm == "r" else "shl_x"
+			tgt[arm] = 2.5   # вверх и назад
+			tgt["elr" if _punch_arm == "r" else "ell"] = -1.4
+			tgt.body_x = 0.05
+			tgt.body_z = 0.12 if _punch_arm == "r" else -0.12
+		"punch":
+			var k := clampf(_pose_t / 0.18, 0.0, 1.0)
+			var arm2 := "shr_x" if _punch_arm == "r" else "shl_x"
+			tgt[arm2] = lerpf(2.5, -1.35, k)   # рука выброшена вперёд-вниз
+			tgt["elr" if _punch_arm == "r" else "ell"] = lerpf(-1.4, -0.1, k)
+			tgt.body_x = lerpf(0.05, 0.42, k)
+			tgt.body_z = (-0.15 if _punch_arm == "r" else 0.15) * k
+		"jump":
+			tgt.shr_x = -2.6; tgt.shl_x = -2.6; tgt.shr_z = -0.7; tgt.shl_z = 0.7
+			tgt.hr = -0.7; tgt.hl = -0.7; tgt.body_x = -0.05
+		"pick-up":
+			tgt.shr_x = -1.3; tgt.shl_x = -1.3; tgt.elr = -0.9; tgt.ell = -0.9; tgt.body_x = 0.5
+		"emote-yes":
+			tgt.body_y = absf(sin(_pose_t * 9.0)) * 0.25
+			tgt.shr_z = -1.2; tgt.shl_z = 1.2
+		_:
+			tgt.shr_x = 0.08 * sin(t * 1.3); tgt.shl_x = -0.08 * sin(t * 1.3)
+	var a := clampf(delta * (22.0 if _pose == "punch" else 10.0), 0.0, 1.0)
+	body.rotation.x = lerpf(body.rotation.x, tgt.body_x, a)
+	body.rotation.z = lerpf(body.rotation.z, tgt.body_z, a)
+	body.position.y = lerpf(body.position.y, tgt.body_y, a)
+	shr.rotation.x = lerpf(shr.rotation.x, tgt.shr_x, a); shr.rotation.z = lerpf(shr.rotation.z, tgt.shr_z, a)
+	shl.rotation.x = lerpf(shl.rotation.x, tgt.shl_x, a); shl.rotation.z = lerpf(shl.rotation.z, tgt.shl_z, a)
+	elr.rotation.x = lerpf(elr.rotation.x, tgt.elr, a); ell.rotation.x = lerpf(ell.rotation.x, tgt.ell, a)
+	hr.rotation.x = lerpf(hr.rotation.x, tgt.hr, a); hl.rotation.x = lerpf(hl.rotation.x, tgt.hl, a)
 
 
 func _build_arena_ring() -> void:
@@ -289,9 +402,11 @@ func _build_arena_ring() -> void:
 
 
 func _anim(clip: String, speed: float = 1.0) -> void:
-	if _anton_ap and _anton_ap.has_animation(clip):
-		if _anton_ap.current_animation != clip:
-			_anton_ap.play(clip, 0.15, speed)
+	if clip == "attack-melee-right": clip = "punch"
+	if clip != _pose or clip == "punch":
+		_pose = clip
+		_pose_t = 0.0
+	_pose_speed = speed
 
 
 # ------------------------------------------------------------------ урон
@@ -774,10 +889,10 @@ func _drop_anton() -> void:
 	velocity = Vector3.ZERO
 	var col := get_node_or_null("Col") as CollisionShape3D
 	if col:
-		var sh := CapsuleShape3D.new(); sh.radius = 0.9; sh.height = 3.6
+		var sh := CapsuleShape3D.new(); sh.radius = 1.8; sh.height = 3.9   # pt138u: пузо шире роста
 		col.shape = sh
-		col.position = Vector3(0, 1.8, 0)
-	hit_radius = 1.0
+		col.position = Vector3(0, 1.95, 0)
+	hit_radius = 2.0
 	collision_mask = 1
 	_vuln_t = 2.0
 	_enter(S.ANTON_IDLE)
@@ -793,6 +908,7 @@ func _start_transition2() -> void:
 
 
 func _phase2(delta: float) -> void:
+	_tick_rig(delta)
 	var p := _tp()
 	var flat := Vector3(p.x - global_position.x, 0, p.z - global_position.z)
 	var dist := flat.length()
@@ -803,7 +919,7 @@ func _phase2(delta: float) -> void:
 	var move := Vector3.ZERO
 	match state:
 		S.ANTON_IDLE:
-			if dist > 2.6:
+			if dist > 3.6:
 				move = flat.normalized() * _speed()
 				_anim("walk", 1.2)
 			else:
@@ -813,7 +929,8 @@ func _phase2(delta: float) -> void:
 				_choose2(dist)
 		S.FIST_WIND:
 			_face(flat, delta)
-			_anim("idle")
+			_punch_arm = "r"
+			_anim("wind")
 			_anton.position.z = 0.25 * sin(_t * 20.0) * 0.2
 			if _t >= FIST_TELE:
 				_fist_hit()
@@ -966,13 +1083,13 @@ func _eat_interrupted() -> void:
 
 
 func _fist_hit() -> void:
+	_punch_arm = "r" if _fist_hits == 0 else "l"   # комбо: правой кулачищем, затем левой
 	_anim("attack-melee-right", 1.6)
-	if _anton_ap: _anton_ap.seek(0.0, true)
 	var fwd := Vector3(sin(rotation.y), 0, cos(rotation.y))
 	for pl in CU.players(get_tree()):
 		var to := (pl as Node3D).global_position - global_position
 		to.y = 0
-		if to.length() <= FIST_RANGE and (to.length() < 1.2 or to.normalized().dot(fwd) > 0.3):
+		if to.length() <= FIST_RANGE and (to.length() < 2.0 or to.normalized().dot(fwd) > 0.3):
 			CU.hurt(pl, FIST_DMG, "Антон t2x2: кулак", global_position)
 			CU.push(pl, to.normalized() * 6.0 + Vector3(0, 3, 0))
 
@@ -995,7 +1112,7 @@ func _land_jump() -> void:
 	var at := global_position
 	for pl in CU.players(get_tree()):
 		var d := (pl as Node3D).global_position.distance_to(at)
-		if d < 3.0:
+		if d < 3.8:
 			CU.hurt(pl, JUMP_DMG, "Антон t2x2: прыжок", at)
 	_spawn_wave(at)
 	velocity.x = 0

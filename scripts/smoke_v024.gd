@@ -153,6 +153,16 @@ func _burger(scene: Node, ppos: Vector3) -> void:
 	_a(boss.hp == int(round(boss.max_hp * 0.66)) and boss.state == boss.S.TRANSITION1, 24032)
 	boss._drop_anton()
 	_a(boss.phase == 2 and boss.boss_title() == "Антон t2x2", 24033)
+	# pt138u: Антон-толстяк — шире, чем выше; без таблички; капсула и хитбокс под пузо; удар правой, затем левой
+	var asz: Vector3 = boss.anton_size()
+	var acol := boss.get_node("Col") as CollisionShape3D
+	var no_tag := true
+	for n in boss.find_children("*", "Label3D", true, false): no_tag = false
+	_a(asz.x > asz.y and (acol.shape as CapsuleShape3D).radius >= 1.7 and boss.hit_radius >= 2.0 and no_tag and boss.FIST_RANGE >= 4.0, 24140)
+	boss._fist_hits = 0; boss._fist_hit()
+	var arm1: String = boss._punch_arm
+	boss._fist_hits = 1; boss._fist_hit()
+	_a(arm1 == "r" and boss._punch_arm == "l" and boss._pose == "punch", 24141)
 	boss._enter(boss.S.ANTON_IDLE)
 	boss.take_damage(99999)
 	_a(boss.hp == int(round(boss.max_hp * 0.33)) and boss.state == boss.S.TRANSITION2, 24034)

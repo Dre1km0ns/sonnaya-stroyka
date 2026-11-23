@@ -99,7 +99,26 @@ func _burger(at: Vector3) -> void:
 	boss.look_at(Vector3(at.x, boss.global_position.y, at.z), Vector3.UP, true)
 	boss.frozen = true
 	_look(at, PI, 0.12); await _wait(10)
+	for i in 40:
+		boss._tick_rig(1.0 / 60.0); await process_frame
 	await _shot("12_anton_phase2.png")
+	# замах и удар правым кулачищем, вид сбоку
+	var ap: Vector3 = boss.global_position
+	boss.rotation.y = 0.0
+	_look(Vector3(ap.x - 13.0, at.y, ap.z), -PI / 2, 0.12)
+	boss._punch_arm = "r"; boss._anim("wind")
+	for i in 30:
+		boss._tick_rig(1.0 / 60.0); await process_frame
+	await _shot("12b_anton_wind.png")
+	boss._anim("attack-melee-right")
+	for i in 9:
+		boss._tick_rig(1.0 / 60.0); await process_frame
+	await _shot("12c_anton_punch.png")
+	boss._anim("idle")
+	boss.rotation.y = PI   # снова лицом к камере
+	for i in 30:
+		boss._tick_rig(1.0 / 60.0); await process_frame
+	_look(at, PI, 0.12)
 	boss._spawn_clowns(2); await _wait(20)
 	var k := 0
 	for c in get_nodes_in_group("burger_clown"):
