@@ -152,7 +152,7 @@ func _ready() -> void:
 	add_to_group("boss")
 	collision_layer = 16
 	collision_mask = 1 | 4
-	_Vis.attach_model(self, MODEL_PATH, MODEL_HEIGHT)
+	_Vis.attach_chunky(self, "mother")   # v0.25.1 (t148u): каменный голем из блоков
 	_Vis.attach_hp_bar(self, MODEL_HEIGHT + 0.4)
 	var hpbar := get_node_or_null("HPBar") as Node3D
 	if hpbar:

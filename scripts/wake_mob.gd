@@ -96,7 +96,7 @@ func _box(tile: String, size: Vector3, pos: Vector3, tint: Color = Color(1, 1, 1
 
 
 func _build() -> void:
-	## v0.25: «толстый» стиль Антона (chunky_body), рост как у старых мобов; воришка ниже.
+	## v0.25: своя стройная модель (chunky_body, v0.25.1), рост как у старых мобов; воришка ниже.
 	_model = load("res://scripts/chunky_body.gd").make(kind)
 	add_child(_model)
 	set_meta("chunky", kind)

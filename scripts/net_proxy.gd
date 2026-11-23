@@ -1,7 +1,7 @@
 extends Node3D
 ## v0.24/v0.25: моб или босс хоста у клиента. Позиция, здоровье, поза и номер атаки приходят от хоста;
 ## удары меча и стрелы клиента по нему уходят хосту (NetSession.send_hit). Сам ничего не решает.
-## v0.25: настоящие модели — «толстые» мобы по пресету chunky_body, Мать — её модель, Анаконда — голова
+## v0.25: настоящие модели — мобы (у каждого своя модель v0.25.1) по пресету chunky_body, Мать — её модель, Анаконда — голова
 ## и сегменты по точкам хоста, Бургер — тарелка (фаза 1) или Антон (фазы 2–3).
 const _Vis := preload("res://scripts/enemy_visuals.gd")
 const Chunky := preload("res://scripts/chunky_body.gd")
@@ -36,7 +36,7 @@ func _ready() -> void:
 func _build() -> void:
 	match kind:
 		"block_mother":
-			_model = _Vis.attach_model(self, "res://assets/models/greenblob.glb", 3.2)
+			_model = _Vis.attach_chunky(self, "mother")
 		"boss_anaconda":
 			var a: Node3D = load("res://scripts/boss_anaconda.gd").new()
 			a.call("_build_body")

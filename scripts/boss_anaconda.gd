@@ -170,36 +170,62 @@ func _on_world(is_dream: bool) -> void:
 	visible = not is_dream
 
 
+func _amat(col: Color, kind: String = "scale", emit: float = 0.0) -> StandardMaterial3D:
+	## v0.25.1: приглушённые пиксельные текстуры в стиле мобов (chunky_body.pixel_tex).
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = load("res://scripts/chunky_body.gd").pixel_tex(kind, col)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	m.uv1_triplanar = true; m.uv1_scale = Vector3.ONE * 2.6; m.roughness = 0.85
+	if emit > 0.0:
+		m.emission_enabled = true; m.emission = col; m.emission_energy_multiplier = emit
+	return m
+
+
+func _abox(parent: Node3D, nm: String, size: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new(); mi.name = nm
+	var bm := BoxMesh.new(); bm.size = size
+	mi.mesh = bm; mi.material_override = mat; mi.position = pos; mi.rotation = rot
+	parent.add_child(mi)
+	return mi
+
+
+const SCALE_A := Color(0.3, 0.38, 0.24)
+const SCALE_B := Color(0.25, 0.31, 0.2)
+const BELLY := Color(0.58, 0.55, 0.4)
+
+
 func _build_body() -> void:
+	## v0.25.1 (t148u): голова с челюстями, клыками и глазами; сегменты с брюшными пластинами и гребнем.
 	_head = Node3D.new()
 	_head.name = "Head"
 	add_child(_head)
-	var hm := MeshInstance3D.new()
-	hm.name = "Mesh"
-	hm.mesh = BlockTex.cube_mesh("scale_head", Vector3(HEAD_SIZE, HEAD_SIZE * 0.85, HEAD_SIZE * 1.25))
-	_head.add_child(hm)
-	for side in [-1.0, 1.0]:
-		var eye := MeshInstance3D.new()
-		var em := BoxMesh.new()
-		em.size = Vector3(0.18, 0.14, 0.06)
-		eye.mesh = em
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(1.0, 0.6, 0.15)
-		mat.emission_enabled = true
-		mat.emission = Color(1.0, 0.45, 0.1)
-		mat.emission_energy_multiplier = 2.2
-		eye.material_override = mat
-		eye.position = Vector3(side * 0.32, 0.18, -HEAD_SIZE * 0.63)
-		_head.add_child(eye)
+	var hs := HEAD_SIZE
+	var top := _amat(SCALE_A)
+	var hm := _abox(_head, "Mesh", Vector3(hs, hs * 0.5, hs * 1.3), Vector3(0, hs * 0.12, 0), top)
+	_abox(_head, "Jaw", Vector3(hs * 0.9, hs * 0.22, hs * 1.15), Vector3(0, -hs * 0.26, -hs * 0.05), _amat(BELLY), Vector3(-0.12, 0, 0))
+	_abox(_head, "Mouth", Vector3(hs * 0.84, hs * 0.08, hs * 1.0), Vector3(0, -hs * 0.12, -hs * 0.12), _amat(Color(0.25, 0.08, 0.08), "skin"))
+	var fang := _amat(Color(0.85, 0.82, 0.72), "bone")
+	for sd in [-1.0, 1.0]:
+		_abox(_head, "Fang", Vector3(0.15, 0.45, 0.15), Vector3(sd * hs * 0.3, -hs * 0.22, -hs * 0.58), fang)
+		_abox(_head, "Fang2", Vector3(0.07, 0.2, 0.07), Vector3(sd * hs * 0.4, -hs * 0.15, -hs * 0.4), fang)
+		_abox(_head, "Brow", Vector3(hs * 0.32, 0.12, hs * 0.3), Vector3(sd * hs * 0.3, hs * 0.42, -hs * 0.35), _amat(SCALE_B), Vector3(0, 0, sd * 0.25))
+		_abox(_head, "Eye", Vector3(0.2, 0.16, 0.08), Vector3(sd * 0.32, hs * 0.28, -hs * 0.65), _amat(Color(1.0, 0.55, 0.15), "skin", 2.2))
+	hm.set_meta("anaconda_head", true)
+	_abox(_head, "Crest", Vector3(0.12, 0.3, hs * 0.9), Vector3(0, hs * 0.5, hs * 0.1), _amat(SCALE_B))
 	_Vis.attach_hp_bar(_head, HEAD_SIZE + 0.4)
 	var bar := _head.get_node_or_null("HPBar") as Node3D
 	if bar:
 		bar.scale = Vector3(2.0, 2.0, 2.0)
+	var ma := _amat(SCALE_A); var mb := _amat(SCALE_B); var mbel := _amat(BELLY); var msp := _amat(Color(0.2, 0.22, 0.16))
 	for i in range(1, SEGMENTS):
 		var k := 1.0 - float(i) / float(SEGMENTS) * 0.45
 		var seg := MeshInstance3D.new()
 		seg.name = "Seg%d" % i
-		seg.mesh = BlockTex.cube_mesh("scale", Vector3(1.15, 1.0, 1.15) * k, false, Color(1, 1, 1) if i % 2 == 0 else Color(0.86, 0.9, 0.8))
+		var bm := BoxMesh.new(); bm.size = Vector3(1.15, 1.0, 1.15) * k
+		seg.mesh = bm; seg.material_override = ma if i % 2 == 0 else mb
+		_abox(seg, "Belly", Vector3(0.9, 0.12, 1.0) * k, Vector3(0, -0.47 * k, 0), mbel)
+		if i % 2 == 1:
+			_abox(seg, "Spike", Vector3(0.14, 0.32, 0.5) * k, Vector3(0, 0.6 * k, 0), msp)
 		add_child(seg)
 		_segs.append(seg)
 

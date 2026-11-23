@@ -62,7 +62,7 @@ func _part(kind: String, size: Vector3, pos: Vector3, tint: Color = Color(1, 1, 
 
 
 func _build() -> void:
-	## v0.25: ящерка в «толстом» стиле Антона (chunky_body); поворачивает её enemy_navigation.face_dir.
+	## v0.25: ящерка своя модель на четырёх лапах (v0.25.1) (chunky_body); поворачивает её enemy_navigation.face_dir.
 	var m: Node3D = load("res://scripts/chunky_body.gd").make("lizard")
 	add_child(m)
 	_model_v25 = m

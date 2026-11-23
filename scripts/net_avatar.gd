@@ -1,10 +1,10 @@
 extends Node3D
-## v0.24/v0.25: другой игрок в сетевой игре. v0.25 (t143u): «толстая» модель в стиле мобов (chunky_body,
+## v0.24/v0.25: другой игрок в сетевой игре. v0.25 (t143u): стройный человечек v0.25.1 (chunky_body,
 ## пресет player) ростом 1,75 м — глаза на уровне камеры игрока; видно предмет в руке, удар, установку блока,
 ## выстрел из лука и надетую броню. Табличка с именем и HP. Группа remote_player: мобы хоста видят его как цель.
 const Chunky := preload("res://scripts/chunky_body.gd")
 const BlockTex := preload("res://scripts/block_tex.gd")
-const SUITS := [Color(0.3, 0.5, 0.85), Color(0.85, 0.35, 0.3), Color(0.35, 0.75, 0.4), Color(0.8, 0.65, 0.25)]
+const SUITS := [Color(0.3, 0.4, 0.55), Color(0.55, 0.28, 0.24), Color(0.3, 0.45, 0.3), Color(0.55, 0.47, 0.25)]   # v0.25.1: приглушённые рубашки
 const HEIGHT := 1.75
 var peer_id := 0
 var display_name := "Игрок"
