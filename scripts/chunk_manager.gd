@@ -208,7 +208,7 @@ func terrain_kind_at(cell: Vector3i) -> String:
 		if ek != "":
 			return "" if is_cell_removed(cell.x, cell.y, cell.z) else ek
 		if _ug_solid(cell):
-			return depth_kind(cell.y)
+			return Ore.kind_at(cell, _seed, depth_kind(cell.y))
 		return ""
 	if cell.y == -1 and _loaded.has(coord) and not is_world_in_lake(Vector3(cell.x + 0.5, 0, cell.z + 0.5)):
 		if not is_cell_removed(cell.x, -1, cell.z):
@@ -243,7 +243,7 @@ func mine_terrain_at(cell: Vector3i, kind: String = "") -> bool:
 			return false
 		if k == "":
 			if cell.y < 0:
-				k = depth_kind(cell.y)
+				k = Ore.kind_at(cell, _seed, depth_kind(cell.y))
 			elif height_at(cell.x, cell.z) > cell.y:
 				k = "dirt"
 			else:
@@ -672,7 +672,11 @@ func ruin_plan(coord: Vector2i) -> Array:
 		# Крупная форма выпадает гораздо реже маленькой.
 		var roll := rng.randf()
 		var w := 10 if roll > 0.96 else (7 if roll > 0.80 else rng.randi_range(4, 5))
-		out.append({"x": rng.randi_range(1, 15-w), "z": 2, "w": w, "d": rng.randi_range(4, mini(w+1, 10)), "h": 6 if roll > 0.96 else rng.randi_range(2, 4), "shape": rng.randi_range(0, 2)})
+		if roll > 0.68 and roll <= 0.80:
+			# v0.24 (п.14): башня — узкая и высокая, с двумя перекрытиями.
+			out.append({"x": rng.randi_range(3, 10), "z": 3, "w": 4, "d": 4, "h": rng.randi_range(7, 9), "shape": 3})
+		else:
+			out.append({"x": rng.randi_range(1, 15-w), "z": 2, "w": w, "d": rng.randi_range(4, mini(w+1, 10)), "h": 6 if roll > 0.96 else rng.randi_range(2, 4), "shape": rng.randi_range(0, 2)})
 	return out
 
 func _plan_ruin(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> void:
@@ -690,7 +694,7 @@ func _plan_ruin(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> vo
 				occupied[Vector2i(lx,lz)] = "door" if door else ("wall" if wall else "ruin_floor")
 				for y in range(int(house.h)):
 					var c := wp + Vector3i(0,y,0)
-					var floor2 := y == 3 and int(house.h) > 4 and not (lx == ox+1 and lz == oz+1)
+					var floor2 := (y == 3 or (int(house.shape) == 3 and y == 6)) and int(house.h) > 4 and not (lx == ox+1 and lz == oz+1)
 					if not wall and not floor2:
 						continue
 					if door and y < 2:
@@ -740,6 +744,13 @@ func tree_plan(coord: Vector2i) -> Array:
 	var out: Array = []
 	var density := (_value_noise(float(coord.x) * 0.31 + 100.0, float(coord.y) * 0.31 - 50.0) + 1.0) * 0.5
 	var tries := 2 + int(density * 7.0)
+	# v0.24 (п.14): крупные области — густые рощи с высокими деревьями и голые поляны.
+	var fk := forest_kind(coord)
+	var spacing := 5
+	if fk == "grove":
+		density = maxf(density, 0.92); tries = 14; spacing = 4
+	elif fk == "clearing":
+		density = 0.0; tries = 1
 	for i in range(tries):
 		var lx := 3 + int(_hash01(coord.x * 71 + i * 13, coord.y * 37 - i * 7) * 10.0)
 		var lz := 3 + int(_hash01(coord.x * 19 - i * 5, coord.y * 83 + i * 29) * 10.0)
@@ -751,14 +762,26 @@ func tree_plan(coord: Vector2i) -> Array:
 		var ok := true
 		for t in out:
 			var b: Vector2i = t["base"]
-			if absi(b.x - lx) < 5 and absi(b.y - lz) < 5:
+			if absi(b.x - lx) < spacing and absi(b.y - lz) < spacing:
 				ok = false
 				break
 		if not ok:
 			continue
 		var h := 4 + (1 if _hash01(coord.x + i * 3, coord.y * 2 + i) > 0.55 else 0)
+		if fk == "grove":
+			h = 5 + int(_hash01(coord.x * 5 + i, coord.y * 3 - i) * 3.0)
 		out.append({"base": Vector2i(lx, lz), "h": h, "salt": i})
 	return out
+
+
+func forest_kind(coord: Vector2i) -> String:
+	## v0.24: «grove» — густая роща, «clearing» — поляна, «" — обычный лес. У спавна всегда обычный.
+	if is_dream_layer or maxi(absi(coord.x), absi(coord.y)) < 2:
+		return ""
+	var region := (_value_noise(float(coord.x) * 0.11 + 300.0, float(coord.y) * 0.11 - 200.0) + 1.0) * 0.5
+	if region > 0.68: return "grove"
+	if region < 0.24: return "clearing"
+	return ""
 
 
 func _plan_trees(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> void:
@@ -1365,6 +1388,7 @@ var _carve_cache: Dictionary = {}     # Vector2i -> Dictionary{Vector3i: true}
 var _nest_cache: Dictionary = {}      # Vector2i -> Dictionary{Vector3i: "nest"/"egg"}
 
 
+const Ore := preload("res://scripts/ore_rules.gd")
 static func depth_kind(y: int) -> String:
 	if y <= BEDROCK_Y:
 		return "bedrock"
@@ -1407,13 +1431,22 @@ func cave_systems_from(src: Vector2i) -> Array:
 func _gen_systems_for(src: Vector2i) -> Array:
 	var out: Array = []
 	var blocked := chunk_has_lake(src) or chunk_has_ruin(src)
-	if not blocked and _chunk_hash(src, 41) > CAVE_ENTRANCE_THRESHOLD:
-		out.append(_gen_worm(src, true, _chunk_hash(src, 43) < CAVE_NEST_CHANCE))
-	elif _chunk_hash(src, 53) > CAVE_DEEP_THRESHOLD:
+	var rich := cave_rich(src)   # v0.24 (п.14): пещерные края — входов и залов заметно больше
+	var bonus := 0.12 if rich else 0.0
+	if not blocked and _chunk_hash(src, 41) > CAVE_ENTRANCE_THRESHOLD - bonus:
+		# гнёзда — только у «обычных» входов: частота Матери прежняя
+		out.append(_gen_worm(src, true, _chunk_hash(src, 41) > CAVE_ENTRANCE_THRESHOLD and _chunk_hash(src, 43) < CAVE_NEST_CHANCE))
+	elif _chunk_hash(src, 53) > CAVE_DEEP_THRESHOLD - bonus:
 		out.append(_gen_worm(src, false, false))
 	if _chunk_hash(src, 47) > DOME_THRESHOLD:
 		out.append(_gen_dome(src))
 	return out
+
+
+func cave_rich(src: Vector2i) -> bool:
+	if maxi(absi(src.x), absi(src.y)) < 3:
+		return false
+	return (_value_noise(float(src.x) * 0.09 - 410.0, float(src.y) * 0.09 + 170.0) + 1.0) * 0.5 > 0.66
 
 
 func _gen_worm(src: Vector2i, entrance: bool, with_nest: bool) -> Dictionary:
@@ -1655,6 +1688,8 @@ func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
 		return BlockTex.faces_for("ground", false, true)
 	if n.y > -6:
 		return BlockTex.faces_for("dirt", false, false)
+	if n.y <= Ore.ORE_TOP and Ore.is_ore(n, _seed):
+		return BlockTex.faces_for("metal_ore")  # v0.24
 	if n.y <= -18:
 		return BlockTex.faces_for("deep_stone")
 	return BlockTex.faces_for("stone")
@@ -2341,7 +2376,7 @@ func transfer_natural(cells:Array)->Dictionary:
 			ready=false;requested[ck]=true;continue
 		if GameState.is_terrain_removed(c): kinds[c]="";continue
 		if cache.solids.has(c): kinds[c]=cache.solids[c]
-		elif c.y<0 and c.y>=BEDROCK_Y: kinds[c]="" if cache.air.has(c) else depth_kind(c.y)
+		elif c.y<0 and c.y>=BEDROCK_Y: kinds[c]="" if cache.air.has(c) else Ore.kind_at(c, _seed, depth_kind(c.y))
 		else: kinds[c]=""
 	for ck in requested:
 		if _transfer_queries.size()>=MAX_CHUNK_JOBS: break

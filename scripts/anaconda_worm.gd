@@ -65,7 +65,7 @@ func _physics_process(delta: float) -> void:
 	if _life > LIFETIME:
 		crumble()
 		return
-	var player := get_tree().get_first_node_in_group("player") as Node3D
+	var player := preload("res://scripts/combat_util.gd").nearest_player(get_tree(), global_position)
 	if player == null:
 		return
 	var head := _segs[0]
@@ -89,7 +89,7 @@ func _physics_process(delta: float) -> void:
 		_segs[i].global_position = _trail[mini(_trail.size() - 1, i * 4)]
 	if to.length() < 0.9 and _cd <= 0.0:
 		_cd = BITE_CD
-		GameState.damage_player(BITE, "Землеройка")
+		preload("res://scripts/combat_util.gd").hurt(player, BITE, "Землеройка")
 	# Свет убивает.
 	var lit := false
 	for c in GameState.wake_blocks.keys():

@@ -18,6 +18,7 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
+	call_deferred("_wire_victory")
 	if _want_perf():
 		wake_chunks.legacy_generation = "--legacy-generation" in OS.get_cmdline_user_args()
 		dream_chunks.legacy_generation = wake_chunks.legacy_generation
@@ -55,7 +56,9 @@ func _ready() -> void:
 			wake_chunks.setup(player, GameState.world_seed_wake)
 		if dream_chunks and dream_chunks.has_method("setup"):
 			dream_chunks.setup(player, GameState.world_seed_dream)
-		if not _want_shots() and not _want_shots05() and not _want_shots06() and not _want_shots07() and not _want_shots08() and not _want_shots09() and not _want_inventory_mockup():
+		if NetSession.is_client():
+			pass   # v0.24: лагерь уже есть в мире хоста
+		elif not _want_shots() and not _want_shots05() and not _want_shots06() and not _want_shots07() and not _want_shots08() and not _want_shots09() and not _want_inventory_mockup():
 			_build_starter_camp()
 	var day_script: GDScript = load("res://scripts/day_cycle.gd")
 	var day: Node = day_script.new()
@@ -107,11 +110,11 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 		var gsx := get_node_or_null("/root/GameSettings")
-		if (gsx == null or bool(gsx.get("dream_start"))) and not has_meta("smoke") and not _want_perf():
+		if (gsx == null or bool(gsx.get("dream_start"))) and not has_meta("smoke") and not _want_perf() and not NetSession.active() and not NetSession.want_host:
 			start_in_dream()
 	GameState.inventory_changed.emit()
 	# v0.22: летающая надпись над стартовым лагерем убрана совсем
-	print("Сонная стройка v0.22 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.24 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func start_in_dream() -> void:
@@ -170,6 +173,12 @@ func respawn() -> void:
 	player.global_position = GameState.spawn_point
 	player.velocity = Vector3.ZERO
 	GameState.heal_player_full()
+
+
+func _wire_victory() -> void:
+	var hud := get_node_or_null("HUD")
+	if hud and "victory_screen" in hud and hud.victory_screen and not hud.victory_screen.exit_pressed.is_connected(exit_world):
+		hud.victory_screen.exit_pressed.connect(exit_world)
 
 
 func exit_world() -> void:
@@ -248,6 +257,18 @@ func _start_music() -> void:
 	var mc: Node = script.new()
 	mc.name = "MusicController"
 	add_child(mc)
+	if not has_node("Weather"):
+		var w: Node = load("res://scripts/weather.gd").new()
+		w.name = "Weather"
+		add_child(w)
+	if not has_node("Milestones"):
+		var ms: Node = load("res://scripts/progress_store.gd").new()
+		ms.name = "Milestones"
+		add_child(ms)
+	if not has_node("DreamLife"):
+		var dl: Node = load("res://scripts/dream_life.gd").new()
+		dl.name = "DreamLife"
+		add_child(dl)
 
 
 func _want_shots() -> bool:

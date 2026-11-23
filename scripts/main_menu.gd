@@ -22,6 +22,8 @@ var _name_edit: LineEdit
 var _seed_edit: LineEdit
 var _tutorial: CheckButton
 var _peaceful: CheckButton
+var _difficulty: OptionButton
+var _diff_info: Label
 var _seed_info: Label
 var _env: Environment
 var _settings: Control = null
@@ -157,10 +159,12 @@ func _build_ui() -> void:
 	_screens["worlds"] = _build_worlds_screen()
 	_screens["create"] = _build_create_screen()
 	_screens["howto"] = _build_howto_screen()
+	_screens["join"] = _build_join_screen()
+	_screens["progress"] = _build_progress_screen()
 	for k in _screens.keys():
 		_ui.add_child(_screens[k])
 	var ver := Label.new()
-	ver.text = "Сонная стройка v0.23 · Godot 4.7"
+	ver.text = "Сонная стройка v0.24 · Godot 4.7"
 	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	ver.offset_left = 14
 	ver.offset_top = -32
@@ -201,6 +205,11 @@ func _build_main_screen() -> Control:
 	spacer.custom_minimum_size = Vector2(0, 50)
 	box.add_child(spacer)
 	_main_btn(box, "Играть", _on_play)
+	_main_btn(box, "Создать сетевую игру", _on_host_game)
+	_main_btn(box, "Подключиться", func() -> void: _show("join"))
+	_main_btn(box, "Прогресс", func() -> void:
+		_refresh_progress()
+		_show("progress"))
 	_main_btn(box, "Как играть", func() -> void: _show("howto"))
 	_main_btn(box, "Настройки", _open_settings)
 	_main_btn(box, "Выход", func() -> void: GameSettings.safe_quit(0))
@@ -346,6 +355,20 @@ func _build_create_screen() -> Control:
 	_peaceful = CheckButton.new()
 	_peaceful.text = "Мирный режим — без врагов"
 	box.add_child(_peaceful)
+	# v0.24: сложность выбирается при создании и хранится в мире.
+	var drow := HBoxContainer.new(); drow.add_theme_constant_override("separation", 10)
+	var dl := Label.new(); dl.text = "Сложность:"; drow.add_child(dl)
+	_difficulty = OptionButton.new(); _difficulty.name = "Difficulty"
+	_difficulty.add_item("Нормальный", 0); _difficulty.add_item("Эксперт", 1)
+	_difficulty.item_selected.connect(func(_i: int) -> void: _update_diff_info())
+	drow.add_child(_difficulty)
+	box.add_child(drow)
+	_diff_info = Label.new()
+	_diff_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_diff_info.add_theme_font_size_override("font_size", 14)
+	_diff_info.add_theme_color_override("font_color", Color(0.78, 0.78, 0.86))
+	box.add_child(_diff_info)
+	_update_diff_info()
 	_tutorial = CheckButton.new()
 	_tutorial.text = "Пройти обучение во Сне — 7 шагов, около 3 минут"
 	_tutorial.button_pressed = true
@@ -398,6 +421,8 @@ func _show(screen: String) -> void:
 		_name_edit.text = _unique_default_name()
 		_seed_edit.text = ""
 		_peaceful.button_pressed = false
+		_difficulty.select(0)
+		_update_diff_info()
 		_update_seed_info()
 		_name_edit.grab_focus()
 
@@ -426,6 +451,8 @@ func _refresh_worlds() -> void:
 			tags += " · DEV ∞"
 		if bool(w.get("peaceful", false)):
 			tags += " · мирный"
+		if str(w.get("difficulty", "normal")) == "expert":
+			tags += " · эксперт"
 		_world_list.add_item("%s  —  сид %s%s  ·  %s" % [str(w.get("name", "?")), str(w.get("seed", "?")), tags, when])
 	_del_armed = false
 	_del_btn.text = "Удалить"
@@ -433,6 +460,142 @@ func _refresh_worlds() -> void:
 		_world_list.select(0)
 	_play_btn.disabled = _worlds.is_empty()
 	_del_btn.disabled = _worlds.is_empty()
+
+
+# ---------------------------------------------------------------- v0.24: сеть
+var _join_name: LineEdit
+var _join_ip: LineEdit
+var _join_status: Label
+var _join_list: ItemList
+var _join_found: Array = []
+var _host_banner: Label
+
+
+var _progress_box: VBoxContainer
+var _progress_head: Label
+
+
+func _build_progress_screen() -> Control:
+	var pr := _panel_screen("Прогресс", 640)
+	var box: VBoxContainer = pr[1]
+	_progress_head = Label.new(); _progress_head.name = "ProgressHead"
+	_progress_head.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
+	box.add_child(_progress_head)
+	_progress_box = VBoxContainer.new(); _progress_box.name = "ProgressList"
+	_progress_box.add_theme_constant_override("separation", 6)
+	box.add_child(_progress_box)
+	var back := Button.new(); back.text = "Назад"; back.custom_minimum_size = Vector2(0, 44)
+	back.pressed.connect(func() -> void: _show("main"))
+	box.add_child(back)
+	_refresh_progress()
+	return pr[0]
+
+
+func _refresh_progress() -> void:
+	if _progress_box == null: return
+	for c in _progress_box.get_children(): c.queue_free()
+	var PS: GDScript = load("res://scripts/progress_store.gd")
+	var done: Dictionary = PS.load_all()
+	var n := 0
+	for m in PS.LIST:
+		var row := HBoxContainer.new(); row.add_theme_constant_override("separation", 12)
+		var mark := Label.new(); mark.custom_minimum_size = Vector2(30, 0)
+		var ok := done.has(m[0])
+		if ok: n += 1
+		mark.text = "✔" if ok else "○"
+		mark.add_theme_color_override("font_color", Color(0.55, 1.0, 0.6) if ok else Color(0.5, 0.48, 0.58))
+		row.add_child(mark)
+		var t := Label.new(); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		t.text = "%s — %s" % [m[1], m[2]] + ("  · %s" % done[m[0]] if ok else "")
+		t.add_theme_color_override("font_color", Color(0.95, 0.93, 0.98) if ok else Color(0.62, 0.6, 0.7))
+		row.add_child(t)
+		_progress_box.add_child(row)
+	_progress_head.text = "Вехи: %d из %d — общие для всех миров." % [n, PS.LIST.size()]
+
+
+func _on_host_game() -> void:
+	## Хост выбирает или создаёт мир как обычно; сервер поднимается, когда мир загрузится.
+	NetSession.leave()
+	NetSession.want_host = true
+	NetSession.player_name = _saved_name()
+	_on_play()
+	if _host_banner: _host_banner.visible = true
+
+
+func _saved_name() -> String:
+	var cfg := ConfigFile.new()
+	cfg.load("user://net.cfg")
+	return str(cfg.get_value("net", "name", "Игрок"))
+
+
+func _save_net(nm: String, ip: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("net", "name", nm); cfg.set_value("net", "ip", ip)
+	cfg.save("user://net.cfg")
+
+
+func _build_join_screen() -> Control:
+	var pr := _panel_screen("Подключиться к сетевой игре", 640)
+	var box: VBoxContainer = pr[1]
+	var cfg := ConfigFile.new(); cfg.load("user://net.cfg")
+	var l1 := Label.new(); l1.text = "Твоё имя"; box.add_child(l1)
+	_join_name = LineEdit.new(); _join_name.name = "JoinName"; _join_name.max_length = 20
+	_join_name.text = str(cfg.get_value("net", "name", "Игрок")); box.add_child(_join_name)
+	var l2 := Label.new(); l2.text = "IP-адрес хоста в локальной сети"; box.add_child(l2)
+	_join_ip = LineEdit.new(); _join_ip.name = "JoinIp"; _join_ip.text = str(cfg.get_value("net", "ip", "127.0.0.1")); box.add_child(_join_ip)
+	_join_list = ItemList.new(); _join_list.name = "LanList"; _join_list.custom_minimum_size = Vector2(0, 110)
+	_join_list.item_selected.connect(func(i: int) -> void:
+		if i < _join_found.size(): _join_ip.text = str(_join_found[i].ip))
+	box.add_child(_join_list)
+	_join_status = Label.new(); _join_status.name = "JoinStatus"
+	_join_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_join_status.add_theme_color_override("font_color", Color(0.78, 0.78, 0.86))
+	_join_status.text = "Хост жмёт «Создать сетевую игру» и выбирает мир. До 4 игроков, порт %d." % NetSession.PORT
+	box.add_child(_join_status)
+	var row := HBoxContainer.new(); row.add_theme_constant_override("separation", 10); box.add_child(row)
+	var find := Button.new(); find.text = "Найти игры в сети"; find.size_flags_horizontal = Control.SIZE_EXPAND_FILL; find.custom_minimum_size = Vector2(0, 46)
+	find.pressed.connect(func() -> void:
+		_join_status.text = "Ищу игры в локальной сети…"
+		NetSession.discover(1.5))
+	row.add_child(find)
+	var go := Button.new(); go.name = "JoinGo"; go.text = "Подключиться"; go.size_flags_horizontal = Control.SIZE_EXPAND_FILL; go.custom_minimum_size = Vector2(0, 46)
+	go.pressed.connect(_do_join)
+	row.add_child(go)
+	var back := Button.new(); back.text = "Назад"; back.custom_minimum_size = Vector2(0, 44)
+	back.pressed.connect(func() -> void:
+		NetSession.leave()
+		_show("main"))
+	box.add_child(back)
+	NetSession.lan_found.connect(func(list: Array) -> void:
+		if not is_instance_valid(_join_list): return
+		_join_found = list
+		_join_list.clear()
+		for g in list:
+			_join_list.add_item("%s — мир «%s» · %s · игроков %d" % [g.host, g.world, g.ip, int(g.players)])
+		_join_status.text = "Найдено игр: %d." % list.size() if not list.is_empty() else "Игр в сети не найдено. Введи IP хоста вручную.")
+	NetSession.join_failed.connect(func(reason: String) -> void:
+		if is_instance_valid(_join_status): _join_status.text = reason)
+	NetSession.world_received.connect(func() -> void:
+		if not is_inside_tree(): return
+		_join_status.text = "Мир получен, загружаю…"
+		NetSession.begin_client_world()
+		_load_main("Загрузка сетевого мира…"))
+	return pr[0]
+
+
+func _do_join() -> void:
+	var nm := _join_name.text.strip_edges()
+	if nm == "": nm = "Игрок"
+	_save_net(nm, _join_ip.text.strip_edges())
+	NetSession.leave()
+	NetSession.player_name = nm
+	var err: String = NetSession.join(_join_ip.text)
+	_join_status.text = err if err != "" else "Подключаюсь к %s…" % _join_ip.text.strip_edges()
+	if err == "":
+		get_tree().create_timer(8.0).timeout.connect(func() -> void:
+			if is_instance_valid(_join_status) and NetSession.is_client() and NetSession.pending_world.is_empty() and is_inside_tree():
+				NetSession.leave()
+				_join_status.text = "Хост не ответил. Проверь IP и что игра на хосте открыта.")
 
 
 func _on_play() -> void:
@@ -469,11 +632,21 @@ func _delete_selected() -> void:
 		_show("create")
 
 
+func _update_diff_info() -> void:
+	if _diff_info == null:
+		return
+	if _difficulty.selected == 1:
+		_diff_info.text = "Эксперт: у всех мобов и боссов +75 % здоровья, они бьют больнее, бегают быстрее, раньше замечают и дольше преследуют."
+	else:
+		_diff_info.text = "Нормальный: задуманный баланс игры."
+
+
 func _create_world() -> void:
 	var stext := _seed_edit.text.strip_edges()
 	var sv := GameState.seed_from_text(stext)
 	var meta := WorldStore.create_world(_name_edit.text, stext, sv, _peaceful.button_pressed)
 	meta["tutorial_enabled"] = _tutorial.button_pressed
+	meta["difficulty"] = "expert" if _difficulty.selected == 1 else "normal"
 	WorldStore.write_meta(str(meta["folder"]), meta)
 	_start_world(meta)
 
@@ -483,22 +656,66 @@ func _start_world(meta: Dictionary) -> void:
 	GameState.begin_world(str(meta.get("name", "Мир")), folder, str(meta.get("seed_text", "")),
 		WorldStore.meta_seed(meta), bool(meta.get("peaceful", false)))
 	GameState.tutorial_enabled = bool(meta.get("tutorial_enabled", true))
+	GameState.set_difficulty(str(meta.get("difficulty", "normal")))
 	WorldStore.touch(folder)
 	# v0.21 c2: первая генерация мира занимает 1–2 с — раньше всё это время висело замёрзшее меню.
-	_show_loading("Загрузка мира «%s»…" % str(meta.get("name", "Мир")))
-	await get_tree().process_frame
-	await get_tree().process_frame
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	_load_main("Загрузка мира «%s»…" % str(meta.get("name", "Мир")))
+
+
+var _load_bar: ProgressBar
+var _load_stage: Label
+const MAIN_SCENE := "res://scenes/main.tscn"
 
 
 func _show_loading(text: String) -> void:
 	var layer := CanvasLayer.new(); layer.name = "Loading"; layer.layer = 50; add_child(layer)
 	var bg := ColorRect.new(); bg.color = Color(0.05, 0.04, 0.1, 0.94); bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(bg)
-	var l := Label.new(); l.text = text; l.set_anchors_preset(Control.PRESET_FULL_RECT)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var v := VBoxContainer.new(); v.set_anchors_preset(Control.PRESET_CENTER); v.custom_minimum_size = Vector2(560, 0)
+	v.position = Vector2(-280, -60); v.add_theme_constant_override("separation", 14)
+	bg.add_child(v)
+	var l := Label.new(); l.text = text; l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.add_theme_font_size_override("font_size", 30); l.add_theme_color_override("font_color", Color(0.85, 0.8, 1.0))
-	layer.add_child(l)
+	v.add_child(l)
+	# v0.24 (п.27): настоящая полоса загрузки — доля ресурсов сцены из ResourceLoader.
+	_load_bar = ProgressBar.new(); _load_bar.name = "LoadBar"; _load_bar.min_value = 0; _load_bar.max_value = 100
+	_load_bar.custom_minimum_size = Vector2(560, 26)
+	v.add_child(_load_bar)
+	_load_stage = Label.new(); _load_stage.name = "LoadStage"; _load_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_load_stage.add_theme_color_override("font_color", Color(0.7, 0.68, 0.85))
+	_load_stage.text = "Готовлю ресурсы…"
+	v.add_child(_load_stage)
+
+
+var load_progress_seen: Array = []   # для smoke: какие доли видела полоса
+
+
+func _load_main(text: String) -> void:
+	_show_loading(text)
+	await get_tree().process_frame
+	if DisplayServer.get_name() == "headless":   # без окна (боты, проверки): фоновая загрузка там не продвигается — грузим сразу
+		get_tree().change_scene_to_file(MAIN_SCENE)
+		return
+	if ResourceLoader.load_threaded_request(MAIN_SCENE, "", true) != OK:
+		get_tree().change_scene_to_file(MAIN_SCENE)
+		return
+	var prog: Array = []
+	while true:
+		var st := ResourceLoader.load_threaded_get_status(MAIN_SCENE, prog)
+		var k: float = float(prog[0]) if not prog.is_empty() else 0.0
+		if st == ResourceLoader.THREAD_LOAD_LOADED: k = 1.0
+		load_progress_seen.append(k)
+		_load_bar.value = k * 90.0
+		_load_stage.text = "Ресурсы мира: %d%%" % int(k * 100.0) if k < 1.0 else "Строю мир вокруг тебя…"
+		if st == ResourceLoader.THREAD_LOAD_LOADED or st == ResourceLoader.THREAD_LOAD_FAILED or st == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			break
+		await get_tree().process_frame
+	var ps := ResourceLoader.load_threaded_get(MAIN_SCENE) as PackedScene
+	_load_bar.value = 95
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if ps: get_tree().change_scene_to_packed(ps)
+	else: get_tree().change_scene_to_file(MAIN_SCENE)
 
 
 func _open_settings() -> void:

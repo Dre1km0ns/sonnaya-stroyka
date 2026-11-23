@@ -152,8 +152,13 @@ func take_damage(amount: int) -> void:
 
 func _die() -> void:
 	_dead = true
-	GameState.reward_kill(false, kind_name())
-	_Vis.play_state(self, "death", true)
+	GameState.reward_kill(false, kind_name(), self)
+	if _Vis.play_state(self, "death", true) == "":
+		load("res://scripts/mob_fx.gd").death(self, Color(0.75, 0.8, 1.0))
+	else:
+		load("res://scripts/sfx.gd").play("mob_die", get_tree().root, -4.0)
+		var hb := get_node_or_null("HPBar")
+		if hb: hb.visible = false
 	collision_layer = 0
 	collision_mask = 0
 	set_physics_process(false)
@@ -174,7 +179,7 @@ func _physics_process(delta: float) -> void:
 	if bod and _punch <= 0.0:
 		bod.position.z = 0.0
 
-	var player := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	var player := preload("res://scripts/combat_util.gd").nearest_player(get_tree(), global_position)   # v0.24: в сети — ближайший игрок
 	if player == null:
 		return
 
@@ -187,7 +192,7 @@ func _physics_process(delta: float) -> void:
 		forward = Vector3(0, 0, -1)
 	var target := compute_target(player.global_position, forward, _find_blinky_pos(), is_scatter_mode())
 	_path_cache["can_break"] = not is_scatter_mode() and (kind!=Kind.ENEMY4 or dist>CLYDE_FLEE_DIST)
-	if dist<SEEK_RANGE+12.0: _Nav.follow_target(self,target,SPEED,delta,_path_cache)
+	if dist<SEEK_RANGE * GameState.diff_aggro()+12.0: _Nav.follow_target(self,target,SPEED,delta,_path_cache)
 	var attacking := float(get_meta("mining_progress",0.0))>0.0
 
 	if dist <= CONTACT_RANGE + 1.0:
@@ -211,11 +216,14 @@ func _update_anim(attacking: bool) -> void:
 		_Vis.play_state(self, "idle")
 
 
-func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
+func _hit_player(player: Node3D, to_player: Vector3) -> void:
+	if not player.is_in_group("player"):
+		preload("res://scripts/combat_util.gd").hurt(player, _Nav.combat_damage(self,HIT_DAMAGE), kind_name(), global_position)   # v0.24: удалённый игрок
+		return
 	var push := to_player.normalized()
 	if push.length() < 0.01:
 		push = Vector3(1, 0, 0)
-	player.velocity += Vector3(push.x, 0.3, push.z).normalized() * KNOCKBACK
+	(player as CharacterBody3D).velocity += Vector3(push.x, 0.3, push.z).normalized() * KNOCKBACK
 	GameState.hit_from(global_position)
 	GameState.damage_player(_Nav.combat_damage(self,HIT_DAMAGE), kind_name())
 	var stolen := GameState.try_steal(1)

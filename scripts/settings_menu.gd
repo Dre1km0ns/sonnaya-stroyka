@@ -48,14 +48,26 @@ func _build() -> void:
 	_add_slider(box, "render_distance", "Прогрузка мира", g.RENDER_MIN, g.RENDER_MAX, 1, g.render_distance, "%d чанк.", 1.0)
 	_add_slider(box, "entity_distance", "Дальность сущностей", g.ENTITY_MIN, g.ENTITY_MAX, 1, g.entity_distance, "%d чанк.", 1.0)
 	_add_slider(box, "mouse_sensitivity", "Чувствительность мыши", 20, 400, 10, g.mouse_sensitivity * 100.0, "%d%%", 0.01)
-	_add_check(box, "shadows", "Тени от солнца", g.shadows)
-	_add_check(box, "fullscreen", "Полный экран", g.fullscreen)
+	_add_slider(box, "fov", "Угол обзора", 60, 100, 1, g.fov, "%d°", 1.0)
+	var r1 := HBoxContainer.new(); r1.add_theme_constant_override("separation", 18); box.add_child(r1)
+	_add_check(r1, "shadows", "Тени от солнца", g.shadows)
+	_add_check(r1, "fullscreen", "Полный экран", g.fullscreen)
+	var r2 := HBoxContainer.new(); r2.add_theme_constant_override("separation", 18); box.add_child(r2)
+	_add_check(r2, "head_bob", "Покачивание камеры", g.head_bob)
+	_add_check(r2, "camera_shake", "Тряска от ударов", g.camera_shake)
 	_add_check(box, "dream_start", "Новый мир начинается во Сне — главном мире", g.dream_start)
 	var note := Label.new()
 	note.text = "1 чанк = 16×16 блоков. Меньше прогрузка/сущностей — больше FPS."
 	note.add_theme_font_size_override("font_size", 14)
 	note.add_theme_color_override("font_color", Color(0.75, 0.75, 0.82))
 	box.add_child(note)
+	var log_l := Label.new()
+	log_l.name = "ErrorLog"
+	log_l.text = "Журнал ошибок: " + str(g.error_log_path())
+	log_l.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	log_l.add_theme_font_size_override("font_size", 12)
+	log_l.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	box.add_child(log_l)
 	var keys := Button.new()
 	keys.name = "Keybinds"
 	keys.text = "Управление и клавиши…"
@@ -99,7 +111,7 @@ func _add_slider(box: VBoxContainer, key: String, label: String, mn: float, mx: 
 	_rows[key] = s
 
 
-func _add_check(box: VBoxContainer, key: String, label: String, on: bool) -> void:
+func _add_check(box: BoxContainer, key: String, label: String, on: bool) -> void:
 	var c := CheckButton.new()
 	c.text = label
 	c.button_pressed = on

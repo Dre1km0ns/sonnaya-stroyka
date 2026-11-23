@@ -16,6 +16,7 @@ var _rows: Array[Button] = []
 
 
 func _ready() -> void:
+	if theme == null: theme = preload("res://scripts/ui_theme.gd").shared()   # v0.24: единый стиль окон
 	add_to_group("craft_menu")
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false

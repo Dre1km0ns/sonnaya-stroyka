@@ -1,0 +1,26 @@
+[
+  {
+    "boss": "burger",
+    "deaths": 0,
+    "diff": "normal",
+    "dmg_per_min": 199.3,
+    "end": "killed",
+    "max_hp": 4000,
+    "potions": 4,
+    "swings": 174,
+    "t": 89.4,
+    "taken": 297
+  },
+  {
+    "boss": "burger",
+    "deaths": 0,
+    "diff": "expert",
+    "dmg_per_min": 262.0,
+    "end": "killed",
+    "max_hp": 7000,
+    "potions": 12,
+    "swings": 402,
+    "t": 207.2,
+    "taken": 905
+  }
+]

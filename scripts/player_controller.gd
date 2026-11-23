@@ -19,6 +19,13 @@ const LAKE_SPEED_FACTOR := 0.4
 const PICKUP_RADIUS := 1.7
 const SWIM_UP := 3.2
 var _step_t := 0.0
+## v0.24: покачивание головы и тряска камеры (через h/v_offset — луч взаимодействия не сдвигается).
+var _bob_phase := 0.0
+var _bob_amp := 0.0
+var _shake := 0.0
+const BOB_V := 0.045
+const BOB_H := 0.025
+const SHAKE_MAX := 0.12
 var _pickup_t := 0.0
 var auto_picked := 0
 var auto_pickup_enabled:=true
@@ -46,8 +53,53 @@ func _ready() -> void:
 		mouse_sens = MOUSE_SENS_DEFAULT * float(gsets.mouse_sensitivity)
 		gsets.settings_changed.connect(func() -> void:
 			mouse_sens = MOUSE_SENS_DEFAULT * float(gsets.mouse_sensitivity))
+	if gsets:
+		camera.fov = float(gsets.fov)
+		gsets.settings_changed.connect(func() -> void: camera.fov = float(gsets.fov))
+	GameState.camera_shake.connect(func(st: float) -> void: _shake = maxf(_shake, st))
 	collision_mask = 1 | 4 | 16 | 64 # v0.21: 64 — оболочка боссов (камера не заходит внутрь модели)
 	GameState.world_changed.connect(_on_world_changed)
+
+
+func _step_sound() -> String:
+	## v0.24: звук шага по материалу под ногами.
+	if GameState.is_dream():
+		return "step"
+	var c := Vector3i(floori(global_position.x), floori(global_position.y - 0.2), floori(global_position.z))
+	var kind := str(GameState.wake_blocks.get(c, ""))
+	if kind == "":
+		for cm in get_tree().get_nodes_in_group("chunk_manager"):
+			if not bool(cm.get("is_dream_layer")) and cm.has_method("terrain_kind_at"):
+				kind = str(cm.terrain_kind_at(c))
+				break
+	if kind == "":
+		return "step"
+	if kind == "sand":
+		return "step_sand"
+	var mat := str(load("res://scripts/mining_rules.gd").material(kind))
+	match mat:
+		"stone": return "step_stone"
+		"wood": return "step_wood"
+		"sand": return "step_sand"
+	return "step_grass"
+
+
+func _tick_camera_fx(delta: float, moving: bool) -> void:
+	var gsets := get_node_or_null("/root/GameSettings")
+	var bob_on := gsets == null or bool(gsets.head_bob)
+	var shake_on := gsets == null or bool(gsets.camera_shake)
+	var hv := Vector2(velocity.x, velocity.z).length()
+	var want := 1.0 if (bob_on and moving and is_on_floor() and not flying) else 0.0
+	_bob_amp = lerpf(_bob_amp, want * clampf(hv / SPEED, 0.0, 1.5), clampf(delta * 8.0, 0.0, 1.0))
+	_bob_phase += delta * hv * 1.9
+	var ho := cos(_bob_phase) * BOB_H * _bob_amp
+	var vo := absf(sin(_bob_phase)) * BOB_V * _bob_amp
+	if shake_on and _shake > 0.001:
+		ho += randf_range(-1.0, 1.0) * SHAKE_MAX * _shake
+		vo += randf_range(-1.0, 1.0) * SHAKE_MAX * _shake
+	_shake = maxf(0.0, _shake - delta * 2.8)
+	camera.h_offset = ho
+	camera.v_offset = vo
 
 
 func _on_world_changed(is_dream: bool) -> void:
@@ -103,6 +155,8 @@ func _physics_process(delta: float) -> void:
 	var sprinting := want_sprint and (GameState.is_dream() or GameState.can_sprint())
 	if not GameState.is_dream(): GameState.tick_stamina(delta, sprinting)
 	var speed := (SPRINT if sprinting else SPEED) * _move_factor()
+	if not GameState.is_dream() and GameState.speed_potion_active():
+		speed *= GameState.SPEED_POTION_BOOST   # v0.24: зелье скорости — чуть быстрее
 
 	if flying:
 		var y_move := 0.0
@@ -133,10 +187,11 @@ func _physics_process(delta: float) -> void:
 			velocity.y = SWIM_UP
 	move_and_slide()
 	_track_fall()
+	_tick_camera_fx(delta, direction.length() > 0.1)
 	_step_t -= delta
 	if not flying and is_on_floor() and direction.length() > 0.1 and _step_t <= 0.0:
 		_step_t = 0.32 if Input.is_action_pressed("sprint") else 0.5
-		load("res://scripts/sfx.gd").play("step", self)
+		load("res://scripts/sfx.gd").play(_step_sound(), self, -6.0, randf_range(0.9, 1.1))
 	_pickup_t -= delta
 	if _pickup_t <= 0.0 and auto_pickup_enabled:
 		_pickup_t = 0.1

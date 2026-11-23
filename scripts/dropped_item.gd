@@ -11,6 +11,10 @@ var collected := false
 var _spin := 0.0
 var _visual: Node3D
 var _sync_t := 0.0
+## v0.24: выброшенное и выпавшее пропадает через 5 минут (последние 10 с мигает). Трофеи боссов не пропадают.
+const DESPAWN_SEC := 300.0
+const KEEP := ["burger_core", "burger_trophy", "stone_heart", "scale_fang", "clown_nose", "grill_saucer", "burger_summoner"]
+static var _pick_sfx_ms := 0
 
 
 func setup(record: Dictionary, vel: Vector3 = Vector3.ZERO, delay: float = 0.0) -> void:
@@ -82,6 +86,9 @@ func collect() -> void:
 	if got <= 0:
 		return
 	GameState.drops_picked += got
+	if Time.get_ticks_msec() - _pick_sfx_ms > 90:
+		_pick_sfx_ms = Time.get_ticks_msec()
+		load("res://scripts/sfx.gd").play("pickup", get_tree().root, -6.0, randf_range(0.95, 1.15))
 	rec["count"] = item_count() - got
 	if item_count() > 0:
 		return
@@ -107,6 +114,16 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, 14.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, 14.0 * delta)
 	move_and_slide()
+	if not str(rec.get("id", "")) in KEEP:
+		var age := float(rec.get("age", 0.0)) + delta
+		rec["age"] = age
+		if age > DESPAWN_SEC - 10.0 and _visual:
+			_visual.visible = fmod(age, 0.5) < 0.3
+		if age >= DESPAWN_SEC:
+			collected = true
+			GameState.unregister_drop(rec)
+			queue_free()
+			return
 	_sync_t -= delta
 	if _sync_t <= 0.0:
 		_sync_t = 0.25

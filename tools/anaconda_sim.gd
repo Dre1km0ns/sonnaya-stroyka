@@ -130,6 +130,8 @@ func _one(bot: String, sd: int) -> Dictionary:
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
 	seed(sd)
 	G.reset_state()
+	for a in OS.get_cmdline_user_args():
+		if a == "--expert=1": G.set_difficulty("expert")   # v0.24
 	G.peaceful = false
 	G.dev_mode = false
 	G.god_mode = false

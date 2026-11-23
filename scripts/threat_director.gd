@@ -134,7 +134,12 @@ func apply_save_dict(d: Dictionary) -> void:
 var _anaconda_t := 0.0
 
 
+var _lizard_t := 6.0  # v0.24: ящерки-детёныши в пещерах после Анаконды
+
+
 func _process(delta: float) -> void:
+	if NetSession.is_client():
+		return   # v0.24: в сети мобов создаёт только хост
 	if GameState.is_dream():
 		return
 	if player == null or wake_root == null:
@@ -143,6 +148,13 @@ func _process(delta: float) -> void:
 	if _anaconda_t <= 0.0:
 		_anaconda_t = 0.5
 		_tick_anaconda()
+	_lizard_t -= delta
+	if _lizard_t <= 0.0:
+		_lizard_t = 6.0
+		var cmz: Node = null
+		for cm in get_tree().get_nodes_in_group("chunk_manager"):
+			if not bool(cm.get("is_dream_layer")) and not bool(cm.get("panorama_mode")): cmz = cm
+		load("res://scripts/lizard_minion.gd").try_cave_spawn(get_tree(), wake_root, player, cmz)
 	awake_time += delta
 	GameState.awake_time = awake_time
 	_unstable_cd = maxf(0.0, _unstable_cd - delta)
@@ -258,6 +270,11 @@ func _spawn_at(pos: Vector3, elite: bool) -> void:
 	if GameState.beacon_protects(Vector3i(floori(pos.x), floori(pos.y), floori(pos.z))):
 		return
 	if try_spawn_blockolith(pos) != null:
+		return
+	var wk: String = load("res://scripts/wake_mob.gd").roll_kind(randf(), awake_time)
+	if wk != "":
+		load("res://scripts/wake_mob.gd").spawn(wake_root, pos, wk)
+		load("res://scripts/seam_effect.gd").spawn(wake_root, pos)
 		return
 	var e: CharacterBody3D = _enemy_script.new()
 	e.position = pos

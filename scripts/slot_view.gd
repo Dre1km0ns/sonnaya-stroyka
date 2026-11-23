@@ -85,6 +85,11 @@ func set_key_hint(text: String) -> void:
 	_key.visible = text != ""
 
 
+## v0.24: во Сне иконки хотбара подкрашены фиолетовым, как и весь Сон.
+var dream_tint := false
+const DREAM_ICON_TINT := Color(0.82, 0.68, 1.0)
+
+
 func set_item(id: String, count: int, selected: bool = false, infinite: bool = false, always_show_count: bool = false) -> void:
 	item_id = id
 	_selected = selected
@@ -102,6 +107,8 @@ func set_item(id: String, count: int, selected: bool = false, infinite: bool = f
 			_count.text = ""
 		tooltip_text = ItemDB.display_name(id)
 	_icon.modulate = Color(1, 1, 1, 1) if (count > 0 or infinite or not always_show_count) else Color(1, 1, 1, 0.35)
+	if dream_tint:
+		_icon.modulate *= DREAM_ICON_TINT
 	_restyle()
 
 

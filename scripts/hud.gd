@@ -49,6 +49,7 @@ var _bed_prompt: PanelContainer
 var _bed_prompt_label: Label
 var pillow_ui: Control
 var death_menu: Control
+var victory_screen: Control
 
 
 func _ready() -> void:
@@ -89,6 +90,8 @@ func _ready() -> void:
 	var death_script: GDScript = load("res://scripts/death_menu.gd")
 	death_menu = death_script.new()
 	$Root.add_child(death_menu)
+	victory_screen = load("res://scripts/victory_screen.gd").new()
+	$Root.add_child(victory_screen)
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
 	GameState.clarity_changed.connect(_on_clarity)
@@ -581,6 +584,7 @@ func _refresh_inv() -> void:
 	_dev_badge.visible = GameState.dev_mode
 	for i in range(_hotbar.size()):
 		var d: Dictionary = GameState.get_slot(i)
+		_hotbar[i].dream_tint = GameState.is_dream()
 		if GameState.palette_slot_active(i):
 			# v0.22: честный хотбар Сна — в слоте 1 виден текущий материал палитры, ставится бесконечно
 			_hotbar[i].set_item(GameState.dream_palette_kind(), 0, i == GameState.selected_slot, true)

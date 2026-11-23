@@ -114,8 +114,13 @@ func take_damage(amount: int) -> void:
 
 func _die() -> void:
 	_dead = true
-	GameState.reward_kill(false, "Шовник")
-	_Vis.play_state(self, "death", true)
+	GameState.reward_kill(false, "Шовник", self)
+	if _Vis.play_state(self, "death", true) == "":
+		load("res://scripts/mob_fx.gd").death(self, Color(0.45, 0.35, 0.6))
+	else:
+		load("res://scripts/sfx.gd").play("mob_die", get_tree().root, -4.0)
+		var hb := get_node_or_null("HPBar")
+		if hb: hb.visible = false
 	collision_layer = 0
 	collision_mask = 0
 	set_physics_process(false)
@@ -137,7 +142,7 @@ func _physics_process(delta: float) -> void:
 	if bod and _punch <= 0.0:
 		bod.position.z = 0.0
 
-	var player := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	var player := preload("res://scripts/combat_util.gd").nearest_player(get_tree(), global_position)   # v0.24: в сети — ближайший игрок
 	if player == null:
 		return
 
@@ -146,13 +151,13 @@ func _physics_process(delta: float) -> void:
 	var speed := SPEED_ELITE if elite else SPEED_NORMAL
 
 	var target := player.global_position
-	if dist >= SEEK_RANGE:
+	if dist >= SEEK_RANGE * GameState.diff_aggro():
 		_wander_timer -= delta
 		if _wander_timer <= 0.0 or global_position.distance_to(_wander_target) < 1.2:
 			_pick_wander()
 		target = _wander_target
 
-	_path_cache["can_break"] = dist<SEEK_RANGE
+	_path_cache["can_break"] = dist<SEEK_RANGE * GameState.diff_aggro()
 	_Nav.follow_target(self,target,speed,delta,_path_cache)
 	var attacking := float(get_meta("mining_progress",0.0))>0.0
 
@@ -184,12 +189,15 @@ func _pick_wander() -> void:
 	_wander_timer = 3.0 + randf() * 3.0
 
 
-func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
+func _hit_player(player: Node3D, to_player: Vector3) -> void:
+	if not player.is_in_group("player"):
+		preload("res://scripts/combat_util.gd").hurt(player, _Nav.combat_damage(self,HIT_DAMAGE_ELITE if elite else HIT_DAMAGE), "Шовник", global_position)   # v0.24: удалённый игрок
+		return
 	var push := to_player.normalized()
 	if push.length() < 0.01:
 		push = Vector3(1, 0, 0)
 	var kb := KNOCKBACK_ELITE if elite else KNOCKBACK
-	player.velocity += Vector3(push.x, 0.35, push.z).normalized() * kb
+	(player as CharacterBody3D).velocity += Vector3(push.x, 0.35, push.z).normalized() * kb
 	var amount := 2 if elite else 1
 	# Обычный тоже больнее со временем яви (хардкор scarce)
 	if GameState.awake_time > 60.0:

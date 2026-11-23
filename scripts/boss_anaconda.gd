@@ -93,6 +93,8 @@ var _emerge: Vector3 = Vector3.ZERO
 var _crack: MeshInstance3D = null
 var _rocks: Array = []                 # [{shadow, at, t}]
 var _dives: int = 0
+var spits_used := 0   # v0.24: «Ядовитый плевок» с фазы 2, каждый второй выход
+var _rests := 0
 var _no_minion_dives: int = 0
 var _pending_transition: int = 0
 var _dmg_acc: float = 0.0
@@ -151,6 +153,9 @@ func _ready() -> void:
 	for i in range(SEGMENTS * 12):
 		_trail.append(position + Vector3(0, -UNDER_DEPTH - float(i) * 0.08, 0))
 	_head.position = Vector3(0, -UNDER_DEPTH, 0)
+	# v0.24: Эксперт +75% HP, в сети — больше HP по числу игроков
+	max_hp = ceili(MAX_HP * GameState.diff_hp_mult(true))
+	hp = max_hp
 	GameState.set_boss_alive(true)
 	if GameState.has_signal("world_changed"):
 		GameState.world_changed.connect(_on_world)
@@ -234,16 +239,16 @@ func apply_light_damage(amount: float) -> int:
 	_dmg_acc -= float(dmg)
 	var floor_hp := 0
 	if phase == 1:
-		floor_hp = P2_AT
+		floor_hp = max_hp * 66 / 100
 	elif phase == 2:
-		floor_hp = P3_AT
+		floor_hp = max_hp * 33 / 100
 	var before := hp
 	hp = maxi(floor_hp, hp - dmg)
 	light_damage_total += float(before - hp)
 	_Vis.update_hp_bar(_head, hp, max_hp)
-	if phase == 1 and hp <= P2_AT:
+	if phase == 1 and hp <= max_hp * 66 / 100:
 		_pending_transition = 2
-	elif phase == 2 and hp <= P3_AT:
+	elif phase == 2 and hp <= max_hp * 33 / 100:
 		_pending_transition = 3
 	if hp <= 0:
 		_die()
@@ -356,9 +361,9 @@ func tick(delta: float) -> void:
 	if player == null:
 		return
 	# Поводок: игрок убежал от гнезда.
-	if player.global_position.distance_to(home) > LEASH_DIST:
+	if player.global_position.distance_to(home) > LEASH_DIST * GameState.diff_leash():
 		_leash_t += delta
-		if _leash_t > LEASH_TIME:
+		if _leash_t > LEASH_TIME * GameState.diff_leash():
 			leave("Анаконда вернулась в гнездо.")
 			return
 	else:
@@ -514,6 +519,16 @@ func _after_burst() -> void:
 	# v0.22: стана от света нет — после выныривания она всегда просто лежит (REST), свет её только жжёт.
 	attack_log["rest"] += 1
 	_enter(S.REST)
+	_rests += 1
+	if phase >= 2 and _rests % 2 == 0:
+		start_spit(_player())
+
+
+func start_spit(player: Node3D) -> Node3D:
+	if player == null or _head == null:
+		return null
+	spits_used += 1
+	return load("res://scripts/boss_extra_attacks.gd").venom(_world(), _head, player.global_position, func(p: Vector3) -> float: return _floor_at(p))
 
 
 func _rest_dir() -> Vector3:
@@ -711,6 +726,7 @@ func _die() -> void:
 	_cleanup_fx()
 	roar(false)
 	GameState.reward_kill(true, "Анаконда")
+	GameState.drop_boss_token("anaconda", hit_center())  # v0.24: Чешуйчатый клык 35 %
 	if GameState.has_method("on_anaconda_killed"): GameState.on_anaconda_killed()
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)

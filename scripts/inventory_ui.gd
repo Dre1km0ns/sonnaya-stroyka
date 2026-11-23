@@ -19,6 +19,7 @@ var _armor_caption: Label
 
 
 func _ready() -> void:
+	if theme == null: theme = preload("res://scripts/ui_theme.gd").shared()   # v0.24: единый стиль окон
 	add_to_group("inventory_ui")
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -381,6 +382,41 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _open and event.is_action_pressed("ui_cancel"):
 		close()
 		get_viewport().set_input_as_handled()
+		return
+	if _open and event.is_action_pressed("drop_item"):
+		# v0.24: Q над слотом выбрасывает одну штуку, Ctrl+Q — всю стопку (как в Minecraft).
+		var whole := event is InputEventWithModifiers and (event as InputEventWithModifiers).ctrl_pressed
+		if drop_hovered(whole):
+			get_viewport().set_input_as_handled()
+
+
+func hovered_slot() -> int:
+	var mp := get_global_mouse_position()
+	for i in range(_slots.size()):
+		var sv: Control = _slots[i] as Control
+		if sv != null and is_instance_valid(sv) and sv.is_visible_in_tree() and sv.get_global_rect().has_point(mp):
+			return i
+	return -1
+
+
+func drop_hovered(whole: bool = false, index: int = -1) -> bool:
+	var i := index if index >= 0 else hovered_slot()
+	if i < 0 or not GameState.can_drop_items():
+		return false
+	var slot: Dictionary = GameState.get_slot(i)
+	if str(slot.get("id", "")) == "":
+		return false
+	var bc := get_tree().get_first_node_in_group("build_controller")
+	if bc == null or not bc.has_method("throw_payload"):
+		return false
+	var payload: Dictionary = GameState.take_from_slot(i, int(slot.get("count", 1)) if whole else 1)
+	if payload.is_empty():
+		return false
+	if bc.throw_payload(payload) == null:
+		GameState.give_payload(payload)
+		return false
+	_refresh()
+	return true
 
 
 func _on_armor_clicked(i: int,_button: int,_shift: bool) -> void:

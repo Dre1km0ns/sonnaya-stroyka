@@ -156,7 +156,7 @@ func apply_lighting() -> void:
 		_sky_mat.set_shader_parameter("stars", 1.0 - day_k)
 	if _sun:
 		_sun.light_color = Color(1.0, 0.95, 0.86).lerp(Color(1.0, 0.62, 0.38), warm)
-		_sun.light_energy = SUN_MAX_ENERGY * day_k
+		_sun.light_energy = SUN_MAX_ENERGY * day_k * (1.0 - GameState.weather_dim())
 		_sun.visible = day_k > 0.01
 		if sd.y > -0.3:
 			_sun.global_transform = Transform3D(Basis.looking_at(-sd, Vector3.UP), _sun.global_position)

@@ -1,6 +1,16 @@
 extends RefCounted
 ## v0.5: общая тема меню (кнопки, панели, поля, слайдеры).
 
+static var _shared: Theme
+
+
+static func shared() -> Theme:
+	## v0.24 (п.24): одна тема на все окна — меню, пауза, инвентарь, крафт, сундук, смерть, победа.
+	if _shared == null:
+		_shared = make()
+	return _shared
+
+
 static func make() -> Theme:
 	var t := Theme.new()
 	t.default_font_size = 18

@@ -15,6 +15,10 @@ var shadows: bool = true
 var mouse_sensitivity: float = 1.0
 var fullscreen: bool = false
 var show_fps: bool = false
+var fov: float = 75.0            # v0.24: угол обзора
+var head_bob: bool = true        # v0.24: покачивание камеры при ходьбе
+var camera_shake: bool = true    # v0.24: тряска камеры от ударов и босс-атак
+var error_logger: Logger = null
 var dream_start: bool = true    # v0.20: новый мир начинается во Сне с обучением
 
 const RENDER_MIN := 2
@@ -61,6 +65,7 @@ const BINDABLE := [
 	["blueprint_paste", "Сон: вставить чертёж у прицела", "key", KEY_P],
 	["blueprint_rotate", "Сон: повернуть чертёж на 90°", "key", KEY_O],
 	["tutorial_skip", "Пропустить обучение во Сне", "key", KEY_F1],
+	["net_chat", "Чат сетевой игры", "key", KEY_ENTER],
 	["toggle_debug", "Отладка / FPS", "key", KEY_F3],
 	["quick_save", "Быстрое сохранение", "key", KEY_F5],
 	["quick_load", "Быстрая загрузка", "key", KEY_F9],
@@ -82,6 +87,8 @@ var bindings: Dictionary = {} # action -> {"type": "key"/"mouse", "code": int}
 
 
 func _ready() -> void:
+	error_logger = load("res://scripts/error_log.gd").new()
+	OS.add_logger(error_logger)
 	_init_bindings()
 	load_settings()
 	apply_bindings()
@@ -109,6 +116,9 @@ func load_settings() -> void:
 	show_fps = bool(cfg.get_value("video", "show_fps", show_fps))
 	dream_start = bool(cfg.get_value("game", "dream_start", dream_start))
 	mouse_sensitivity = clampf(float(cfg.get_value("input", "mouse_sensitivity", mouse_sensitivity)), 0.2, 4.0)
+	fov = clampf(float(cfg.get_value("video", "fov", fov)), 60.0, 100.0)
+	head_bob = bool(cfg.get_value("video", "head_bob", head_bob))
+	camera_shake = bool(cfg.get_value("video", "camera_shake", camera_shake))
 	if cfg.has_section("keybinds"):
 		for row in BINDABLE:
 			var a: String = row[0]
@@ -134,6 +144,9 @@ func save_settings() -> void:
 	cfg.set_value("video", "show_fps", show_fps)
 	cfg.set_value("game", "dream_start", dream_start)
 	cfg.set_value("input", "mouse_sensitivity", mouse_sensitivity)
+	cfg.set_value("video", "fov", fov)
+	cfg.set_value("video", "head_bob", head_bob)
+	cfg.set_value("video", "camera_shake", camera_shake)
 	for row in BINDABLE:
 		var a: String = row[0]
 		if bindings.has(a):
@@ -307,6 +320,12 @@ func set_value(key: String, value: Variant) -> void:
 			dream_start = bool(value)
 		"mouse_sensitivity":
 			mouse_sensitivity = clampf(float(value), 0.2, 4.0)
+		"fov":
+			fov = clampf(float(value), 60.0, 100.0)
+		"head_bob":
+			head_bob = bool(value)
+		"camera_shake":
+			camera_shake = bool(value)
 	apply_audio()
 	save_settings()
 	settings_changed.emit()
@@ -356,8 +375,12 @@ func apply_distance_fog(env: Environment) -> void:
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_DEPTH
 	env.fog_density = 1.0
-	env.fog_depth_begin = fog_end_distance()*0.35
-	env.fog_depth_end = fog_end_distance()
+	# v0.24: туман и дождь приближают туман (GameState.weather_fog_k 0…1)
+	var wk := 0.0
+	var gs := get_node_or_null("/root/GameState")
+	if gs and not gs.is_dream(): wk = float(gs.weather_fog_k)
+	env.fog_depth_begin = fog_end_distance()*0.35*lerpf(1.0, 0.15, wk)
+	env.fog_depth_end = fog_end_distance()*lerpf(1.0, 0.35, wk)
 	env.fog_depth_curve = 1.0
 	env.fog_sky_affect = 0.8
 	var camera := get_viewport().get_camera_3d()
@@ -388,6 +411,10 @@ func _notification(what: int) -> void:
 
 ## v0.21: чистый выход. Глушим все плееры, даём аудиосерверу пару кадров отпустить
 ## воспроизведения и только потом выходим — иначе «resources still in use at exit».
+func error_log_path() -> String:
+	return load("res://scripts/error_log.gd").global_path()
+
+
 func safe_quit(code: int = 0) -> void:
 	if _quit_started:
 		return

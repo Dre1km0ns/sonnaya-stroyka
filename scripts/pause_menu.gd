@@ -41,6 +41,15 @@ func _ready() -> void:
 		var ok := _save("manual")
 		_status.text = "Сохранено." if ok else "Сохранение не удалось.")
 	_btn(box, "Сохранить и выйти в меню", _quit_to_menu)
+	var log_l := Label.new()
+	log_l.name = "ErrorLog"
+	var gsets := get_node_or_null("/root/GameSettings")
+	log_l.text = "Журнал ошибок: " + (str(gsets.error_log_path()) if gsets else "user://logs/errors.log")
+	log_l.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	log_l.custom_minimum_size = Vector2(420, 0)
+	log_l.add_theme_font_size_override("font_size", 12)
+	log_l.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	box.add_child(log_l)
 
 
 func _btn(box: VBoxContainer, text: String, cb: Callable) -> void:

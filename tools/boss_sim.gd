@@ -89,6 +89,7 @@ func _setup() -> void:
 func _one(bot: String, sd: int) -> Dictionary:
 	seed(sd)
 	gs.reset_state()
+	if _arg("expert", "") == "1": gs.set_difficulty("expert")   # v0.24
 	gs.peaceful = false
 	gs.dev_mode = false
 	gs.god_mode = false

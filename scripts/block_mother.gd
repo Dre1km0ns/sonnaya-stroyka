@@ -86,6 +86,9 @@ var _stagger_len: float = 1.0
 var _contact_cd: float = 0.0
 var _tp_cd: float = 6.0
 var _rain_cd: float = 3.0
+var _pillar_cd: float = 5.0   # v0.24: «Каменный вал» с фазы 2
+const PILLAR_CD := 11.0
+var pillars_used := 0
 var _landings_since_spawn: int = 0
 var _lockout: int = 0
 var _pending_transition: int = 0
@@ -282,6 +285,7 @@ func _physics_process(delta: float) -> void:
 	_contact_cd = maxf(0.0, _contact_cd - delta)
 	_tp_cd = maxf(0.0, _tp_cd - delta)
 	_rain_cd = maxf(0.0, _rain_cd - delta)
+	_pillar_cd = maxf(0.0, _pillar_cd - delta)
 	var player := _player()
 	_tick_bricks(delta, player)
 	_tick_waves(delta, player)
@@ -290,9 +294,9 @@ func _physics_process(delta: float) -> void:
 	var to_p := player.global_position - global_position
 	var flat := Vector3(to_p.x, 0, to_p.z)
 	# Поводок: игрок убежал далеко — Мать уходит без награды.
-	if flat.length() > LEASH_DIST:
+	if flat.length() > LEASH_DIST * GameState.diff_leash():
 		_leash_t += delta
-		if _leash_t > LEASH_TIME:
+		if _leash_t > LEASH_TIME * GameState.diff_leash():
 			leave("Мать блоков ушла под землю.")
 			return
 	else:
@@ -390,6 +394,9 @@ func _decide(player: CharacterBody3D, flat: Vector3) -> void:
 	if far and _tp_cd <= 0.0:
 		_start_scatter()
 		return
+	if phase >= 2 and _pillar_cd <= 0.0 and flat.length() > 3.0 and flat.length() < 16.0:
+		start_pillars(player)
+		return
 	if phase >= 3 and _rain_cd <= 0.0 and flat.length() < TP_RANGE:
 		_rain_cd = RAIN_CD
 		_enter(S.RAIN_WINDUP)
@@ -400,6 +407,19 @@ func _decide(player: CharacterBody3D, flat: Vector3) -> void:
 	_enter(S.WINDUP)
 	_Vis.play_state(self, "idle", true)
 	_squash(Vector3(1.22, 0.7, 1.22), float(WINDUP[phase - 1]))
+
+
+func start_pillars(player: Node3D) -> Node3D:
+	## v0.24: «Каменный вал» — полоса к игроку, через 1 с столбы; Мать после него 1.4 с уязвима.
+	_pillar_cd = PILLAR_CD
+	pillars_used += 1
+	roar(true)
+	_Vis.play_state(self, "attack", true)
+	_squash(Vector3(1.15, 0.8, 1.15), 0.5)
+	var a: Node3D = load("res://scripts/boss_extra_attacks.gd").pillars(_world(), global_position, player.global_position, func(p: Vector3) -> float: return _ground_y_at(p))
+	_stagger_len = 1.0 + 1.4
+	_enter(S.STAGGER)
+	return a
 
 
 func _squash(k: Vector3, time: float) -> void:
@@ -803,6 +823,7 @@ func _die() -> void:
 	if GameState.has_method("on_mother_killed"):
 		GameState.on_mother_killed()
 	GameState.reward_kill(true, "Мать блоков")
+	GameState.drop_boss_token("mother", global_position)  # v0.24: Каменное сердце 35 %
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)

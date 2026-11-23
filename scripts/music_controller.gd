@@ -8,6 +8,9 @@ const PATH_WAKE := "res://assets/audio/music.mp3"
 const PATH_DREAM := "res://assets/audio/dream_ost.mp3"
 const PATH_BOSS := "res://assets/audio/boss_ost.mp3"
 const PATH_ANACONDA := "res://assets/audio/anaconda_ost.mp3"
+## v0.24: Бургер Смерти — фаза тарелки и фаза Антона (музыка от владельца).
+const PATH_BURGER1 := "res://assets/audio/burger_phase1_ost.mp3"
+const PATH_BURGER2 := "res://assets/audio/burger_phase2_ost.ogg"
 ## v0.7: если живы оба босса — играет тема Анаконды (ночной бой под землёй, она редкая и опаснее);
 ## Мать блоков возвращает свою тему, как только Анаконда уйдёт или умрёт.
 const POLL_SEC := 0.5
@@ -71,6 +74,10 @@ func current_key() -> String:
 
 
 func _desired() -> String:
+	if GameState != null and not GameState.is_dream() and is_inside_tree():
+		for b in get_tree().get_nodes_in_group("burger_boss"):
+			if is_instance_valid(b) and not b.is_queued_for_deletion() and int(b.get("state")) != int(b.S.LEAVING) and int(b.get("state")) != int(b.S.DEAD):
+				return "burger1" if int(b.get("phase")) == 1 else "burger2"
 	if GameState != null and not GameState.is_dream() and anaconda_active():
 		return "anaconda"
 	if GameState != null and bool(GameState.get("boss_alive")):
@@ -83,6 +90,10 @@ func _desired() -> String:
 func _path_for(key: String) -> String:
 	if key == "anaconda":
 		return PATH_ANACONDA
+	if key == "burger1":
+		return PATH_BURGER1
+	if key == "burger2":
+		return PATH_BURGER2
 	if key == "boss":
 		return PATH_BOSS
 	if key == "dream":

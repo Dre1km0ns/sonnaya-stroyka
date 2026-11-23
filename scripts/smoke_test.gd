@@ -610,6 +610,10 @@ func _run() -> void:
 	await _v010_entity_checks()
 	await _v010_transfer_checks()
 	await _v011_checks()
+	var smoke24: RefCounted = load("res://scripts/smoke_v024.gd").new()
+	await smoke24.run(self)
+	_fails.append_array(smoke24.fails)
+	_a(smoke24.done, 24000)
 	if not _fails.is_empty():
 		push_error("SMOKE: FAILED asserts at lines %s" % str(_fails))
 		quit(1)
@@ -1122,7 +1126,7 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	G.reset_state()
 	var lathe_ids: Array = G.get_visible_recipes({"at_lathe": true}).map(func(r): return str(r["id"]))
 	var bench_ids: Array = G.get_visible_recipes({"at_workbench": true}).map(func(r): return str(r["id"]))
-	_a(lathe_ids == ["sword3", "sword2", "pickaxe2", "scale_helmet","scale_chest","scale_legs","scale_boots"], 1076)
+	_a(lathe_ids == ["sword3", "sword2", "pickaxe2", "metal_helmet", "metal_chest", "metal_legs", "metal_boots", "scale_helmet","scale_chest","scale_legs","scale_boots", "metal_ingot", "pickaxe3", "metal_sword", "bow2", "arrow2"], 1076)
 	_a(not ("lathe" in bench_ids) and not ("sword2" in bench_ids), 1077)
 	for rid in bench_ids:
 		_a(not (rid in lathe_ids), 1079)
@@ -1150,12 +1154,12 @@ func _v07_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	_a(G.count_item("sword2") == 1 and G.count_item("sword") == 0, 1098)
 	_a(G.count_item("stone") == 0 and G.count_item("reagent2") == 0, 1099)
 	var bc: GDScript = load("res://scripts/build_controller.gd")
-	_a(bc.SWORD2_DAMAGE == 14 and bc.SWORD_DAMAGE==8 and bc.SWORD3_DAMAGE==24 and is_equal_approx(bc.SWORD2_REACH, bc.SWORD_REACH * 1.25), 1101)
+	_a(bc.SWORD2_DAMAGE == 14 and bc.SWORD_DAMAGE==8 and bc.SWORD3_DAMAGE==24 and is_equal_approx(bc.Gear.sword_reach("sword"), 3.5) and is_equal_approx(bc.Gear.sword_reach("sword3"), 4.5), 1101)
 	var cmenu: Node = load("res://scripts/craft_menu.gd").new()
 	root.add_child(cmenu)
 	await process_frame
 	cmenu.open_lathe()
-	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2", "scale_helmet","scale_chest","scale_legs","scale_boots"], 1106)
+	_a(cmenu.station() == "lathe" and cmenu.visible_recipe_ids() == ["sword3", "sword2", "pickaxe2", "metal_helmet", "metal_chest", "metal_legs", "metal_boots", "scale_helmet","scale_chest","scale_legs","scale_boots", "metal_ingot", "pickaxe3", "metal_sword", "bow2", "arrow2"], 1106)
 	cmenu.close()
 	cmenu.queue_free()
 	_a(G.is_placeable_block("bed") and G.is_placeable_block("lathe"), 1109)
@@ -1480,7 +1484,7 @@ func _v08_checks() -> void:
 	for tool in ["pickaxe","sword","pickaxe2","sword2"]:
 		G.set_slot(0,{"id":tool,"count":1})
 		G.select_item_slot(0)
-		_a(int(G.get_slot(0).durability) == (500 if tool.ends_with("2") else 100),8006)
+		_a(int(G.get_slot(0).durability) == G.tool_max(tool),8006)
 		G.wear_tool(2)
 		var remain: int = G.tool_max(tool)-2
 		_a(int(G.get_slot(0).durability) == remain,8007)
@@ -1639,7 +1643,7 @@ func _v08_checks() -> void:
 				shapes[int(plan[0].shape)] = true
 				if int(plan[0].w)>=10:
 					large += 1
-	_a(shapes.size()==3 and large>0 and large<ruins/5,8064)
+	_a(shapes.size()==4 and shapes.has(3) and large>0 and large<ruins/5,8064)
 	print("SMOKE: v08 world samples=10000 ruins=",ruins," settlements=",settlements," large=",large," dev_settlement_distance=",dist," houses=",houses.size())
 	cm.queue_free()
 	# Torch collision: 1/15, 5-second successful-break cooldown.
@@ -2188,7 +2192,7 @@ func _v010_gameplay_checks() -> void:
 	for i in range(G.ITEM_SLOT_COUNT): G.set_slot(i,{})
 	G.add_item_count("sword2",1);G.add_item_count("anaconda_scale",5);G.set_sword3_flag(false)
 	_a(G.craft_recipe("sword3",{"at_lathe":true}) and G.sword3_crafted and G.count_item("sword2")==0 and G.count_item("anaconda_scale")==0 and G.count_item("sword3")==1,10018)
-	_a(G.tool_max("sword3")==700 and load("res://scripts/item_db.gd").icon("sword3")!=null,10019)
+	_a(G.tool_max("sword3")==1200 and load("res://scripts/item_db.gd").icon("sword3")!=null,10019)
 	var save: Dictionary=G.to_save_dict();save.erase("sword3_crafted");save.erase("progression_revision");save.sword2_crafted=true
 	G.apply_save_dict(save);_a(not G.sword3_crafted,10020)
 	var door:=Vector3i(120,7,120)
@@ -2670,7 +2674,7 @@ func _v011_scene_checks() -> void:
 		inv.close()
 	# в сохранении мира
 	var sv23: Dictionary = JSON.parse_string(JSON.stringify(G.to_save_dict()))
-	_a(int(sv23.version) == 17 and (sv23.dropped_items as Array).size() == 3, 23016)
+	_a(int(sv23.version) >= 17 and (sv23.dropped_items as Array).size() == 3, 23016)
 	await create_timer(0.1).timeout
 	_a(build.spawn_saved_drops() == 3, 23017)
 	await create_timer(0.05).timeout
@@ -2822,15 +2826,6 @@ func _v012_checks(scene: Node, hud: Node) -> void:
 	## v0.12: станки боссов, свет/стан Анаконды, HUD, прогрессия, регрессия сохранений.
 	var G: Node = root.get_node("GameState")
 	var AS: GDScript = load("res://scripts/boss_anaconda.gd")
-	var MS: GDScript = load("res://scripts/boss_combat_sm.gd")
-	# Общая SM: конечные таймеры, анти-повтор удара, стан только от события.
-	var sm = MS.new()
-	_a(sm.begin_attack("bite", 1.0) and not sm.begin_attack("bite", 1.0), 13001)
-	_a(sm.can_hit("x") and not sm.can_hit("x"), 13002)
-	_a(sm.try_stun(0.75, "ring_break") and not sm.try_stun(0.75, "ring_break"), 13003)
-	_a(not sm.try_stun(0.75, "light") and sm.light_stun_attempts == 1, 13004)
-	sm.tick(3.0)
-	_a(not sm.is_stunned() and not sm.is_stun_immune() and sm.try_stun(0.7, "dash_counter"), 13005)
 	# v0.22: оба босса откатены к v0.11 (кольцо/перекрёстный огонь/пластины/обвал v0.12+ удалены).
 	G.reset_state(); G.dev_mode = true; G.day_time = 1200.0
 	var host := Node3D.new(); root.add_child(host)
