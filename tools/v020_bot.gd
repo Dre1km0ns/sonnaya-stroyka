@@ -137,6 +137,10 @@ func _go() -> void:
 	mm._seed_edit.text = "бета-путь"
 	mm._create_world()
 	await _wait(40)
+	var gw := 0
+	while (current_scene == null or current_scene == mm or not "build" in current_scene) and gw < 20000:   # v0.24: загрузка с полосой — асинхронная
+		await _wait(1); gw += 1
+	await _wait(20)
 	gs = root.get_node("GameState"); main = current_scene
 	gs.god_mode = true
 	if nodecor:

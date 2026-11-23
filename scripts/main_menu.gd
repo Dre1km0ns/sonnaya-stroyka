@@ -693,6 +693,9 @@ var load_progress_seen: Array = []   # для smoke: какие доли вид�
 func _load_main(text: String) -> void:
 	_show_loading(text)
 	await get_tree().process_frame
+	if DisplayServer.get_name() == "headless":   # без окна (боты, проверки): фоновая загрузка там не продвигается — грузим сразу
+		get_tree().change_scene_to_file(MAIN_SCENE)
+		return
 	if ResourceLoader.load_threaded_request(MAIN_SCENE, "", true) != OK:
 		get_tree().change_scene_to_file(MAIN_SCENE)
 		return
