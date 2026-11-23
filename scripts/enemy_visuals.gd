@@ -21,7 +21,7 @@ static func build_ghost(parent: Node3D, kind: int, _color: Color) -> void:
 
 
 static func attach_chunky(parent: Node3D, preset: String, override: Dictionary = {}) -> Node3D:
-	## v0.25: процедурная «толстая» модель в стиле Антона (scripts/chunky_body.gd).
+	## v0.25: процедурная своя стройная модель (v0.25.1) (scripts/chunky_body.gd).
 	var b: Node3D = load("res://scripts/chunky_body.gd").make(preset, override)
 	parent.add_child(b)
 	parent.set_meta("has_real_model", true)
