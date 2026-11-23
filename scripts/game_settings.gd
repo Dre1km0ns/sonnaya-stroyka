@@ -65,6 +65,7 @@ const BINDABLE := [
 	["blueprint_paste", "Сон: вставить чертёж у прицела", "key", KEY_P],
 	["blueprint_rotate", "Сон: повернуть чертёж на 90°", "key", KEY_O],
 	["tutorial_skip", "Пропустить обучение во Сне", "key", KEY_F1],
+	["net_chat", "Чат сетевой игры", "key", KEY_ENTER],
 	["toggle_debug", "Отладка / FPS", "key", KEY_F3],
 	["quick_save", "Быстрое сохранение", "key", KEY_F5],
 	["quick_load", "Быстрая загрузка", "key", KEY_F9],

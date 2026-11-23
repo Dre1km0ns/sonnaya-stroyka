@@ -24,6 +24,12 @@ static func can_summon(tree: SceneTree) -> String:
 
 static func use_summoner(build: Node) -> bool:
 	var tree := build.get_tree()
+	if NetSession.is_client():
+		if not GameState.consume_item("burger_summoner", 1):
+			return false
+		NetSession.request_summon()   # v0.24: босса вызывает хост — он хозяин мира
+		GameState.chat("Призывалка сработала. Бургер Смерти прилетит через минуту — готовь арену!", Color(1.0, 0.55, 0.3), true)
+		return true
 	var why := can_summon(tree)
 	if why != "":
 		GameState.set_hint(why, false)

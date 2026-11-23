@@ -56,7 +56,9 @@ func _ready() -> void:
 			wake_chunks.setup(player, GameState.world_seed_wake)
 		if dream_chunks and dream_chunks.has_method("setup"):
 			dream_chunks.setup(player, GameState.world_seed_dream)
-		if not _want_shots() and not _want_shots05() and not _want_shots06() and not _want_shots07() and not _want_shots08() and not _want_shots09() and not _want_inventory_mockup():
+		if NetSession.is_client():
+			pass   # v0.24: лагерь уже есть в мире хоста
+		elif not _want_shots() and not _want_shots05() and not _want_shots06() and not _want_shots07() and not _want_shots08() and not _want_shots09() and not _want_inventory_mockup():
 			_build_starter_camp()
 	var day_script: GDScript = load("res://scripts/day_cycle.gd")
 	var day: Node = day_script.new()
@@ -108,11 +110,11 @@ func _ready() -> void:
 	else:
 		saver.save_game("new-world")
 		var gsx := get_node_or_null("/root/GameSettings")
-		if (gsx == null or bool(gsx.get("dream_start"))) and not has_meta("smoke") and not _want_perf():
+		if (gsx == null or bool(gsx.get("dream_start"))) and not has_meta("smoke") and not _want_perf() and not NetSession.active() and not NetSession.want_host:
 			start_in_dream()
 	GameState.inventory_changed.emit()
 	# v0.22: летающая надпись над стартовым лагерем убрана совсем
-	print("Сонная стройка v0.22 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.24 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func start_in_dream() -> void:

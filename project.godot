@@ -3,7 +3,7 @@
 config_version=5
 
 [application]
-config/name="Сонная стройка v0.23"
+config/name="Сонная стройка v0.24"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="sonnaya_stroyka"
 config/description="Dual-world sandbox: build in Dream, anchor what survives into Wake."
@@ -14,6 +14,7 @@ config/icon="res://assets/icon/icon_256.png"
 [autoload]
 GameSettings="*res://scripts/game_settings.gd"
 GameState="*res://scripts/game_state.gd"
+NetSession="*res://scripts/net_session.gd"
 
 [display]
 window/size/viewport_width=1280

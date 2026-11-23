@@ -159,10 +159,11 @@ func _build_ui() -> void:
 	_screens["worlds"] = _build_worlds_screen()
 	_screens["create"] = _build_create_screen()
 	_screens["howto"] = _build_howto_screen()
+	_screens["join"] = _build_join_screen()
 	for k in _screens.keys():
 		_ui.add_child(_screens[k])
 	var ver := Label.new()
-	ver.text = "Сонная стройка v0.23 · Godot 4.7"
+	ver.text = "Сонная стройка v0.24 · Godot 4.7"
 	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	ver.offset_left = 14
 	ver.offset_top = -32
@@ -203,6 +204,8 @@ func _build_main_screen() -> Control:
 	spacer.custom_minimum_size = Vector2(0, 50)
 	box.add_child(spacer)
 	_main_btn(box, "Играть", _on_play)
+	_main_btn(box, "Создать сетевую игру", _on_host_game)
+	_main_btn(box, "Подключиться", func() -> void: _show("join"))
 	_main_btn(box, "Как играть", func() -> void: _show("howto"))
 	_main_btn(box, "Настройки", _open_settings)
 	_main_btn(box, "Выход", func() -> void: GameSettings.safe_quit(0))
@@ -455,6 +458,100 @@ func _refresh_worlds() -> void:
 	_del_btn.disabled = _worlds.is_empty()
 
 
+# ---------------------------------------------------------------- v0.24: сеть
+var _join_name: LineEdit
+var _join_ip: LineEdit
+var _join_status: Label
+var _join_list: ItemList
+var _join_found: Array = []
+var _host_banner: Label
+
+
+func _on_host_game() -> void:
+	## Хост выбирает или создаёт мир как обычно; сервер поднимается, когда мир загрузится.
+	NetSession.leave()
+	NetSession.want_host = true
+	NetSession.player_name = _saved_name()
+	_on_play()
+	if _host_banner: _host_banner.visible = true
+
+
+func _saved_name() -> String:
+	var cfg := ConfigFile.new()
+	cfg.load("user://net.cfg")
+	return str(cfg.get_value("net", "name", "Игрок"))
+
+
+func _save_net(nm: String, ip: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("net", "name", nm); cfg.set_value("net", "ip", ip)
+	cfg.save("user://net.cfg")
+
+
+func _build_join_screen() -> Control:
+	var pr := _panel_screen("Подключиться к сетевой игре", 640)
+	var box: VBoxContainer = pr[1]
+	var cfg := ConfigFile.new(); cfg.load("user://net.cfg")
+	var l1 := Label.new(); l1.text = "Твоё имя"; box.add_child(l1)
+	_join_name = LineEdit.new(); _join_name.name = "JoinName"; _join_name.max_length = 20
+	_join_name.text = str(cfg.get_value("net", "name", "Игрок")); box.add_child(_join_name)
+	var l2 := Label.new(); l2.text = "IP-адрес хоста в локальной сети"; box.add_child(l2)
+	_join_ip = LineEdit.new(); _join_ip.name = "JoinIp"; _join_ip.text = str(cfg.get_value("net", "ip", "127.0.0.1")); box.add_child(_join_ip)
+	_join_list = ItemList.new(); _join_list.name = "LanList"; _join_list.custom_minimum_size = Vector2(0, 110)
+	_join_list.item_selected.connect(func(i: int) -> void:
+		if i < _join_found.size(): _join_ip.text = str(_join_found[i].ip))
+	box.add_child(_join_list)
+	_join_status = Label.new(); _join_status.name = "JoinStatus"
+	_join_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_join_status.add_theme_color_override("font_color", Color(0.78, 0.78, 0.86))
+	_join_status.text = "Хост жмёт «Создать сетевую игру» и выбирает мир. До 4 игроков, порт %d." % NetSession.PORT
+	box.add_child(_join_status)
+	var row := HBoxContainer.new(); row.add_theme_constant_override("separation", 10); box.add_child(row)
+	var find := Button.new(); find.text = "Найти игры в сети"; find.size_flags_horizontal = Control.SIZE_EXPAND_FILL; find.custom_minimum_size = Vector2(0, 46)
+	find.pressed.connect(func() -> void:
+		_join_status.text = "Ищу игры в локальной сети…"
+		NetSession.discover(1.5))
+	row.add_child(find)
+	var go := Button.new(); go.name = "JoinGo"; go.text = "Подключиться"; go.size_flags_horizontal = Control.SIZE_EXPAND_FILL; go.custom_minimum_size = Vector2(0, 46)
+	go.pressed.connect(_do_join)
+	row.add_child(go)
+	var back := Button.new(); back.text = "Назад"; back.custom_minimum_size = Vector2(0, 44)
+	back.pressed.connect(func() -> void:
+		NetSession.leave()
+		_show("main"))
+	box.add_child(back)
+	NetSession.lan_found.connect(func(list: Array) -> void:
+		if not is_instance_valid(_join_list): return
+		_join_found = list
+		_join_list.clear()
+		for g in list:
+			_join_list.add_item("%s — мир «%s» · %s · игроков %d" % [g.host, g.world, g.ip, int(g.players)])
+		_join_status.text = "Найдено игр: %d." % list.size() if not list.is_empty() else "Игр в сети не найдено. Введи IP хоста вручную.")
+	NetSession.join_failed.connect(func(reason: String) -> void:
+		if is_instance_valid(_join_status): _join_status.text = reason)
+	NetSession.world_received.connect(func() -> void:
+		if not is_inside_tree(): return
+		_join_status.text = "Мир получен, загружаю…"
+		NetSession.begin_client_world()
+		_load_main("Загрузка сетевого мира…"))
+	return pr[0]
+
+
+func _do_join() -> void:
+	var nm := _join_name.text.strip_edges()
+	if nm == "": nm = "Игрок"
+	_save_net(nm, _join_ip.text.strip_edges())
+	NetSession.leave()
+	NetSession.player_name = nm
+	var err: String = NetSession.join(_join_ip.text)
+	_join_status.text = err if err != "" else "Подключаюсь к %s…" % _join_ip.text.strip_edges()
+	if err == "":
+		get_tree().create_timer(8.0).timeout.connect(func() -> void:
+			if is_instance_valid(_join_status) and NetSession.is_client() and NetSession.pending_world.is_empty() and is_inside_tree():
+				NetSession.leave()
+				_join_status.text = "Хост не ответил. Проверь IP и что игра на хосте открыта.")
+
+
 func _on_play() -> void:
 	_worlds = WorldStore.list_worlds()
 	if _worlds.is_empty():
@@ -516,20 +613,60 @@ func _start_world(meta: Dictionary) -> void:
 	GameState.set_difficulty(str(meta.get("difficulty", "normal")))
 	WorldStore.touch(folder)
 	# v0.21 c2: первая генерация мира занимает 1–2 с — раньше всё это время висело замёрзшее меню.
-	_show_loading("Загрузка мира «%s»…" % str(meta.get("name", "Мир")))
-	await get_tree().process_frame
-	await get_tree().process_frame
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	_load_main("Загрузка мира «%s»…" % str(meta.get("name", "Мир")))
+
+
+var _load_bar: ProgressBar
+var _load_stage: Label
+const MAIN_SCENE := "res://scenes/main.tscn"
 
 
 func _show_loading(text: String) -> void:
 	var layer := CanvasLayer.new(); layer.name = "Loading"; layer.layer = 50; add_child(layer)
 	var bg := ColorRect.new(); bg.color = Color(0.05, 0.04, 0.1, 0.94); bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(bg)
-	var l := Label.new(); l.text = text; l.set_anchors_preset(Control.PRESET_FULL_RECT)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var v := VBoxContainer.new(); v.set_anchors_preset(Control.PRESET_CENTER); v.custom_minimum_size = Vector2(560, 0)
+	v.position = Vector2(-280, -60); v.add_theme_constant_override("separation", 14)
+	bg.add_child(v)
+	var l := Label.new(); l.text = text; l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.add_theme_font_size_override("font_size", 30); l.add_theme_color_override("font_color", Color(0.85, 0.8, 1.0))
-	layer.add_child(l)
+	v.add_child(l)
+	# v0.24 (п.27): настоящая полоса загрузки — доля ресурсов сцены из ResourceLoader.
+	_load_bar = ProgressBar.new(); _load_bar.name = "LoadBar"; _load_bar.min_value = 0; _load_bar.max_value = 100
+	_load_bar.custom_minimum_size = Vector2(560, 26)
+	v.add_child(_load_bar)
+	_load_stage = Label.new(); _load_stage.name = "LoadStage"; _load_stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_load_stage.add_theme_color_override("font_color", Color(0.7, 0.68, 0.85))
+	_load_stage.text = "Готовлю ресурсы…"
+	v.add_child(_load_stage)
+
+
+var load_progress_seen: Array = []   # для smoke: какие доли видела полоса
+
+
+func _load_main(text: String) -> void:
+	_show_loading(text)
+	await get_tree().process_frame
+	if ResourceLoader.load_threaded_request(MAIN_SCENE, "", true) != OK:
+		get_tree().change_scene_to_file(MAIN_SCENE)
+		return
+	var prog: Array = []
+	while true:
+		var st := ResourceLoader.load_threaded_get_status(MAIN_SCENE, prog)
+		var k: float = float(prog[0]) if not prog.is_empty() else 0.0
+		if st == ResourceLoader.THREAD_LOAD_LOADED: k = 1.0
+		load_progress_seen.append(k)
+		_load_bar.value = k * 90.0
+		_load_stage.text = "Ресурсы мира: %d%%" % int(k * 100.0) if k < 1.0 else "Строю мир вокруг тебя…"
+		if st == ResourceLoader.THREAD_LOAD_LOADED or st == ResourceLoader.THREAD_LOAD_FAILED or st == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			break
+		await get_tree().process_frame
+	var ps := ResourceLoader.load_threaded_get(MAIN_SCENE) as PackedScene
+	_load_bar.value = 95
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if ps: get_tree().change_scene_to_packed(ps)
+	else: get_tree().change_scene_to_file(MAIN_SCENE)
 
 
 func _open_settings() -> void:

@@ -138,6 +138,8 @@ var _lizard_t := 6.0  # v0.24: ящерки-детёныши в пещерах �
 
 
 func _process(delta: float) -> void:
+	if NetSession.is_client():
+		return   # v0.24: в сети мобов создаёт только хост
 	if GameState.is_dream():
 		return
 	if player == null or wake_root == null:
