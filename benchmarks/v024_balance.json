@@ -3,24 +3,24 @@
     "boss": "burger",
     "deaths": 0,
     "diff": "normal",
-    "dmg_per_min": 285.9,
+    "dmg_per_min": 199.3,
     "end": "killed",
     "max_hp": 4000,
-    "potions": 5,
-    "swings": 189,
-    "t": 97.2,
-    "taken": 463
+    "potions": 4,
+    "swings": 174,
+    "t": 89.4,
+    "taken": 297
   },
   {
     "boss": "burger",
     "deaths": 0,
     "diff": "expert",
-    "dmg_per_min": 0.0,
-    "end": "timeout",
+    "dmg_per_min": 262.0,
+    "end": "killed",
     "max_hp": 7000,
-    "potions": 0,
-    "swings": 1162,
-    "t": 600.0,
-    "taken": 0
+    "potions": 12,
+    "swings": 402,
+    "t": 207.2,
+    "taken": 905
   }
 ]

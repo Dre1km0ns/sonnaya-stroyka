@@ -872,7 +872,10 @@ func _play_tool_swing() -> void:
 	if viewmodel == null or player == null:
 		return
 	_update_hand_tools()
-	viewmodel.play_swing("attack" if Gear.is_sword(str(GameState.get_selected_item().get("id", ""))) else "break")
+	var sid := str(GameState.get_selected_item().get("id", ""))
+	# п.6: с блоком в руке — короткий толчок вперёд (клип interact), замах сверху уводил блок за край экрана
+	var kind := "attack" if Gear.is_sword(sid) else ("place" if str(viewmodel.get("current")) == "block" else "break")
+	viewmodel.play_swing(kind)
 
 
 func _combat_feedback(res: Dictionary, target: Node) -> void:

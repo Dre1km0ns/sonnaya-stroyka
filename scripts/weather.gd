@@ -17,19 +17,19 @@ func _ready() -> void:
 	_rng.randomize()
 	_rain = CPUParticles3D.new()
 	_rain.name = "Rain"
-	_rain.amount = 900
+	_rain.amount = 1800
 	_rain.lifetime = 0.9
 	_rain.preprocess = 0.9
 	_rain.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	_rain.emission_box_extents = Vector3(16, 0.5, 16)
+	_rain.emission_box_extents = Vector3(13, 0.5, 13)
 	_rain.direction = Vector3(0.08, -1, 0.04)
 	_rain.spread = 2.0
 	_rain.gravity = Vector3(0, -30, 0)
 	_rain.initial_velocity_min = 14.0
 	_rain.initial_velocity_max = 18.0
 	_rain.local_coords = false
-	var qm := BoxMesh.new(); qm.size = Vector3(0.025, 0.42, 0.025)
-	var m := StandardMaterial3D.new(); m.albedo_color = Color(0.7, 0.78, 0.95, 0.55)
+	var qm := BoxMesh.new(); qm.size = Vector3(0.035, 0.7, 0.035)
+	var m := StandardMaterial3D.new(); m.albedo_color = Color(0.55, 0.62, 0.78, 0.8)   # темнее неба — видно и днём
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	qm.material = m
 	_rain.mesh = qm
@@ -72,7 +72,7 @@ func _process(delta: float) -> void:
 			set_weather(_roll())
 	var w := GameState.weather
 	var rain_t := 1.0 if w == "rain" else 0.0
-	var fog_t := 1.0 if w == "fog" else (0.25 if w == "rain" else 0.0)
+	var fog_t := 1.0 if w == "fog" else (0.45 if w == "rain" else 0.0)
 	GameState.weather_rain_k = move_toward(GameState.weather_rain_k, rain_t, delta / BLEND)
 	GameState.weather_fog_k = move_toward(GameState.weather_fog_k, fog_t, delta / BLEND)
 	var rk := 0.0 if dream else GameState.weather_rain_k

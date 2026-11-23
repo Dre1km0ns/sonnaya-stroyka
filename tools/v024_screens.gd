@@ -62,6 +62,7 @@ func _go() -> void:
 			gs.place_wake_block(base + Vector3i(x, y, 0), "metal_ore" if (x + y) % 2 == 0 else "stone")
 	_look(at, 0.0, -0.05); await _wait(30)
 	if only == "burger": await _burger(at); return
+	if only == "misc": await _misc(at); quit(); return
 	await _sel(0); await _shot("02_pickaxe2_idle_ore.png")
 	Engine.time_scale = 0.2; build._play_tool_swing(); await _wait(5); await _shot("03_pickaxe_swing.png"); Engine.time_scale = 1.0; await _wait(30)
 	await _sel(1); await _shot("04_pickaxe3_idle.png")
@@ -133,3 +134,27 @@ func _burger(at: Vector3) -> void:
 	vs.open(); await _wait(90); await _shot("14_victory.png")
 	vs.close()
 	quit()
+
+
+func _misc(at: Vector3) -> void:
+	## п.6 блок в руке на замахе, п.9 частицы разрушения, п.17 погода, п.24 окна в единой теме
+	var BF = load("res://scripts/break_fx.gd")
+	_look(at, 0.0, -0.05); await _wait(20)
+	await _sel(6); Engine.time_scale = 0.15; build._place_cooldown = 0.0; build.swing_air(); await _wait(3); await _shot("05_block_swing.png")
+	await _wait(3); await _shot("05b_block_swing_mid.png"); Engine.time_scale = 1.0; await _wait(30)
+	var cell := Vector3i(int(floor(at.x)), int(floor(at.y)), int(floor(at.z)) - 4)
+	await _sel(0)
+	for k in ["metal_ore", "stone"]:
+		BF.burst(main.wake_world, cell + Vector3i(0, 1, 0), k)
+	BF.chips(main.wake_world, cell + Vector3i(1, 0, 0), "stone", 8)
+	await _wait(4); await _shot("16_break_particles.png")
+	await _wait(40)
+	var w = get_first_node_in_group("weather")
+	_look(at, 0.6, 0.0)
+	w.set_weather("rain", true); await _wait(60); await _shot("17_weather_rain.png")
+	w.set_weather("fog", true); await _wait(60); await _shot("18_weather_fog.png")
+	w.set_weather("clear", true); await _wait(20)
+	var inv = get_first_node_in_group("inventory_ui"); inv.open(); await _wait(15); await _shot("19_ui_inventory.png"); inv.close(); await _wait(5)
+	var cr = get_first_node_in_group("craft_menu"); cr.open_workbench(); await _wait(15); await _shot("20_ui_craft.png"); cr.toggle(); await _wait(5)
+	if get_first_node_in_group("craft_menu").visible: cr.toggle()
+	var dm = get_first_node_in_group("death_menu"); dm.open("Бургер Смерти: лазер"); await _wait(15); await _shot("21_ui_death.png"); dm.close(); await _wait(5)
