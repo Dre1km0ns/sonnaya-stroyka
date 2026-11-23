@@ -142,7 +142,7 @@ func _physics_process(delta: float) -> void:
 	if bod and _punch <= 0.0:
 		bod.position.z = 0.0
 
-	var player := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	var player := preload("res://scripts/combat_util.gd").nearest_player(get_tree(), global_position)   # v0.24: в сети — ближайший игрок
 	if player == null:
 		return
 
@@ -189,12 +189,15 @@ func _pick_wander() -> void:
 	_wander_timer = 3.0 + randf() * 3.0
 
 
-func _hit_player(player: CharacterBody3D, to_player: Vector3) -> void:
+func _hit_player(player: Node3D, to_player: Vector3) -> void:
+	if not player.is_in_group("player"):
+		preload("res://scripts/combat_util.gd").hurt(player, _Nav.combat_damage(self,HIT_DAMAGE_ELITE if elite else HIT_DAMAGE), "Шовник", global_position)   # v0.24: удалённый игрок
+		return
 	var push := to_player.normalized()
 	if push.length() < 0.01:
 		push = Vector3(1, 0, 0)
 	var kb := KNOCKBACK_ELITE if elite else KNOCKBACK
-	player.velocity += Vector3(push.x, 0.35, push.z).normalized() * kb
+	(player as CharacterBody3D).velocity += Vector3(push.x, 0.35, push.z).normalized() * kb
 	var amount := 2 if elite else 1
 	# Обычный тоже больнее со временем яви (хардкор scarce)
 	if GameState.awake_time > 60.0:

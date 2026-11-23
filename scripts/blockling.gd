@@ -160,7 +160,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_hop_cd -= delta
 	_bite_cd -= delta
-	var player := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	var player := preload("res://scripts/combat_util.gd").nearest_player(get_tree(), global_position)   # v0.24: в сети — ближайший игрок
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	else:
@@ -179,8 +179,7 @@ func _physics_process(delta: float) -> void:
 		var to := player.global_position - global_position
 		if Vector2(to.x, to.z).length() <= BITE_RANGE and absf(to.y) < 1.6 and _bite_cd <= 0.0:
 			_bite_cd = BITE_CD
-			GameState.hit_from(global_position)
-			GameState.damage_player(BITE_DAMAGE, "блоклинг")
+			preload("res://scripts/combat_util.gd").hurt(player, BITE_DAMAGE, "блоклинг", global_position)
 
 
 

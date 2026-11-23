@@ -4,6 +4,7 @@ extends SceneTree
 ## Клиент: XDG_DATA_HOME=/tmp/mpc godot --headless --path . -s res://tools/mp_smoke.gd -- --role=client
 ## Синхронизация шагов — файлы-флаги в /tmp/mp_flags. Итог: «MP SMOKE <роль>: OK» или список провалов.
 var role := "host"
+var shot := ""
 var port := 24577
 var DIR := "/tmp/mp_flags/"
 var gs; var ns; var fails: Array = []; var main
@@ -33,6 +34,7 @@ func _has(nm: String) -> bool: return FileAccess.file_exists(DIR + nm)
 func _go() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--role="): role = a.substr(7)
+		if a.begins_with("--shot="): shot = a.substr(7)
 	gs = root.get_node("GameState"); ns = root.get_node("NetSession")
 	root.get_node("GameSettings").dream_start = false
 	if role == "host": await _host()
@@ -58,6 +60,20 @@ func _host() -> void:
 	_a(gs.net_players == 2, "net_players")
 	_a(is_equal_approx(gs.boss_player_scale(), 1.0 + gs.MP_BOSS_HP_PER_PLAYER), "boss_scale")
 	_a(await _until(func() -> bool: return ns.avatars.size() == 1 and get_nodes_in_group("remote_player").size() == 1, 20.0), "avatar")
+	var avn: Node3D = get_nodes_in_group("remote_player")[0]
+	_a(load("res://scripts/combat_util.gd").nearest_player(self, avn.global_position + Vector3(0.5, 0, 0)) == avn, "mobs_target_remote")
+	if shot != "":
+		await create_timer(1.0).timeout
+		var hp := main.get_node("Player") as Node3D
+		var ap := avn.global_position
+		hp.global_position = ap + Vector3(0, 0.6, 8.0)
+		hp.rotation.y = 0.0
+		hp.get_node("CameraPivot").rotation.x = -0.12
+		ns.send_chat("Привет! Я хост, строим вместе")
+		await create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		root.get_viewport().get_texture().get_image().save_png(shot)
+		print("MP SHOT ", shot)
 	# блок хоста → клиенту
 	gs.wake_blocks[CELL_H] = {"kind": "plank", "mutant": false}
 	_flag("host_block")

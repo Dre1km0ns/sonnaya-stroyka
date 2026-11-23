@@ -4755,7 +4755,8 @@ func _reset_v024() -> void:
 	burger_kills = 0
 	victory_seen = false
 	speed_potion_t = 0.0
-	net_players = 1
+	var ns := get_node_or_null("/root/NetSession")
+	net_players = int(ns.player_count()) if ns else 1   # сетевая сессия переживает начало мира
 	lizards_killed = 0
 	v024_stats = {}
 
