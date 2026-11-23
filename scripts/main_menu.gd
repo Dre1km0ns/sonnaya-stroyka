@@ -22,6 +22,8 @@ var _name_edit: LineEdit
 var _seed_edit: LineEdit
 var _tutorial: CheckButton
 var _peaceful: CheckButton
+var _difficulty: OptionButton
+var _diff_info: Label
 var _seed_info: Label
 var _env: Environment
 var _settings: Control = null
@@ -346,6 +348,20 @@ func _build_create_screen() -> Control:
 	_peaceful = CheckButton.new()
 	_peaceful.text = "Мирный режим — без врагов"
 	box.add_child(_peaceful)
+	# v0.24: сложность выбирается при создании и хранится в мире.
+	var drow := HBoxContainer.new(); drow.add_theme_constant_override("separation", 10)
+	var dl := Label.new(); dl.text = "Сложность:"; drow.add_child(dl)
+	_difficulty = OptionButton.new(); _difficulty.name = "Difficulty"
+	_difficulty.add_item("Нормальный", 0); _difficulty.add_item("Эксперт", 1)
+	_difficulty.item_selected.connect(func(_i: int) -> void: _update_diff_info())
+	drow.add_child(_difficulty)
+	box.add_child(drow)
+	_diff_info = Label.new()
+	_diff_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_diff_info.add_theme_font_size_override("font_size", 14)
+	_diff_info.add_theme_color_override("font_color", Color(0.78, 0.78, 0.86))
+	box.add_child(_diff_info)
+	_update_diff_info()
 	_tutorial = CheckButton.new()
 	_tutorial.text = "Пройти обучение во Сне — 7 шагов, около 3 минут"
 	_tutorial.button_pressed = true
@@ -398,6 +414,8 @@ func _show(screen: String) -> void:
 		_name_edit.text = _unique_default_name()
 		_seed_edit.text = ""
 		_peaceful.button_pressed = false
+		_difficulty.select(0)
+		_update_diff_info()
 		_update_seed_info()
 		_name_edit.grab_focus()
 
@@ -426,6 +444,8 @@ func _refresh_worlds() -> void:
 			tags += " · DEV ∞"
 		if bool(w.get("peaceful", false)):
 			tags += " · мирный"
+		if str(w.get("difficulty", "normal")) == "expert":
+			tags += " · эксперт"
 		_world_list.add_item("%s  —  сид %s%s  ·  %s" % [str(w.get("name", "?")), str(w.get("seed", "?")), tags, when])
 	_del_armed = false
 	_del_btn.text = "Удалить"
@@ -469,11 +489,21 @@ func _delete_selected() -> void:
 		_show("create")
 
 
+func _update_diff_info() -> void:
+	if _diff_info == null:
+		return
+	if _difficulty.selected == 1:
+		_diff_info.text = "Эксперт: у всех мобов и боссов +75 % здоровья, они бьют больнее, бегают быстрее, раньше замечают и дольше преследуют."
+	else:
+		_diff_info.text = "Нормальный: задуманный баланс игры."
+
+
 func _create_world() -> void:
 	var stext := _seed_edit.text.strip_edges()
 	var sv := GameState.seed_from_text(stext)
 	var meta := WorldStore.create_world(_name_edit.text, stext, sv, _peaceful.button_pressed)
 	meta["tutorial_enabled"] = _tutorial.button_pressed
+	meta["difficulty"] = "expert" if _difficulty.selected == 1 else "normal"
 	WorldStore.write_meta(str(meta["folder"]), meta)
 	_start_world(meta)
 
@@ -483,6 +513,7 @@ func _start_world(meta: Dictionary) -> void:
 	GameState.begin_world(str(meta.get("name", "Мир")), folder, str(meta.get("seed_text", "")),
 		WorldStore.meta_seed(meta), bool(meta.get("peaceful", false)))
 	GameState.tutorial_enabled = bool(meta.get("tutorial_enabled", true))
+	GameState.set_difficulty(str(meta.get("difficulty", "normal")))
 	WorldStore.touch(folder)
 	# v0.21 c2: первая генерация мира занимает 1–2 с — раньше всё это время висело замёрзшее меню.
 	_show_loading("Загрузка мира «%s»…" % str(meta.get("name", "Мир")))

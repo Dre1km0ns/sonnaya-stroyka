@@ -151,6 +151,9 @@ func _ready() -> void:
 	for i in range(SEGMENTS * 12):
 		_trail.append(position + Vector3(0, -UNDER_DEPTH - float(i) * 0.08, 0))
 	_head.position = Vector3(0, -UNDER_DEPTH, 0)
+	# v0.24: Эксперт +75% HP, в сети — больше HP по числу игроков
+	max_hp = ceili(MAX_HP * GameState.diff_hp_mult(true))
+	hp = max_hp
 	GameState.set_boss_alive(true)
 	if GameState.has_signal("world_changed"):
 		GameState.world_changed.connect(_on_world)
@@ -234,16 +237,16 @@ func apply_light_damage(amount: float) -> int:
 	_dmg_acc -= float(dmg)
 	var floor_hp := 0
 	if phase == 1:
-		floor_hp = P2_AT
+		floor_hp = max_hp * 66 / 100
 	elif phase == 2:
-		floor_hp = P3_AT
+		floor_hp = max_hp * 33 / 100
 	var before := hp
 	hp = maxi(floor_hp, hp - dmg)
 	light_damage_total += float(before - hp)
 	_Vis.update_hp_bar(_head, hp, max_hp)
-	if phase == 1 and hp <= P2_AT:
+	if phase == 1 and hp <= max_hp * 66 / 100:
 		_pending_transition = 2
-	elif phase == 2 and hp <= P3_AT:
+	elif phase == 2 and hp <= max_hp * 33 / 100:
 		_pending_transition = 3
 	if hp <= 0:
 		_die()
@@ -356,9 +359,9 @@ func tick(delta: float) -> void:
 	if player == null:
 		return
 	# Поводок: игрок убежал от гнезда.
-	if player.global_position.distance_to(home) > LEASH_DIST:
+	if player.global_position.distance_to(home) > LEASH_DIST * GameState.diff_leash():
 		_leash_t += delta
-		if _leash_t > LEASH_TIME:
+		if _leash_t > LEASH_TIME * GameState.diff_leash():
 			leave("Анаконда вернулась в гнездо.")
 			return
 	else:
@@ -711,6 +714,7 @@ func _die() -> void:
 	_cleanup_fx()
 	roar(false)
 	GameState.reward_kill(true, "Анаконда")
+	GameState.drop_boss_token("anaconda", hit_center())  # v0.24: Чешуйчатый клык 35 %
 	if GameState.has_method("on_anaconda_killed"): GameState.on_anaconda_killed()
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)

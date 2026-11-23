@@ -103,6 +103,8 @@ func _physics_process(delta: float) -> void:
 	var sprinting := want_sprint and (GameState.is_dream() or GameState.can_sprint())
 	if not GameState.is_dream(): GameState.tick_stamina(delta, sprinting)
 	var speed := (SPRINT if sprinting else SPEED) * _move_factor()
+	if not GameState.is_dream() and GameState.speed_potion_active():
+		speed *= GameState.SPEED_POTION_BOOST   # v0.24: зелье скорости — чуть быстрее
 
 	if flying:
 		var y_move := 0.0

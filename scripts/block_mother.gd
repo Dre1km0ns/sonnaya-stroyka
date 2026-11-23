@@ -290,9 +290,9 @@ func _physics_process(delta: float) -> void:
 	var to_p := player.global_position - global_position
 	var flat := Vector3(to_p.x, 0, to_p.z)
 	# Поводок: игрок убежал далеко — Мать уходит без награды.
-	if flat.length() > LEASH_DIST:
+	if flat.length() > LEASH_DIST * GameState.diff_leash():
 		_leash_t += delta
-		if _leash_t > LEASH_TIME:
+		if _leash_t > LEASH_TIME * GameState.diff_leash():
 			leave("Мать блоков ушла под землю.")
 			return
 	else:
@@ -803,6 +803,7 @@ func _die() -> void:
 	if GameState.has_method("on_mother_killed"):
 		GameState.on_mother_killed()
 	GameState.reward_kill(true, "Мать блоков")
+	GameState.drop_boss_token("mother", global_position)  # v0.24: Каменное сердце 35 %
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)

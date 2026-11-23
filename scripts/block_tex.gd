@@ -6,7 +6,8 @@ const TILES := ["grass_top", "grass_side", "dirt", "stone", "brick", "brick_moss
 	"leaves", "sand", "water", "dream_top", "dream_side", "dream_dirt", "drift", "drift_dream",
 	"drift_anchored", "mouth", "bench_top", "bench_side", "beacon", "planks", "dream_brick", "torch",
 	"bedrock", "nest", "egg", "bed_top", "bed_side", "deep_stone", "grave", "lathe_top", "lathe_side", "blanket", "mattress",
-	"blade2", "scale", "scale_head", "tool_wood", "tool_stone", "strut"] # v0.22.1: своя текстура подпорки
+	"blade2", "scale", "scale_head", "tool_wood", "tool_stone", "strut", # v0.22.1: своя текстура подпорки
+	"metal_ore", "metal", "bun", "patty", "lettuce", "clown", "cheese", "saucer"] # v0.24: tools/make_v024_art.py
 
 static var _mat: ShaderMaterial = null
 static var _water: Dictionary = {}
@@ -80,6 +81,8 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("stone"))
 		"deep_stone":
 			return _all(tile("deep_stone"))
+		"metal_ore", "metal", "bun", "patty", "lettuce", "clown", "cheese", "saucer":
+			return _all(tile(kind))
 		"bedrock":
 			return _all(tile("bedrock"))
 		"nest":
@@ -373,6 +376,10 @@ static func tool_mesh(kind: String) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var head := "stone" if kind.ends_with("2") else "planks"
+	if kind == "metal_sword": head = "metal"
+	if kind in ["bow", "bow2"]: return bow_mesh(kind == "bow2")
+	if kind == "pickaxe3":
+		return _kenney_pickaxe_mesh(true, true)
 	if kind.begins_with("pickaxe"):
 		return _kenney_pickaxe_mesh(kind.ends_with("2"))
 
@@ -388,7 +395,7 @@ static func tool_mesh(kind: String) -> ArrayMesh:
 
 # Ready-made CC0 geometry: Kenney / Survival Kit, original GLB kept in assets/models.
 # Only UV/material adaptation and scale/grip translation; no hand-made replacement mesh.
-static func _kenney_pickaxe_mesh(stone: bool) -> ArrayMesh:
+static func _kenney_pickaxe_mesh(stone: bool, metal: bool = false) -> ArrayMesh:
 	var source: PackedScene = load("res://assets/models/kenney/pickaxe.glb")
 	var model := source.instantiate()
 	var parts := model.find_children("*","MeshInstance3D",true,false)
@@ -409,7 +416,7 @@ static func _kenney_pickaxe_mesh(stone: bool) -> ArrayMesh:
 		var name := "handle" if surface==0 else ("stone_head" if stone else "wood_head")
 		mat.albedo_texture = load("res://assets/textures/pickaxe_%s.png" % name)
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-		mat.albedo_color = Color(0.83,0.83,0.83) if surface==0 else (Color(0.72,0.72,0.72) if stone else Color(0.82,0.82,0.82))
+		mat.albedo_color = Color(0.83,0.83,0.83) if surface==0 else (Color(1.25,1.3,1.42) if metal else (Color(0.72,0.72,0.72) if stone else Color(0.82,0.82,0.82)))
 		mat.roughness = 1.0
 		result.surface_set_material(surface,mat)
 	model.free()
@@ -526,4 +533,39 @@ static func sword3_mesh() -> ArrayMesh:
 	emit_box(st, Vector3(-0.012, 0.98, -0.016), Vector3(0.024, 0.05, 0.032), Color(0.85, 1.0, 1.0), 0, faces_for("blade2"), true) # острие
 	var m := stream_to_mesh(st)
 	_cubes["sword3_mesh"] = m
+	return m
+
+
+## v0.24: лук — дуга из брусков (дерево или металл) и тетива; рукоять в нуле, дуга вдоль Y.
+static func bow_mesh(metal: bool) -> ArrayMesh:
+	var key := "bow_mesh_%s" % metal
+	if _cubes.has(key):
+		return _cubes[key]
+	var st := new_stream()
+	var t := faces_for("metal" if metal else "log")
+	var w := Color(1, 1, 1)
+	var n := 9
+	for i in range(n):
+		var a := lerpf(-1.15, 1.15, float(i) / float(n - 1))
+		var y := sin(a) * 0.42
+		var z := -(cos(a) - cos(1.15)) * 0.22
+		emit_box(st, Vector3(-0.025, y - 0.05, z - 0.025), Vector3(0.05, 0.1, 0.05), w, 0, t, true)
+	emit_box(st, Vector3(-0.035, -0.07, -0.18), Vector3(0.07, 0.14, 0.07), Color(0.6, 0.4, 0.25), 0, faces_for("log"), true)
+	emit_box(st, Vector3(-0.006, -0.39, 0.0), Vector3(0.012, 0.78, 0.012), Color(0.95, 0.95, 0.9), 0, faces_for("metal"), true)
+	var m := stream_to_mesh(st)
+	_cubes[key] = m
+	return m
+
+
+## v0.24: стрела — древко, наконечник, оперение (вдоль −Z).
+static func arrow_mesh(best: bool) -> ArrayMesh:
+	var key := "arrow_mesh_%s" % best
+	if _cubes.has(key):
+		return _cubes[key]
+	var st := new_stream()
+	emit_box(st, Vector3(-0.02, -0.02, -0.35), Vector3(0.04, 0.04, 0.7), Color(0.75, 0.6, 0.4), 0, faces_for("log"), true)
+	emit_box(st, Vector3(-0.04, -0.04, -0.45), Vector3(0.08, 0.08, 0.12), Color(1, 1, 0.92) if best else Color(0.8, 0.82, 0.9), 0, faces_for("metal"), true)
+	emit_box(st, Vector3(-0.06, -0.005, 0.25), Vector3(0.12, 0.01, 0.12), Color(0.5, 0.8, 0.4) if best else Color(0.95, 0.95, 0.95), 0, faces_for("metal"), true)
+	var m := stream_to_mesh(st)
+	_cubes[key] = m
 	return m

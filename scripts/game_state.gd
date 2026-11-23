@@ -101,7 +101,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 17 # v0.23: выброшенные предметы в мире; v0.22.1: «Земля», без светоблоков; v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
+const SAVE_FORMAT := 18 # v0.24: сложность, финальный босс; v0.23: выброшенные предметы в мире; v0.22.1: «Земля», без светоблоков; v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -287,9 +287,10 @@ func _ready() -> void:
 
 func ui_blocked() -> bool:
 	if console_open: return true
-	return transfer_ui_open or Engine.get_process_frames() <= modal_closed_frame + 1 or storage_open or craft_menu_open or inventory_open or paused or death_open or pillow_open
+	return transfer_ui_open or Engine.get_process_frames() <= modal_closed_frame + 1 or storage_open or craft_menu_open or inventory_open or paused or death_open or pillow_open or victory_open
 
 var pillow_open: bool = false
+var victory_open: bool = false   # v0.24: экран победы
 var storage_open := false
 var modal_closed_frame := -100
 var _mouth_t := 30.0
@@ -353,6 +354,7 @@ static func derive_dream_seed(s: int) -> int:
 
 
 func reset_state() -> void:
+	_reset_v024()
 	armor = [{},{},{},{}]
 	sword2_crafted = false
 	console_open = false
@@ -430,6 +432,7 @@ func reset_state() -> void:
 	graves = []
 	dropped_items = []
 	death_open = false
+	victory_open = false
 	pillow_open = false
 	_boss_count = 0
 	_hp_regen_cd = 0.0
@@ -467,6 +470,8 @@ func is_dev() -> bool:
 
 const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
 	"ruin", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock", "sword3"]
+## v0.24: в дев-сиде материалы новых рецептов считаются бесконечными (инвентарь дев-сида уже полон; набор — консоль «kit»).
+const DEV_V024_MATS := ["metal_ore", "metal_ingot", "milk_tooth", "stone_heart", "scale_fang", "arrow", "arrow2", "bow", "pickaxe2", "sword2", "heal1", "leaves", "stone", "log"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
 
@@ -544,7 +549,7 @@ func raw_count(id: String) -> int:
 
 
 func count_item(id: String) -> int:
-	if dev_mode and (id in RESOURCE_IDS or raw_count(id) > 0):
+	if dev_mode and (id in RESOURCE_IDS or raw_count(id) > 0 or id in DEV_V024_MATS):
 		return INF_COUNT
 	return raw_count(id)
 
@@ -974,11 +979,14 @@ func recipe_defs() -> Array:
 		{"id": "strut", "name": "Подпорка ×4", "where": "dream", "unlock": "heart_structure", "reagent3": 1, "dust": 8, "item": "strut", "count": 4, "tier": 4},
 		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 100, "item": "idea_catcher", "tier": 3},
 	]
-	for tier in ["wood","scale"]:
+	for tier in ["wood","metal","scale"]:
 		for i in range(4):
 			var id: String = tier+"_"+ArmorRules.PARTS[i]
+			var mat: String = {"wood": "planks", "metal": "metal_ingot", "scale": "anaconda_scale"}[tier]
+			var cost: int = {"wood": ArmorRules.COST[i], "metal": ArmorRules.METAL_COST[i], "scale": ArmorRules.SCALE_COST[i]}[tier]
 			recipes.append({"id":id,"name":ItemDB.display_name(id),"where":"sawmill_plus" if tier=="wood" else "lathe",
-				"items":{"planks" if tier=="wood" else "anaconda_scale":(ArmorRules.COST[i] if tier=="wood" else ArmorRules.SCALE_COST[i])},"item":id, "tier": 2 if tier=="wood" else 4})
+				"items":{mat: cost},"item":id, "tier": {"wood": 2, "metal": 3, "scale": 4}[tier]})
+	recipes.append_array(v024_recipes())
 	return recipes
 
 
@@ -1132,9 +1140,7 @@ func mine_wake_block(cell: Vector3i) -> bool:
 	if is_dream():
 		set_hint("Киркой пользуются в яви.")
 		return false
-	if not selected_is("pickaxe") and not selected_is("pickaxe2") and get_selected_item().get("id","")!="":
-		set_hint("Чтобы ломать блоки яви, возьми кирку.")
-		return false
+	# v0.24 (pt127u): ломать можно с любым предметом в руке.
 	if not wake_blocks.has(cell):
 		return false
 	var data: Dictionary = wake_blocks[cell]
@@ -1376,6 +1382,7 @@ func _process(delta: float) -> void:
 			_mouth_t = 30.0
 			spread_mouth_once()
 	_clock += delta
+	tick_v024(delta)
 	objectives_tick(delta)
 	_iframes = maxf(0.0, _iframes - delta)
 	if heal_cd > 0.0:
@@ -1445,6 +1452,8 @@ func damage_player(amount: int, source: String = "", ignore_iframes: bool = fals
 	var origin := _hit_origin
 	_hit_origin = Vector3.INF
 	var dealt := _damage_player_core(amount, source, ignore_iframes)
+	if dealt > 0:
+		_v024_on_hurt(dealt)
 	if dealt > 0 and origin != Vector3.INF:
 		last_hurt_origin = origin
 		player_hurt_from.emit(origin, dealt)
@@ -1948,7 +1957,7 @@ func block_display_name(kind: String) -> String:
 
 func is_placeable_block(id: String) -> bool:
 	return id in ["bedrock", "drift", "mouth", "workbench", "ruin", "log", "leaves", "planks",
-		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "strut"]
+		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "strut", "metal_ore"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
@@ -2014,6 +2023,9 @@ func tick_stamina(delta: float, sprinting: bool) -> void:
 	var was := stamina_tired
 	if stamina_infinite:
 		stamina = 1.0; stamina_tired = false
+	elif sprinting and speed_potion_t > 0.0:
+		stamina = minf(1.0, stamina + delta / STAMINA_RECOVER_SECONDS) # v0.24: зелье скорости — бег без расхода
+		stamina_tired = false
 	elif sprinting:
 		stamina = maxf(0.0, stamina - delta / STAMINA_RUN_SECONDS)
 		if stamina <= 0.0: stamina_tired = true
@@ -2620,6 +2632,7 @@ func to_save_dict() -> Dictionary:
 		"spawn_point": [spawn_point.x, spawn_point.y, spawn_point.z],
 		"graves": _graves_to_json(),
 		"dropped_items": _drops_to_json(),
+		"v024": v024_to_dict(),
 		"block_stash": block_stash.duplicate(),
 		"dream_exit_count": dream_exit_count,
 		"collected_reagent_ids": collected_reagent_ids.keys(),
@@ -2813,6 +2826,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	_load_v018(data)
 	_load_v019(data)
 	_load_v020(data)
+	_load_v024(data.get("v024", {}))
 	migrate_v0221(fmt < 16)
 	if fmt < 16: lower_floating_camp()
 	_loading_save = false
@@ -3078,10 +3092,10 @@ func dream_seconds_left() -> float:
 
 static func tool_max(id: String) -> int:
 	if ArmorRules.slot(id)>=0: return ArmorRules.durability(id)
-	return 700 if id=="sword3" else (100 if id in ["pickaxe", "sword"] else (500 if id in ["pickaxe2", "sword2"] else 0))
+	return preload("res://scripts/gear.gd").durability(id)
 
 func wear_tool(amount: int) -> bool:
-	if str(get_selected_item().get("id","")) not in ["pickaxe","pickaxe2","sword","sword2","sword3"]: return false
+	if not preload("res://scripts/gear.gd").wears(str(get_selected_item().get("id",""))): return false
 	var d := get_selected_item()
 	var id := str(d.get("id", ""))
 	if dev_mode or tool_max(id) == 0:
@@ -3521,6 +3535,7 @@ func apply_enemy_scaling(enemy: Node,base: int,mother: bool = false) -> void:
 	var mult := 1.0
 	if not mother and enemy is Node3D and (enemy as Node3D).is_inside_tree():
 		mult = enemy_zone_mult((enemy as Node3D).global_position)
+	mult *= diff_hp_mult(enemy.is_in_group("boss"))  # v0.24: Эксперт +75%, сеть — HP боссов по числу игроков
 	var hp_max := ceili(base*mult)
 	enemy.set("max_hp",hp_max)
 	enemy.set("hp",maxi(0,ceili(hp_max*fraction)))
@@ -4634,3 +4649,182 @@ func _load_v020(data: Dictionary) -> void:
 	tutorial_gift = bool(data.get("tutorial_gift", false))
 	tutorial_times = {}
 	tutorial_started_msec = Time.get_ticks_msec()
+
+
+# ===================================================================== v0.24
+## Сложность мира (выбор при создании, хранится в сейве), финальный босс, зелье скорости, сеть.
+signal difficulty_changed(mode: String)
+signal burger_state_changed(state: String)
+signal victory
+var difficulty := "normal"          # "normal" | "expert"
+var burger_defeated := false
+var burger_kills := 0
+var victory_seen := false
+var speed_potion_t := 0.0
+var net_players := 1                # число игроков в сетевой игре (масштаб HP боссов)
+var lizards_killed := 0
+var v024_stats := {}
+const EXPERT_HP := 1.75             # pt124u: +75% HP всем мобам и боссам
+const EXPERT_DMG := 1.35
+const EXPERT_SPEED := 1.2
+const EXPERT_AGGRO := 1.35          # раньше замечают
+const EXPERT_LEASH := 1.5           # реже отстают
+const SPEED_POTION_SECONDS := 60.0
+const SPEED_POTION_BOOST := 1.12
+const BURGER_CORE_DAMAGE := 1.1     # Ядро бургера в инвентаре: +10% урона оружием
+const MP_BOSS_HP_PER_PLAYER := 0.6  # каждый игрок сверх первого: +60% HP босса
+
+
+func is_expert() -> bool:
+	return difficulty == "expert"
+
+
+func set_difficulty(mode: String) -> void:
+	difficulty = "expert" if mode == "expert" else "normal"
+	difficulty_changed.emit(difficulty)
+
+
+func difficulty_name(mode: String = "") -> String:
+	var m := difficulty if mode == "" else mode
+	return "Эксперт" if m == "expert" else "Нормальный"
+
+
+func boss_player_scale() -> float:
+	return 1.0 + MP_BOSS_HP_PER_PLAYER * float(maxi(0, net_players - 1))
+
+
+func diff_hp_mult(boss: bool = false) -> float:
+	return (EXPERT_HP if is_expert() else 1.0) * (boss_player_scale() if boss else 1.0)
+
+
+func diff_damage(base: int) -> int:
+	return base if not is_expert() else int(round(float(base) * EXPERT_DMG))
+
+
+func diff_speed() -> float:
+	return EXPERT_SPEED if is_expert() else 1.0
+
+
+func diff_aggro() -> float:
+	return EXPERT_AGGRO if is_expert() else 1.0
+
+
+func diff_leash() -> float:
+	return EXPERT_LEASH if is_expert() else 1.0
+
+
+func player_damage_mult(dmg: int) -> int:
+	if count_item("burger_core") > 0:
+		return int(ceil(float(dmg) * BURGER_CORE_DAMAGE))
+	return dmg
+
+
+func drink_speed_potion() -> bool:
+	if is_dream() or not consume_item("speed_potion", 1):
+		return false
+	speed_potion_t = SPEED_POTION_SECONDS
+	Sfx.play("drink", get_tree().root if get_tree() else null)
+	return true
+
+
+func speed_potion_active() -> bool:
+	return speed_potion_t > 0.0
+
+
+func tick_v024(delta: float) -> void:
+	if speed_potion_t > 0.0 and not is_dream():
+		speed_potion_t = maxf(0.0, speed_potion_t - delta)
+
+
+func _reset_v024() -> void:
+	difficulty = "normal"
+	burger_defeated = false
+	burger_kills = 0
+	victory_seen = false
+	speed_potion_t = 0.0
+	net_players = 1
+	lizards_killed = 0
+	v024_stats = {}
+
+
+func v024_to_dict() -> Dictionary:
+	return {"difficulty": difficulty, "burger_defeated": burger_defeated, "burger_kills": burger_kills,
+		"victory_seen": victory_seen, "speed_potion_t": speed_potion_t, "lizards_killed": lizards_killed, "stats": v024_stats.duplicate(true)}
+
+
+func _load_v024(d: Dictionary) -> void:
+	difficulty = "expert" if str(d.get("difficulty", difficulty)) == "expert" else "normal"   # старый сейв — сложность из меты мира
+	burger_defeated = bool(d.get("burger_defeated", false))
+	burger_kills = int(d.get("burger_kills", 0))
+	victory_seen = bool(d.get("victory_seen", false))
+	speed_potion_t = float(d.get("speed_potion_t", 0.0))
+	lizards_killed = int(d.get("lizards_killed", 0))
+	v024_stats = (d.get("stats", {}) as Dictionary).duplicate(true)
+
+
+func stat_add(key: String, n: int = 1) -> void:
+	v024_stats[key] = int(v024_stats.get(key, 0)) + n
+
+
+func v024_recipes() -> Array:
+	## v0.24: металл (станок), луки и стрелы, зелье скорости и призывалка (алхимический стол).
+	return [
+		{"id": "metal_ingot", "name": "Металлический слиток", "where": "lathe", "items": {"metal_ore": 2}, "log": 1, "item": "metal_ingot", "tier": 2},
+		{"id": "pickaxe3", "name": "Металлическая кирка", "where": "lathe", "items": {"pickaxe2": 1, "metal_ingot": 3}, "item": "pickaxe3", "tier": 3},
+		{"id": "metal_sword", "name": "Металлический меч", "where": "lathe", "items": {"sword2": 1, "metal_ingot": 3}, "item": "metal_sword", "tier": 3},
+		{"id": "bow", "name": "Деревянный лук", "where": "workbench", "reagent1": 1, "log": 2, "item": "bow", "tier": 1},
+		{"id": "arrow", "name": "Стрелы ×8", "where": "workbench", "log": 1, "items": {"stone": 1}, "item": "arrow", "count": 8, "tier": 1},
+		{"id": "bow2", "name": "Металлический лук", "where": "lathe", "items": {"bow": 1, "metal_ingot": 2}, "item": "bow2", "tier": 3},
+		{"id": "arrow2", "name": "Стрелы из детёнышей анаконды ×8", "where": "lathe", "items": {"arrow": 8, "milk_tooth": 2}, "item": "arrow2", "count": 8, "tier": 4},
+		{"id": "speed_potion", "name": "Зелье скорости", "where": "alchemy", "items": {"heal1": 1, "leaves": 4}, "reagent2": 1, "item": "speed_potion", "tier": 3},
+		{"id": "burger_summoner", "name": "Призывалка бургера", "where": "alchemy", "items": {"stone_heart": 1, "scale_fang": 1}, "dust": 60, "item": "burger_summoner", "tier": 5},
+	]
+
+
+## v0.24: уникальный лут для призывалки — 35 % с Матери и с Анаконды. Падает видимым предметом.
+const BOSS_TOKEN_CHANCE := 0.35
+var boss_token_rolls := {}
+
+
+func roll_boss_token(boss_id: String, roll: float = -1.0) -> String:
+	var r := randf() if roll < 0.0 else roll
+	boss_token_rolls[boss_id] = int(boss_token_rolls.get(boss_id, 0)) + 1
+	if r >= BOSS_TOKEN_CHANCE:
+		return ""
+	return "stone_heart" if boss_id == "mother" else "scale_fang"
+
+
+func drop_boss_token(boss_id: String, at: Vector3, roll: float = -1.0) -> String:
+	var id := roll_boss_token(boss_id, roll)
+	if id == "":
+		return ""
+	var bc := get_tree().get_first_node_in_group("build_controller") if get_tree() else null
+	var rec := register_drop({"id": id, "name": ItemDB.display_name(id), "count": 1}, at + Vector3(0, 1.0, 0))
+	if bc and bc.has_method("spawn_drop"):
+		bc.spawn_drop(rec, Vector3(0, 5.0, 0), 0.3)
+	chat("Выпал редкий трофей: %s!" % ItemDB.display_name(id), Color(1.0, 0.85, 0.4), true)
+	return id
+
+
+func on_burger_killed(drops: Array = []) -> void:
+	var first := not burger_defeated
+	burger_defeated = true
+	burger_kills += 1
+	var names: Array[String] = []
+	for d in drops: names.append(ItemDB.display_name(str(d)))
+	chat("Бургер Смерти повержен! Трофеи: %s." % ", ".join(names), Color(0.6, 1.0, 0.6), true)
+	if first or not victory_seen:
+		victory.emit()
+
+
+func _v024_on_hurt(dealt: int) -> void:
+	## Нос клоуна в инвентаре: 10 % шанс, что при уроне появится дружественный клоун и взорвётся на враге.
+	if dealt <= 0 or count_item("clown_nose") <= 0 or randf() >= 0.1:
+		return
+	var p := get_tree().get_first_node_in_group("player") as Node3D if get_tree() else null
+	if p == null: return
+	var c: CharacterBody3D = load("res://scripts/clown_bomb.gd").new()
+	c.friendly = true
+	c.position = p.global_position + Vector3(1.0, 0.3, 0.0)
+	p.get_parent().add_child(c)
+	stat_add("friendly_clowns")

@@ -3,6 +3,7 @@ extends CanvasLayer
 const DB := preload("res://scripts/item_db.gd")
 const Armor := preload("res://scripts/armor_rules.gd")
 const Mining := preload("res://scripts/mining_rules.gd")
+const V24 := preload("res://scripts/console_v024.gd")
 const MOB_IDS := ["seam","elite","ghost","enemy1","enemy2","enemy3","enemy4","mother","anaconda","minion"]
 const COMMAND_HELP := {
 "help":"Справка обо всех командах или одной. Пример: help armor",
@@ -191,6 +192,9 @@ func completion_candidates(prefix: String) -> Array[String]:
 	for command in ["stamina","stamina full","stamina zero","stamina inf on","stamina inf off","walltorch","walltorch test","chatlog","chatlog 30","stations","camp","camp lower","land","land migrate"]: all.append(command)
 	for command in ["economy","economy steal ","fall","fall status","fall on","fall off","fall test ","torch","torch status","torch drop","frameclear","timeskip","timeskip status","timeskip x ","timeskip night","dayspawn","knockback","knockback status","knockback on","knockback off","aggro","arms","arms status","arms play attack","arms play break","arms play place","arms play use","arms play jump","arms play sleep","arms play wake","mouse"]: all.append(command)
 	for command in ["drop","drop status","drop one","drop all","drop clear","drop spawn ","swing","swing status","swing air","hand","hand status"]: all.append(command)
+	for command in V24.completions(): all.append(str(command))
+	for cmd24 in V24.HELP: all.append("help " + str(cmd24))
+	for cmd24b in V24.extra_help: all.append("help " + str(cmd24b))
 	all.append("setblock air")
 	all.append("fill air")
 	var found: Array[String] = []
@@ -247,9 +251,12 @@ func _execute(a: PackedStringArray) -> String:
 	var p := _player()
 	match a[0]:
 		"help":
+			if a.size()>1 and V24.help_for(a[1]) != "": return V24.help_for(a[1])
 			if a.size()>1: return COMMAND_HELP.get(a[1],"Ошибка: такой команды нет; help")
 			var lines: Array[String]=[]
 			for cmd in COMMAND_HELP: lines.append(cmd+" — "+COMMAND_HELP[cmd])
+			for cmd24 in V24.HELP: lines.append(str(cmd24)+" — "+V24.help_for(str(cmd24)))
+			for cmd24b in V24.extra_help: lines.append(str(cmd24b)+" — "+V24.help_for(str(cmd24b)))
 			return "\n".join(lines)+"\n↑/↓ история · Tab дополнение · ~ / Esc закрыть"
 		"seed": return "Сид: %d · явь %d · сон %d" % [GameState.world_seed,GameState.world_seed_wake,GameState.world_seed_dream]
 		"give":
@@ -581,6 +588,8 @@ func _v010_command(a: PackedStringArray) -> String:
 			return _v0221_cmd(a, _player())
 		"drop","swing","hand":
 			return _v023_cmd(a)
+	if V24.handles(a[0]):
+		return V24.run(self, a)
 	return "Ошибка: неизвестная команда. help — список."
 
 

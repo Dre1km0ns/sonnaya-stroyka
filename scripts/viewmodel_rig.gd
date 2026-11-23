@@ -10,10 +10,20 @@ const BlockTex := preload("res://scripts/block_tex.gd")
 ## pos/rot — HandRoot в пространстве камеры; scale — модели; grip — смещение модели (в её координатах),
 ## swing_time — длительность удара, swing — пик поворота SwingPivot (градусы), wind — замах, speed — множитель.
 const TOOL_CONFIG := {
-	"pickaxe":  {"pos": Vector3(0.31, -0.33, -0.52), "rot": Vector3(-18, -12, 12), "scale": 0.46, "grip": Vector3(0.0, -0.13, 0.0),
+	# v0.24 (pt127u): кирка повёрнута на 90° вокруг рукояти — клюв смотрит вперёд, как в Minecraft.
+	"pickaxe":  {"pos": Vector3(0.31, -0.33, -0.52), "rot": Vector3(-18, -12, 12), "scale": 0.46, "grip": Vector3(0.0, -0.13, 0.0), "spin": 90.0,
 		"swing_time": 0.30, "wind": Vector3(22, 6, -6), "swing": Vector3(-68, 10, 10), "speed": 1.0},
-	"pickaxe2": {"pos": Vector3(0.31, -0.33, -0.52), "rot": Vector3(-18, -12, 12), "scale": 0.46, "grip": Vector3(0.0, -0.13, 0.0),
+	"pickaxe2": {"pos": Vector3(0.31, -0.33, -0.52), "rot": Vector3(-18, -12, 12), "scale": 0.46, "grip": Vector3(0.0, -0.13, 0.0), "spin": 90.0,
 		"swing_time": 0.24, "wind": Vector3(22, 6, -6), "swing": Vector3(-68, 10, 10), "speed": 1.25},
+	"pickaxe3": {"pos": Vector3(0.31, -0.33, -0.52), "rot": Vector3(-18, -12, 12), "scale": 0.46, "grip": Vector3(0.0, -0.13, 0.0), "spin": 90.0,
+		"swing_time": 0.2, "wind": Vector3(22, 6, -6), "swing": Vector3(-68, 10, 10), "speed": 1.45},
+	"metal_sword": {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
+		"swing_time": 0.25, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.05},
+	# v0.24: лук держится вертикально, тетивой к игроку
+	"bow":      {"pos": Vector3(0.28, -0.30, -0.55), "rot": Vector3(0, 0, 8), "scale": 0.55, "grip": Vector3(0.0, 0.0, 0.0), "hold": Vector3(0, 0, 0), "lift": Vector3(-0.06, 0.10, 0.0),
+		"swing_time": 0.2, "wind": Vector3(0, 0, 0), "swing": Vector3(-10, 0, 0), "speed": 1.0},
+	"bow2":     {"pos": Vector3(0.28, -0.30, -0.55), "rot": Vector3(0, 0, 8), "scale": 0.55, "grip": Vector3(0.0, 0.0, 0.0), "hold": Vector3(0, 180, 0), "lift": Vector3(-0.06, 0.10, 0.0),
+		"swing_time": 0.2, "wind": Vector3(0, 0, 0), "swing": Vector3(-10, 0, 0), "speed": 1.0},
 	"sword":    {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.44, "grip": Vector3(0.0, -0.28, 0.0),
 		"swing_time": 0.26, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.0},
 	"sword2":   {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
@@ -33,7 +43,8 @@ const TOOL_CONFIG := {
 }
 ## v0.13: диапазон рукояти по Y в координатах модели (проверяется smoke: grip обязан лежать внутри).
 const HANDLE_Y := {
-	"pickaxe": Vector2(-0.28, 0.35), "pickaxe2": Vector2(-0.28, 0.35),
+	"pickaxe": Vector2(-0.28, 0.35), "pickaxe2": Vector2(-0.28, 0.35), "pickaxe3": Vector2(-0.28, 0.35),
+	"metal_sword": Vector2(-0.40, -0.17), "bow": Vector2(-0.1, 0.1), "bow2": Vector2(-0.1, 0.1),
 	"sword": Vector2(-0.40, -0.17), "sword2": Vector2(-0.40, -0.17),
 	"sword3": Vector2(0.04, 0.28),
 	"torch": Vector2(-0.40, 0.10),
@@ -152,6 +163,7 @@ func set_tool(id: String) -> void:
 	var m: Node3D = models[current]
 	m.scale = Vector3.ONE * float(c.scale)
 	m.position = -Vector3(c.grip) * float(c.scale)
+	m.rotation_degrees = Vector3(0, float(c.get("spin", 0.0)), 0)
 	if _tween and _tween.is_valid(): _tween.kill()
 	swing_pivot.rotation = Vector3.ZERO
 	swing_pivot.position = Vector3.ZERO
@@ -253,7 +265,7 @@ func _process(delta: float) -> void:
 			_bob_t += delta * sp * 1.6
 			bob = Vector3(cos(_bob_t) * BOB_AMOUNT, absf(sin(_bob_t)) * BOB_AMOUNT, 0.0)
 	if hand_socket() != null:
-		if arms and "extra" in arms: arms.extra = Vector3(-0.04, -0.10, 0.26) * retract + kick_offset
+		if arms and "extra" in arms: arms.extra = Vector3(-0.04, -0.10, 0.26) * retract + kick_offset + Vector3(c.get("lift", Vector3.ZERO))
 		follow_hand()
 		return
 	hand_root.position = Vector3(c.pos) + bob + Vector3(-0.04, -0.10, 0.26) * retract

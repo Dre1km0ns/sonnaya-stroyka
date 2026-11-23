@@ -361,6 +361,7 @@ static func model_world_forward(body: Node3D) -> Vector3:
 
 
 static func follow_target(body: CharacterBody3D,target: Vector3,speed: float,delta: float,cache: Dictionary)->Vector3:
+	if GameState: speed *= GameState.diff_speed()  # v0.24: Эксперт быстрее
 	var now:float=float(cache.get("t",0.0))+delta;cache.t=now
 	var elapsed:float=float(cache.get("probe_elapsed",0.0))+delta;cache.probe_elapsed=elapsed
 	if cache.get("can_break",true) and elapsed>=0.10:
@@ -451,7 +452,8 @@ static func _blocked(body: CharacterBody3D, dir: Vector3, dist: float) -> bool:
 
 
 static func combat_damage(body: Node,base: int) -> int:
-	return maxi(0,int(body.get_meta("damage_override",base)))
+	var d := maxi(0,int(body.get_meta("damage_override",base)))
+	return GameState.diff_damage(d) if GameState else d  # v0.24: Эксперт бьёт больнее
 
 static func movement_speed(body: Node,base: float) -> float:
 	return maxf(0.0,float(body.get_meta("speed_override",base))) if base>0.0 else 0.0

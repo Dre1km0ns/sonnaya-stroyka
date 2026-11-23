@@ -208,7 +208,7 @@ func terrain_kind_at(cell: Vector3i) -> String:
 		if ek != "":
 			return "" if is_cell_removed(cell.x, cell.y, cell.z) else ek
 		if _ug_solid(cell):
-			return depth_kind(cell.y)
+			return Ore.kind_at(cell, _seed, depth_kind(cell.y))
 		return ""
 	if cell.y == -1 and _loaded.has(coord) and not is_world_in_lake(Vector3(cell.x + 0.5, 0, cell.z + 0.5)):
 		if not is_cell_removed(cell.x, -1, cell.z):
@@ -243,7 +243,7 @@ func mine_terrain_at(cell: Vector3i, kind: String = "") -> bool:
 			return false
 		if k == "":
 			if cell.y < 0:
-				k = depth_kind(cell.y)
+				k = Ore.kind_at(cell, _seed, depth_kind(cell.y))
 			elif height_at(cell.x, cell.z) > cell.y:
 				k = "dirt"
 			else:
@@ -1365,6 +1365,7 @@ var _carve_cache: Dictionary = {}     # Vector2i -> Dictionary{Vector3i: true}
 var _nest_cache: Dictionary = {}      # Vector2i -> Dictionary{Vector3i: "nest"/"egg"}
 
 
+const Ore := preload("res://scripts/ore_rules.gd")
 static func depth_kind(y: int) -> String:
 	if y <= BEDROCK_Y:
 		return "bedrock"
@@ -1655,6 +1656,8 @@ func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
 		return BlockTex.faces_for("ground", false, true)
 	if n.y > -6:
 		return BlockTex.faces_for("dirt", false, false)
+	if n.y <= Ore.ORE_TOP and Ore.is_ore(n, _seed):
+		return BlockTex.faces_for("metal_ore")  # v0.24
 	if n.y <= -18:
 		return BlockTex.faces_for("deep_stone")
 	return BlockTex.faces_for("stone")
@@ -2341,7 +2344,7 @@ func transfer_natural(cells:Array)->Dictionary:
 			ready=false;requested[ck]=true;continue
 		if GameState.is_terrain_removed(c): kinds[c]="";continue
 		if cache.solids.has(c): kinds[c]=cache.solids[c]
-		elif c.y<0 and c.y>=BEDROCK_Y: kinds[c]="" if cache.air.has(c) else depth_kind(c.y)
+		elif c.y<0 and c.y>=BEDROCK_Y: kinds[c]="" if cache.air.has(c) else Ore.kind_at(c, _seed, depth_kind(c.y))
 		else: kinds[c]=""
 	for ck in requested:
 		if _transfer_queries.size()>=MAX_CHUNK_JOBS: break

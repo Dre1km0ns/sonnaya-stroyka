@@ -10,11 +10,13 @@ var _pickaxe_view: Node3D = null
 var _sword_view: Node3D = null
 const SWORD_DAMAGE := 8
 const SWORD_COOLDOWN := 0.45
-const SWORD_REACH := 2.6
-## v0.7: Меч2 — 25 урона, дальность ×1.25.
+## v0.24 (pt128u): дальность мечей — Gear.SWORDS: деревянный 3.5 м … чешуйчатый 4.5 м.
+const Gear := preload("res://scripts/gear.gd")
+const SWORD_REACH := 3.5
 const SWORD2_DAMAGE := 14
 const SWORD3_DAMAGE := 24
-const SWORD2_REACH := SWORD_REACH * 1.25
+const SWORD2_REACH := 3.8
+var bow: Node = null
 const MIN_PLACE_Y := -30
 var _pickaxe2_view: Node3D = null
 var _sword2_view: Node3D = null
@@ -22,6 +24,7 @@ var _sword3_view: Node3D = null
 var viewmodel: Node3D = null
 var last_sword_damage := 0
 var last_sword_hits := 0
+var last_sword_reach := 0.0
 var _mine_cell := Vector3i(99999,99999,99999)
 var _mine_elapsed := 0.0
 var _mine_swing_t := 0.0
@@ -37,6 +40,10 @@ func setup(p: CharacterBody3D, dream_layer: Node3D) -> void:
 	cracks = load("res://scripts/mining_cracks.gd").new()
 	add_child(cracks)
 	_ensure_hand_tools()
+	bow = load("res://scripts/bow_controller.gd").new()
+	bow.name = "Bow"
+	bow.build = self
+	add_child(bow)
 	if not GameState.wake_cell_removed.is_connected(_on_wake_cell_removed):
 		GameState.wake_cell_removed.connect(_on_wake_cell_removed)
 
@@ -82,11 +89,28 @@ func _process(delta: float) -> void:
 		if Input.is_action_just_pressed("drop_item"):
 			drop_selected(Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META))
 		var sel := str(GameState.get_selected_item().get("id", ""))
-		var sword := sel == "sword" or sel == "sword2" or sel == "sword3"
+		var sword := Gear.is_sword(sel)
+		if bow and bow.has_method("tick"):
+			if bow.tick(delta, sel):
+				_reset_mining()
+				return
 		if Input.is_action_just_pressed("use_place") and _place_cooldown <= 0.0:
 			if _toggle_aimed_door():
 				_arms("use")
 				_place_cooldown = 0.16
+			elif sel == "speed_potion":
+				if GameState.drink_speed_potion():
+					show_in_hand("speed_potion", 0.8, "drink")
+				_place_cooldown = 0.5
+			elif sel == "burger_summoner":
+				var bs: GDScript = load("res://scripts/burger_summon.gd")
+				if bs.use_summoner(self):
+					_arms("use")
+				_place_cooldown = 0.5
+			elif sel == "grill_saucer":
+				load("res://scripts/grill_saucer.gd").throw_from(self)
+				_arms("attack")
+				_place_cooldown = 0.6
 			elif sel == "anaconda_egg":
 				_try_summon_anaconda()
 				_arms("use")
@@ -402,8 +426,7 @@ func _try_place_beacon() -> void:
 func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 	if GameState.is_dream():
 		return
-	if not GameState.selected_is("pickaxe") and not GameState.selected_is("pickaxe2") and GameState.get_selected_item().get("id","")!="":
-		return
+	# v0.24 (pt127u): блоки добываются с любым предметом в руке, даже с блоком.
 	if not GameState.remove_terrain_cell(cell, kind):
 		return
 	for cm in get_tree().get_nodes_in_group("chunk_manager"):
@@ -417,7 +440,9 @@ func _mine_terrain_cell(cell: Vector3i, kind: String) -> void:
 func _finish_mine(cell: Vector3i, kind: String) -> void:
 	var mined_tool := str(GameState.get_selected_item().get("id",""))
 	GameState.wear_tool(1)
-	Sfx.play("break_" + Mining.material(kind), get_tree().root)
+	Sfx.play("break_metal" if kind == "metal_ore" else "break_" + Mining.material(kind), get_tree().root)
+	BreakFx.burst(_wake_world(), cell, kind)  # v0.24: частицы цвета материала
+	GameState.stat_add("blocks_mined")
 	if Mining.drops(kind,mined_tool):
 		_spawn_block_pickup(cell,kind)
 	var host := _wake_world()
@@ -713,6 +738,7 @@ func _try_place_wake_item() -> void:
 		return
 	if GameState.place_wake_block(cell, id):
 		vox.sync_cells([cell])
+		Sfx.play("place", get_tree().root, -10.0, randf_range(0.9, 1.1))
 	else:
 		GameState.add_mined_block(id, 1)
 
@@ -729,9 +755,11 @@ func _try_sword() -> void:
 		forward = -player.global_transform.basis.z
 	forward = forward.normalized()
 	var hit := 0
-	var s2 := GameState.selected_is("sword2")
-	var reach := SWORD2_REACH if s2 else SWORD_REACH
-	var dmg := SWORD3_DAMAGE if GameState.selected_is("sword3") else (SWORD2_DAMAGE if s2 else SWORD_DAMAGE)
+	var sid := str(GameState.get_selected_item().get("id", ""))
+	var reach := Gear.sword_reach(sid) if Gear.is_sword(sid) else SWORD_REACH
+	var dmg := Gear.sword_damage(sid) if Gear.is_sword(sid) else SWORD_DAMAGE
+	dmg = GameState.player_damage_mult(dmg)
+	last_sword_reach = reach
 	last_sword_damage = dmg
 	for n in get_tree().get_nodes_in_group("enemy"):
 		if not (n is Node3D) or not is_instance_valid(n):
@@ -844,7 +872,7 @@ func _play_tool_swing() -> void:
 	if viewmodel == null or player == null:
 		return
 	_update_hand_tools()
-	viewmodel.play_swing("attack" if GameState.selected_is("sword") or GameState.selected_is("sword2") or GameState.selected_is("sword3") else "break")
+	viewmodel.play_swing("attack" if Gear.is_sword(str(GameState.get_selected_item().get("id", ""))) else "break")
 
 
 func _combat_feedback(res: Dictionary, target: Node) -> void:
@@ -868,7 +896,7 @@ func _combat_feedback(res: Dictionary, target: Node) -> void:
 
 
 ## v0.22: сила откидывания по оружию (м/с в начале импульса). Боссов не откидывает.
-const KNOCKBACK := {"": 4.0, "pickaxe": 4.5, "pickaxe2": 5.0, "sword": 7.0, "sword2": 8.0, "sword3": 9.0}
+const KNOCKBACK := {"": 4.0, "pickaxe": 4.5, "pickaxe2": 5.0, "pickaxe3": 5.5, "sword": 7.0, "sword2": 8.0, "metal_sword": 8.5, "sword3": 9.0}
 var knockback_enabled := true
 var last_knockback := Vector3.ZERO
 
@@ -895,6 +923,7 @@ static func hit_marker_kind(res: Dictionary) -> String:
 
 const Mining := preload("res://scripts/mining_rules.gd")
 const Sfx := preload("res://scripts/sfx.gd")
+const BreakFx := preload("res://scripts/break_fx.gd")
 
 func _toggle_aimed_door() -> bool:
 	var aim := _aim()
@@ -915,13 +944,13 @@ func _tick_mining(delta: float) -> void:
 	if collider.is_in_group("enemy") or collider.get_parent().is_in_group("enemy"):
 		var target = collider if collider.is_in_group("enemy") else collider.get_parent()
 		if target.has_method("receive_weapon_hit"):
-			var res: Dictionary = target.receive_weapon_hit(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1), tool if tool != "" else "hand")
+			var res: Dictionary = target.receive_weapon_hit(Gear.pick_damage(tool), tool if tool != "" else "hand")
 			_combat_feedback(res, target)
 			GameState.wear_tool(2)
 			_play_tool_swing()
 			_place_cooldown = 0.5
 		elif target.has_method("take_damage"):
-			target.take_damage(6 if tool=="pickaxe2" else (2 if tool=="pickaxe" else 1))
+			target.take_damage(Gear.pick_damage(tool))
 			_combat_feedback({"dealt": 1, "bounce": false}, target)
 			GameState.wear_tool(2)
 			_play_tool_swing()
@@ -954,6 +983,8 @@ func _tick_mining(delta: float) -> void:
 	if _mine_swing_t<=0.0:
 		_mine_swing_t = 0.35
 		_play_tool_swing()
+		Sfx.play("mine_" + Mining.material(kind), get_tree().root, -14.0, randf_range(0.9, 1.1))  # v0.24
+		BreakFx.chips(_wake_world(), cell, kind, 4)
 	if _mine_elapsed >= duration:
 		_try_mine_wake()
 		_mine_elapsed = 0.0

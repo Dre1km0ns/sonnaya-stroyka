@@ -146,13 +146,13 @@ func _physics_process(delta: float) -> void:
 	var speed := SPEED_ELITE if elite else SPEED_NORMAL
 
 	var target := player.global_position
-	if dist >= SEEK_RANGE:
+	if dist >= SEEK_RANGE * GameState.diff_aggro():
 		_wander_timer -= delta
 		if _wander_timer <= 0.0 or global_position.distance_to(_wander_target) < 1.2:
 			_pick_wander()
 		target = _wander_target
 
-	_path_cache["can_break"] = dist<SEEK_RANGE
+	_path_cache["can_break"] = dist<SEEK_RANGE * GameState.diff_aggro()
 	_Nav.follow_target(self,target,speed,delta,_path_cache)
 	var attacking := float(get_meta("mining_progress",0.0))>0.0
 

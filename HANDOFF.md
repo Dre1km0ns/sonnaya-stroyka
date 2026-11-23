@@ -1,3 +1,35 @@
+# Передача работы — Сонная стройка v0.24 (в работе, ветка `wip/v0.24`)
+
+Обновлено: 23.11.2026, МСК. Идёт сборка v0.24 поверх v0.23 (`main` = v0.23, тег `v0.23`). Ниже — что уже сделано, где код и что осталось. Старый раздел v0.23 сохранён ниже.
+
+## Как продолжить
+1. `cd /workspace/sonnaya-stroyka && git checkout wip/v0.24 && git pull`.
+2. Импорт: `/home/box/godot/godot --headless --path . --import`.
+3. Парс: `godot --headless --path . --script res://tools/parse_check.gd` → `PARSE DONE bad=0`.
+4. Смоук: `XDG_DATA_HOME=/tmp/x godot --headless --path . --script res://scripts/smoke_test.gd` → в конце `SMOKE: OK` (код выхода 1 даже при успехе — так было и раньше). Новые проверки v0.24 — `scripts/smoke_v024.gd` (коды 24000+), вызов из `smoke_test._run` после `_v011_checks`; `smoke24.done` проверяется (24000), чтобы скриптовая ошибка не прошла молча.
+5. Кадры: `Xvfb :77 &` затем `DISPLAY=:77 godot --path . --rendering-method gl_compatibility -s res://tools/v024_screens.gd -- --out=/workspace/shots/v024` (`--only=bow` — только лук).
+6. Лимит владельца: остановка на **95 %** недельного расхода (pt133u), а не 80 %.
+
+## Этап 1 — сделано (B + C + D + E-ядро)
+- **B. ЛКМ ломает любым предметом** (в т. ч. блоком): убраны проверки «нужна кирка» в `game_state.mine_wake_block` и `build_controller._mine_terrain_cell`. Скорость — `mining_rules.seconds` по уровню кирки (`scripts/gear.gd`).
+- **B. Дальность меча**: `gear.gd` `SWORDS` — деревянный 3.5 м, каменный 3.8, металлический 4.15, чешуйчатый 4.5. `build_controller._try_sword` берёт дальность/урон из Gear, `last_sword_reach`.
+- Кирка повёрнута на 90° (`viewmodel_rig.TOOL_CONFIG[...].spin`), проверено кадром `02_pickaxe2_idle_ore.png`.
+- **C. Металл**: `scripts/ore_rules.gd` (глубина −7…−26, кластеры 2×2×2), руда в `chunk_job/_ug_tiles` и `chunk_manager.terrain_kind_at`. Добыча и дроп только каменной киркой и лучше (`mining_rules.ORE_MIN_TIER`). Слиток, металлическая кирка/меч/броня, лук, металлический лук, стрелы, стрелы из детёнышей — `game_state.v024_recipes()`.
+- **C. Лук**: `scripts/bow_controller.gd` (зажать ЛКМ — натяжение, отпустить — выстрел), `scripts/arrow.gd` (гравитация, втыкается, подбирается, слабые точки Бургера). Ящерки-детёныши после Анаконды: `scripts/lizard_minion.gd`, спавн в `threat_director._lizard_t`; дроп «молочные зубки».
+- **D. Сложность**: выбор «Нормальный/Эксперт» в `main_menu` (OptionButton `Difficulty`, мета мира `difficulty`, тег «эксперт» в списке миров), хранится в сейве (`v024.difficulty`, SAVE_FORMAT 18). Множители `game_state.diff_*` (HP ×1.75, урон ×1.35, скорость ×1.2, обзор ×1.35, поводок ×1.5) — в `apply_enemy_scaling`, `enemy_navigation`, Матери, Анаконде, призраках.
+- **E. Бургер Смерти**: `scripts/boss_burger.gd` (4000 HP на нормале, ×1.75 эксперт, ×(1+0.6·(игроки−1)) в сети), `weak_point.gd`, `clown_bomb.gd`, `grill_saucer.gd`, `burger_summon.gd` (призывалка, ровно 60 с, предупреждение в чате и за 10 с). Токены 35 %: `roll_boss_token` / `drop_boss_token` у Матери и Анаконды. Музыка: `music_controller` ключи `burger1/burger2`. Экран победы и титры: `scripts/victory_screen.gd` (HUD, сигнал `GameState.victory`, флаг `victory_open` в `ui_blocked`).
+- **Зелье скорости** (t134u): алхимия, `heal1 + 4 листвы + reagent2`; 60 с бег без стамины и ×1.12 скорости (`player_controller`).
+- Звуки: `tools/make_v024_sfx.py` (синтез), иконки и тайлы атласа: `tools/make_v024_art.py`.
+- Консоль: `scripts/console_v024.gd` — `difficulty`, `ore`, `bow`, `arrows`, `burger …`, `summoner …`, `speedpotion …`, `lizards …`, `kit`; справка `help <команда>`, Tab.
+
+## Осталось (по порядку)
+- A-пункты: 4 (мёртвый код boss_combat_sm.gd, режим тумбочки), 5 (лог ошибок в user://, путь в паузе/настройках), 6 (блок в руке не уходит за экран), 7 (шаги, удар, урон, подбор), 8 (покачивание и тряска камеры), 10 (деспаун дропа 5 мин, Q над слотом), 11 (фиолетовые иконки во Сне), 12 (пояснения M и J при первом нажатии), 13, 14, 15 (прыгун, лучник, вор), 16, 17 (дождь, туман), 20, 21 (новые атаки Матери и Анаконды), 22, 24, 25, 26 (громкость музыки/звуков, FOV), 27 (загрузка с прогрессом).
+- F: сеть LAN до 4 игроков (`scripts/combat_util.gd` уже умеет `hurt` удалённым игрокам через узел `net_session`).
+- Бот 40 мин, кадры, CHANGELOG_V0.24, «Всё про всё v0.24», слияние, тег, Windows-сборка, Drive.
+
+
+---
+
 # Передача работы — Сонная стройка v0.23 (выпущена 23.11.2026)
 
 Обновлено: 23.11.2026, МСК. v0.23 — мышь как в v0.22, предмет в кисти руки во всех действиях, удар в воздух, выбрасывание как в Minecraft (pt115u, pt117u). Подробности — CHANGELOG_V0.23.md, раньше — CHANGELOG_V0.22.1.md. Следующая версия — 0.24.

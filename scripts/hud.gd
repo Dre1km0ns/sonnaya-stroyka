@@ -49,6 +49,7 @@ var _bed_prompt: PanelContainer
 var _bed_prompt_label: Label
 var pillow_ui: Control
 var death_menu: Control
+var victory_screen: Control
 
 
 func _ready() -> void:
@@ -89,6 +90,8 @@ func _ready() -> void:
 	var death_script: GDScript = load("res://scripts/death_menu.gd")
 	death_menu = death_script.new()
 	$Root.add_child(death_menu)
+	victory_screen = load("res://scripts/victory_screen.gd").new()
+	$Root.add_child(victory_screen)
 	GameState.world_changed.connect(_on_world)
 	GameState.inventory_changed.connect(_refresh_inv)
 	GameState.clarity_changed.connect(_on_clarity)

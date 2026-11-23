@@ -187,7 +187,7 @@ func _physics_process(delta: float) -> void:
 		forward = Vector3(0, 0, -1)
 	var target := compute_target(player.global_position, forward, _find_blinky_pos(), is_scatter_mode())
 	_path_cache["can_break"] = not is_scatter_mode() and (kind!=Kind.ENEMY4 or dist>CLYDE_FLEE_DIST)
-	if dist<SEEK_RANGE+12.0: _Nav.follow_target(self,target,SPEED,delta,_path_cache)
+	if dist<SEEK_RANGE * GameState.diff_aggro()+12.0: _Nav.follow_target(self,target,SPEED,delta,_path_cache)
 	var attacking := float(get_meta("mining_progress",0.0))>0.0
 
 	if dist <= CONTACT_RANGE + 1.0:

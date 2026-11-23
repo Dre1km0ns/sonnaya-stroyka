@@ -18,6 +18,7 @@ extends Node3D
 
 func _ready() -> void:
 	get_tree().paused = false
+	call_deferred("_wire_victory")
 	if _want_perf():
 		wake_chunks.legacy_generation = "--legacy-generation" in OS.get_cmdline_user_args()
 		dream_chunks.legacy_generation = wake_chunks.legacy_generation
@@ -170,6 +171,12 @@ func respawn() -> void:
 	player.global_position = GameState.spawn_point
 	player.velocity = Vector3.ZERO
 	GameState.heal_player_full()
+
+
+func _wire_victory() -> void:
+	var hud := get_node_or_null("HUD")
+	if hud and "victory_screen" in hud and hud.victory_screen and not hud.victory_screen.exit_pressed.is_connected(exit_world):
+		hud.victory_screen.exit_pressed.connect(exit_world)
 
 
 func exit_world() -> void:

@@ -563,6 +563,7 @@ func _world_is_lake_cell(wx: int, wz: int) -> bool:
 		_lake_plan_cache[c] = _plan_lake(c)
 	return (_lake_plan_cache[c] as Dictionary).has(Vector2i(wx - c.x * chunk_size, wz - c.y * chunk_size))
 
+const Ore := preload("res://scripts/ore_rules.gd")
 static func depth_kind(y: int) -> String:
 	if y <= BEDROCK_Y:
 		return "bedrock"
@@ -832,6 +833,8 @@ func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
 		return BlockTex.faces_for("dirt", false, true)
 	if n.y > -6:
 		return BlockTex.faces_for("dirt", false, false)
+	if n.y <= Ore.ORE_TOP and Ore.is_ore(n, _seed):
+		return BlockTex.faces_for("metal_ore")  # v0.24
 	if n.y <= -18:
 		return BlockTex.faces_for("deep_stone")
 	return BlockTex.faces_for("stone")
