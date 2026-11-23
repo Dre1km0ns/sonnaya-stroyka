@@ -5,12 +5,12 @@ extends Node3D
 @export var block_size := 1.0
 const BlockTex := preload("res://scripts/block_tex.gd")
 const MAX_LUMEN_LIGHTS := 24
-var _lumen_lights := 0
-const SPECIAL := ["lumen","lumen_cold","lamp","strut","torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
+
+const SPECIAL := ["strut","torch","beacon","bed","workbench","lathe","sawmill","alchemy","idea_catcher","chest","door"]
 const PARTS := ["bed_foot","door_top","catcher_top"]
 ## v0.14: множество «не сплошных» видов для маски граней. Раньше в цикле по 6 граням
 ## каждый раз собирался новый массив SPECIAL+PARTS и искался линейно.
-const NONSOLID := {"lumen":true,"lumen_cold":true,"lamp":true,"strut":true,"torch":true,"beacon":true,"bed":true,"workbench":true,"lathe":true,"sawmill":true,"alchemy":true,"idea_catcher":true,"chest":true,"door":true,"bed_foot":true,"door_top":true,"catcher_top":true}
+const NONSOLID := {"strut":true,"torch":true,"beacon":true,"bed":true,"workbench":true,"lathe":true,"sawmill":true,"alchemy":true,"idea_catcher":true,"chest":true,"door":true,"bed_foot":true,"door_top":true,"catcher_top":true}
 const FACE_OFS: Array[Vector3i] = [Vector3i(1,0,0),Vector3i(-1,0,0),Vector3i(0,1,0),Vector3i(0,-1,0),Vector3i(0,0,1),Vector3i(0,0,-1)]
 var _meshes: Dictionary = {}
 var _bodies: Dictionary = {}
@@ -153,9 +153,16 @@ func _build_placed_chunk(ck: Vector2i) -> void:
 		# v0.16: во Сне блоки, уже стоящие в Яви тем же материалом, чуть золотятся — видно, что материализовано.
 		if is_dream_layer and tint == Color.WHITE and GameState.wake_blocks.has(c) and str(GameState.wake_blocks[c].get("kind","")) == str(d.get("kind","")): tint = ECHO_TINT
 		if mask==63: continue
-		var tiles: Array = tiles_by_kind.get(kind,[])
+		if is_dream_layer and BlockTex.dream_tinted(kind): tint *= BlockTex.DREAM_TINT
+		var tkey := kind
+		if kind == "dirt":
+			# v0.22.1: одна «Земля» — сверху трава, если над ней пусто; под блоком — земля.
+			var up: Vector3i = c + Vector3i.UP
+			var covered := _data.has(up) and not NONSOLID.has(_data[up].get("kind",""))
+			tkey = "dirt|0" if covered else "dirt|1"
+		var tiles: Array = tiles_by_kind.get(tkey,[])
 		if tiles.is_empty():
-			tiles=BlockTex.faces_for(kind);tiles_by_kind[kind]=tiles
+			tiles=BlockTex.faces_for(kind, false, not tkey.ends_with("|0"));tiles_by_kind[tkey]=tiles
 		BlockTex.emit_box(stream,Vector3(c)-base,Vector3.ONE,tint,mask,tiles)
 	var root := Node3D.new();root.position=base;root.name="Placed_%d_%d"%[ck.x,ck.y];add_child(root)
 	var mesh := MeshInstance3D.new();mesh.mesh=BlockTex.stream_to_mesh(stream);root.add_child(mesh)
@@ -213,6 +220,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 	if kind == "door": mi.transform=door_transform(cell,data)
 	add_child(mi)
 	_meshes[cell] = mi
+	if is_dream_layer and BlockTex.dream_tinted(tex_kind): mi.material_override = BlockTex.dream_material()
 	if kind == "chest":
 		# v0.11: крышка на шарнире — анимируется при открытии сундука (set_chest_open).
 		var pivot := Node3D.new()
@@ -222,6 +230,7 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		var lid := MeshInstance3D.new()
 		lid.name = "Lid"
 		lid.mesh = BlockTex.chest_lid_mesh()
+		if is_dream_layer: lid.material_override = BlockTex.dream_material()
 		pivot.add_child(lid)
 	if kind == "torch":
 		# v0.11.1: общий меш пламени (кешируется в BlockTex) вместо сферы.
@@ -239,17 +248,6 @@ func _spawn_visual(cell: Vector3i, data: Dictionary) -> void:
 		light.shadow_enabled = false
 		light.position = Vector3(0, 0.45, 0)
 		mi.add_child(light)
-	if kind in ["lumen", "lumen_cold", "lamp"] and _lumen_lights < MAX_LUMEN_LIGHTS:
-		# v0.12: светоархитектура — lumen 6 м, светильник 10 м. Анаконду жгут только факелы.
-		var ll := OmniLight3D.new()
-		ll.name = "LumenLight"
-		ll.light_color = Color(1.0, 0.78, 0.45) if kind in ["lumen", "lamp"] else Color(0.55, 0.85, 1.0)
-		ll.light_energy = 1.45 if kind == "lamp" else 1.2
-		ll.omni_range = 10.0 if kind == "lamp" else 6.0
-		ll.shadow_enabled = false
-		mi.add_child(ll)
-		_lumen_lights += 1
-		ll.tree_exiting.connect(func() -> void: _lumen_lights = maxi(0, _lumen_lights - 1))
 	if kind == "beacon":
 		mi.position = cell_to_world(cell) + Vector3(0, -0.25, 0)
 		var core := MeshInstance3D.new()

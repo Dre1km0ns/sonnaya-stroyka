@@ -671,13 +671,9 @@ func _process(delta: float) -> void:
 		_core_bar.visible = win >= 0.0
 		if win >= 0.0:
 			_core_bar.value = win
-	var ph := int(live.get("phase")) if "phase" in live else 1
 	var vuln := bool(live.call("is_vulnerable")) if live.has_method("is_vulnerable") else false
 	var title := str(live.call("boss_title")) if live.has_method("boss_title") else "Мать блоков"
-	var extra := "   — УЯЗВИМА!" if vuln else ""
-	if live.has_method("boss_hint"):
-		extra = str(live.call("boss_hint"))
-	_boss_label.text = "%s · фаза %d   %d / %d%s" % [title, ph, hp, mx, extra]
+	_boss_label.text = "%s %d/%d" % [title, hp, mx]  # v0.22.1: только название и HP
 	_boss_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3) if vuln else Color(1, 1, 1))
 
 

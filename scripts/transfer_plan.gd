@@ -1,6 +1,6 @@
 extends RefCounted
 ## Pure-data preflight. No scene access, mutation, resource spending or partial writes.
-const BLOCKS := ["lumen","lumen_cold","lamp","strut","bedrock","drift","mouth","workbench","hill","ruin","ground","log","leaves","planks","stone","deep_stone","dirt","sand","nest","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","mossy_ruin","torch","beacon"]
+const BLOCKS := ["strut","bedrock","drift","mouth","workbench","ruin","log","leaves","planks","stone","deep_stone","dirt","sand","nest","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","mossy_ruin","torch","beacon"]
 static func root_at(source:Dictionary,c:Vector3i)->Vector3i:
 	if not source.get(c,{}).has("root"): return c
 	var a:PackedStringArray=str(source[c].root).split(",")

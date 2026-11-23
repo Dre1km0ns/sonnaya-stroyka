@@ -273,7 +273,7 @@ func _capture_v05() -> void:
 	DirAccess.make_dir_recursive_absolute("/workspace/shots")
 	GameState.beacons = 3
 	GameState.add_item_count("drift", 40)
-	GameState.add_item_count("hill", 12)
+	GameState.add_item_count("dirt", 12)
 	GameState.select_item_slot(0)
 	if wake_chunks.has_method("load_all_pending"):
 		wake_chunks.load_all_pending()
@@ -676,7 +676,7 @@ func _capture_shots() -> void:
 		await get_tree().create_timer(0.35).timeout
 		await _save_shot("hill_before_mine.png")
 		if GameState.has_method("remove_terrain_cell"):
-			GameState.remove_terrain_cell(hill_cell, "hill")
+			GameState.remove_terrain_cell(hill_cell, "dirt")
 		if wake_chunks.has_method("rebuild_chunk_at_world"):
 			wake_chunks.rebuild_chunk_at_world(hill_cell.x, hill_cell.z)
 		await get_tree().create_timer(0.3).timeout
@@ -1164,7 +1164,7 @@ func _capture_v08() -> void:
 	# Материалы глубины и падение дропа на демонстрационном стенде.
 	_v7_goto(Vector3(8,0.1,12))
 	player.flying = false
-	for pair in [[Vector3i(8,0,8),"ground"],[Vector3i(9,0,8),"stone"],[Vector3i(10,0,8),"deep_stone"],[Vector3i(11,0,8),"mossy_ruin"]]:
+	for pair in [[Vector3i(8,0,8),"dirt"],[Vector3i(9,0,8),"stone"],[Vector3i(10,0,8),"deep_stone"],[Vector3i(11,0,8),"mossy_ruin"]]:
 		_v7_put(pair[0],pair[1])
 	_look_at_point(Vector3(10,0.4,8.5),Vector3(10,0.5,12))
 	await _wait(0.4)

@@ -3816,7 +3816,7 @@ func _v021_checks() -> void:
 	_a(dw.get_node_or_null("Hint") == null and dw.get_node_or_null("PillarA") == null, 21055)
 	dw.free()
 	var CH: GDScript = load("res://scripts/context_hints.gd")
-	_a(float(CH.CHEAT_SECONDS) <= 15.0 and str(CH.CHEAT_TEXT).length() < 100, 21056)
+	_a(not CH.get_script_constant_map().has("CHEAT_TEXT"), 21056) # v0.22.1: шпаргалки Сна нет
 	# цели Сна не советуют «R — Клин» в Яви; Мать держит дистанцию, её удар достаёт
 	var Obj: GDScript = load("res://scripts/objectives.gd")
 	var fa: Dictionary = {}

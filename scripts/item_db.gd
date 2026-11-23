@@ -32,9 +32,7 @@ const ITEMS := {
 	"pickaxe": {"name": "Кирка", "stack": 1},
 	"sword": {"name": "Деревянный меч", "stack": 1},
 	"torch": {"name": "Факел", "stack": 100},
-	"hill": {"name": "Холм", "stack": 100},
 	"ruin": {"name": "Руинный блок", "stack": 100},
-	"ground": {"name": "Грунт", "stack": 100},
 	"drift": {"name": "Дрейф-блок", "stack": 100},
 	"mouth": {"name": "Рот", "stack": 100},
 	"log": {"name": "Бревно", "stack": 100},
@@ -49,9 +47,6 @@ const ITEMS := {
 	"sword2": {"name": "Каменный меч", "stack": 1},
 	"heal1": {"name": "хилка1", "stack": 100},
 	"anaconda_egg": {"name": "Яйцо Анаконды", "stack": 100},
-	"lumen": {"name": "Светоблок тёплый", "stack": 100},
-	"lumen_cold": {"name": "Светоблок холодный", "stack": 100},
-	"lamp": {"name": "Светильник", "stack": 100},
 	"strut": {"name": "Подпорка", "stack": 100},
 }
 

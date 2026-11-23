@@ -4,6 +4,7 @@ shader_type spatial;
 render_mode cull_back, specular_disabled;
 
 uniform sampler2D atlas : source_color, filter_nearest;
+uniform vec3 tint = vec3(1.0); // v0.22.1: фиолетовый Сон
 varying flat int v_tile;
 
 void vertex() {
@@ -15,6 +16,6 @@ void fragment() {
 	ivec2 px = clamp(ivec2(f * 16.0), ivec2(0), ivec2(15));
 	px.x += v_tile * 16;
 	vec4 c = texelFetch(atlas, px, 0);
-	ALBEDO = c.rgb * COLOR.rgb;
+	ALBEDO = c.rgb * COLOR.rgb * tint;
 	ROUGHNESS = 0.95;
 }

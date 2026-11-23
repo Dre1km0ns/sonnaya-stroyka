@@ -174,7 +174,7 @@ func _ready() -> void:
 		model.scale *= 0.2
 		var tw := create_tween()
 		tw.tween_property(model, "scale", model.scale * 5.0, SPAWN_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	GameState.chat("Мать блоков собирается из камня! Беги из-под прыжков, бей в окна «УЯЗВИМА».", Color(1.0, 0.45, 0.4))
+	GameState.chat("Мать блоков собирается из камня!", Color(1.0, 0.45, 0.4), true)
 	roar(true)
 
 
@@ -293,7 +293,7 @@ func _physics_process(delta: float) -> void:
 	if flat.length() > LEASH_DIST:
 		_leash_t += delta
 		if _leash_t > LEASH_TIME:
-			leave("Мать блоков потеряла тебя из виду и ушла под землю.")
+			leave("Мать блоков ушла под землю.")
 			return
 	else:
 		_leash_t = 0.0
@@ -769,8 +769,7 @@ func _start_transition() -> void:
 			_unsquash(0.3)
 			roar(true)
 			_roar_push())
-	var what := "Ударная волна: перепрыгивай оранжевое кольцо!" if phase == 2 else "Кирпичный дождь: уходи с красных теней!"
-	GameState.chat("Мать блоков в ярости — фаза %d. %s" % [phase, what], Color(1.0, 0.5, 0.35))
+	GameState.chat("Мать блоков в ярости!", Color(1.0, 0.5, 0.35), true)
 
 
 func _roar_push() -> void:
@@ -831,7 +830,7 @@ func leave(msg: String = "") -> void:
 	_enter(S.LEAVING)
 	_cleanup_fx()
 	if msg != "":
-		GameState.chat(msg, Color(1.0, 0.75, 0.5))
+		GameState.chat(msg, Color(1.0, 0.75, 0.5), true)
 	for m in get_tree().get_nodes_in_group("blockling"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()
@@ -914,7 +913,7 @@ func _disc(radius: float, col: Color) -> MeshInstance3D:
 
 func _mini_block(at: Vector3) -> MeshInstance3D:
 	var cube := MeshInstance3D.new()
-	cube.mesh = BlockTex.cube_mesh("hill" if _rng.randf() < 0.5 else "ruin", Vector3(0.45, 0.45, 0.45))
+	cube.mesh = BlockTex.cube_mesh("dirt" if _rng.randf() < 0.5 else "ruin", Vector3(0.45, 0.45, 0.45))
 	cube.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_world().add_child(cube)
 	cube.global_position = at

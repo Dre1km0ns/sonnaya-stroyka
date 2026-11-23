@@ -16,7 +16,7 @@ const STATE_NAMES := ["SPAWN", "UNDER", "TELEGRAPH", "BURST", "REST", "STUNNED",
 const MAX_HP := 2100                   # v0.11: TTK ≈ 150 с при 3 факелах (было 2850 ≈ 210 с)
 const P2_AT := MAX_HP * 66 / 100       # 66%
 const P3_AT := MAX_HP * 33 / 100       # 33%
-const SEGMENTS := 10
+const SEGMENTS := 15
 const SPACING := 0.95
 const HEAD_SIZE := 1.3
 const UNDER_DEPTH := 2.6               # голова под полом во время подкопа
@@ -157,7 +157,7 @@ func _ready() -> void:
 	_on_world(GameState.is_dream())
 	_enter(S.SPAWN)
 	roar()
-	GameState.chat("Из гнезда поднимается Анаконда! Сталь её не берёт — ставь факелы и заманивай под свет.", Color(1.0, 0.5, 0.3))
+	if str(nest_id) != "summon": GameState.chat("Из гнезда поднимается анаконда!", Color(1.0, 0.5, 0.3), true)
 
 
 func _on_world(is_dream: bool) -> void:
@@ -350,7 +350,7 @@ func tick(delta: float) -> void:
 		_scan_torches()
 	# Рассвет — уходит.
 	if not GameState.is_night():
-		leave("Светает — Анаконда уходит в глубину.")
+		leave("Анаконда ушла в глубину.")
 		return
 	var player := _player()
 	if player == null:
@@ -359,7 +359,7 @@ func tick(delta: float) -> void:
 	if player.global_position.distance_to(home) > LEASH_DIST:
 		_leash_t += delta
 		if _leash_t > LEASH_TIME:
-			leave("Анаконда потеряла тебя и вернулась в гнездо.")
+			leave("Анаконда вернулась в гнездо.")
 			return
 	else:
 		_leash_t = 0.0
@@ -699,8 +699,7 @@ func _start_transition() -> void:
 	_enter(S.TRANSITION)
 	roar(true)
 	Sfx.play3d(_head, Sfx.ANACONDA_RUMBLE, 0.0, 60.0)
-	var what := "Обвалы и землеройки!" if phase == 2 else "Удушающее кольцо — держи факел рядом!"
-	GameState.chat("Анаконда в ярости — фаза %d. %s" % [phase, what], Color(1.0, 0.5, 0.3))
+	GameState.chat("Анаконда в ярости!", Color(1.0, 0.5, 0.3), true)
 
 
 func roar(loud: bool = true) -> void:
@@ -720,8 +719,7 @@ func _die() -> void:
 	var scales := randi_range(14,22) # v0.11: гарантированно хватает на Меч3 + часть брони
 	set_meta("last_scale_drop",scales)
 	GameState.add_mined_block("anaconda_scale",scales)
-	GameState.add_mined_block("anaconda_egg", 1)
-	GameState.chat("Анаконда повержена! Награда: %d осыпи, %d реагент3, %d реагент2 и Яйцо Анаконды, %d чешуи." % [REWARD_DUST, REWARD_R3, REWARD_R2,scales], Color(0.6, 1.0, 0.6))
+	GameState.chat("Анаконда повержена! Награда: %d осыпи, %d реагент3, %d реагент2, %d чешуи." % [REWARD_DUST, REWARD_R3, REWARD_R2,scales], Color(0.6, 1.0, 0.6))
 	for m in get_tree().get_nodes_in_group("anaconda_minion"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()
@@ -738,7 +736,7 @@ func leave(msg: String = "") -> void:
 	_enter(S.LEAVING)
 	_cleanup_fx()
 	if msg != "":
-		GameState.chat(msg, Color(1.0, 0.75, 0.5))
+		GameState.chat(msg, Color(1.0, 0.75, 0.5), true)
 	for m in get_tree().get_nodes_in_group("anaconda_minion"):
 		if is_instance_valid(m) and m.has_method("crumble"):
 			m.crumble()
@@ -881,7 +879,7 @@ static func try_spawn(host: Node3D, player: Node3D, chunks: Node) -> Node:
 	if host.get_tree().get_nodes_in_group("anaconda").size() > 0:
 		return null
 	# v0.11: гнёзда спят, пока жива Мать блоков; два босса одновременно не приходят.
-	if not GameState.mother_defeated or GameState.boss_alive:
+	if GameState.boss_alive:  # v0.22.1: Мать побеждать не нужно
 		return null
 	if not chunks.has_method("nests_near"):
 		return null
@@ -929,7 +927,7 @@ static func summon_with_egg(host: Node3D, player: Node3D, chunks: Node) -> Node:
 		p.y = player.global_position.y
 	if not GameState.consume_item("anaconda_egg", 1):
 		return null
-	GameState.chat("Яйцо треснуло — земля дрожит… Анаконда идёт на зов!", Color(1.0, 0.45, 0.3))
+	GameState.chat("Анаконда идёт на зов!", Color(1.0, 0.45, 0.3), true)
 	return spawn_at(host, p, "summon")
 
 

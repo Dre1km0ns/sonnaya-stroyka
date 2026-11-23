@@ -73,7 +73,7 @@ func _ready() -> void:
 	model.name = "Model"
 	add_child(model)
 	var body := MeshInstance3D.new()
-	var look: Array = {"blockolith": ["ruin", 0.8], "carrier": ["stone", 0.66]}.get(mode, ["hill", 0.62])
+	var look: Array = {"blockolith": ["ruin", 0.8], "carrier": ["stone", 0.66]}.get(mode, ["dirt", 0.62])
 	var sz: float = look[1]
 	body.mesh = BlockTex.cube_mesh(str(look[0]), Vector3(sz, sz, sz))
 	if mode == "blockolith":
@@ -146,7 +146,7 @@ func _summon_mother() -> void:
 	var cell := Vector3i(floori(global_position.x), floori(global_position.y), floori(global_position.z))
 	var bm: GDScript = load("res://scripts/block_mother.gd")
 	if bm.spawn_near(host, cell) != null:
-		GameState.chat("Блоколит рассыпался — и земля ответила рёвом. Мать блоков пришла за своим!", Color(1.0, 0.35, 0.35))
+		GameState.chat("Мать блоков пришла за своим!", Color(1.0, 0.35, 0.35), true)
 
 
 func crumble() -> void:

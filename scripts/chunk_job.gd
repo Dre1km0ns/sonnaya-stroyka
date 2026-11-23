@@ -285,7 +285,7 @@ func _plan_hills(coord: Vector2i, occupied: Dictionary, solids: Dictionary) -> v
 			for y in range(h):
 				if is_cell_removed(wx, y, wz) or is_carved(Vector3i(wx, y, wz)):
 					continue
-				solids[Vector3i(wx, y, wz)] = "stone" if y < height_at(wx, wz) - 2 else ("hill" if y == height_at(wx,wz)-1 else "dirt")
+				solids[Vector3i(wx, y, wz)] = "stone" if y < height_at(wx, wz) - 2 else "dirt"
 
 func _add_wall(coord: Vector2i, w: Vector2i) -> void:
 	_wall_world_cells[w] = true
@@ -434,9 +434,10 @@ func _build_chunk_geometry(coord: Vector2i, lake_cells: Dictionary, solids: Dict
 		if mask == 63:
 			continue
 		var noise := (_hash01(c.x * 7 + c.y * 13, c.z * 11 - c.y) - 0.5) * 0.10
-		var col := grass_tint(c.x,c.z) if kind in ["hill","ground","leaves"] else Color(tint+noise,tint+noise,tint+noise)
-		var variant := int(_hash01(c.x * 3 + c.y, c.z * 5 - c.y * 2) * 9.0)
 		var exposed := not (mask & (1 << 2))
+		var col := grass_tint(c.x,c.z) if (kind == "leaves" or (kind in ["dirt","hill","ground"] and exposed)) else Color(tint+noise,tint+noise,tint+noise)
+		var variant := int(_hash01(c.x * 3 + c.y, c.z * 5 - c.y * 2) * 9.0)
+		if is_dream_layer and not kind in ["dirt","hill","ground"]: col *= BlockTex.DREAM_TINT
 		if kind == "hill" and c.y < height_at(c.x, c.z) - 2:
 			kind = "stone"
 		elif kind == "nest" or kind == "egg":
@@ -563,7 +564,7 @@ static func depth_kind(y: int) -> String:
 	if y <= BEDROCK_Y:
 		return "bedrock"
 	if y >= -1:
-		return "ground"
+		return "dirt"
 	if y > -6:
 		return "dirt"
 	return "stone" if y > -18 else "deep_stone"
@@ -827,7 +828,7 @@ func _ug_tiles(n: Vector3i, lake_col: bool) -> Array:
 	if n.y == -1:
 		return BlockTex.faces_for("ground", false, true)
 	if n.y > -6:
-		return BlockTex.faces_for("dirt")
+		return BlockTex.faces_for("dirt", false, false)
 	if n.y <= -18:
 		return BlockTex.faces_for("deep_stone")
 	return BlockTex.faces_for("stone")

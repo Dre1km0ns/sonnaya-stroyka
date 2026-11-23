@@ -4,9 +4,6 @@ var text_label: Label
 var _last := ""
 var _timer := 0.0
 var _tween: Tween
-const CHEAT_TEXT := "Сон помнит всё. T — материал · K, L — рамка и заливка · Z/U — отмена · F — проснуться"
-const CHEAT_SECONDS := 12.0
-var cheat_shown := 0.0
 func _ready() -> void:
 	position = Vector2(10,330)
 	custom_minimum_size = Vector2(260,70)
@@ -29,33 +26,16 @@ func _process(delta: float) -> void:
 		return
 	_timer = 0.2
 	var text := ""
+	# v0.22.1: подсказки Яви и шпаргалка Сна убраны — остаётся только помощь в строительстве во Сне.
 	var pl = get_tree().get_first_node_in_group("player")
-	if pl and pl.has_method("get_look_ray") and not GameState.ui_blocked():
+	if GameState.is_dream() and pl and pl.has_method("get_look_ray") and not GameState.ui_blocked():
 		var aim: Dictionary = pl.get_look_ray()
 		var col = aim.get("collider")
-		if col:
-			if col.is_in_group("bed"):
-				text = "Кровать\nE — сон и точка возрождения\nY — проверить под подушкой"
-			elif col.is_in_group("reagent"):
-				text = "Реагент\nПодойди ближе — автоподбор. E — взять."
-			elif col.has_meta("voxel_cell"):
-				var c: Vector3i = col.get_meta("voxel_cell")
-				var src := GameState.dream_blocks if GameState.is_dream() else GameState.wake_blocks
-				var id: String = src.get(c,GameState.wake_blocks.get(c,{})).get("kind", "")
-				text = GameState.block_display_name(id)
-				if id in ["workbench","lathe","sawmill","alchemy","idea_catcher","chest"]:
-					text += "\nE — открыть"
-				elif id == "door":
-					text += "\nПКМ — открыть / закрыть"
-				else:
-					text += "\nЛКМ — добыча; без кирки камень не выпадает"
-			elif col.has_meta("terrain_chunk") and not GameState.is_dream(): # v0.21: подсказка добычи — только в Яви
-				text = "Добыча\nУдерживай ЛКМ: кирка или пустая рука. Камень рукой — без дропа."
-		# v0.11: обучение ведёт панель целей (objective_panel.gd); здесь — только контекст под прицелом.
-		# v0.21 c3: шпаргалка Сна — коротко и один раз (12 с показа за сессию), не висит рядом с целью постоянно.
-		if text == "" and not GameState.tutorial_focus() and GameState.tutorial_enabled and GameState.is_dream() and GameState.pending_anchors.is_empty() and GameState.dream_exit_count < 2 and cheat_shown < CHEAT_SECONDS:
-			text = CHEAT_TEXT
-		if text == CHEAT_TEXT: cheat_shown += 0.2
+		if col and col.has_meta("voxel_cell"):
+			var c: Vector3i = col.get_meta("voxel_cell")
+			var id: String = str(GameState.dream_blocks.get(c, {}).get("kind", ""))
+			if id != "":
+				text = GameState.block_display_name(id) + "\nЛКМ — поставить рядом · удерживай ЛКМ — снять"
 	_place_below_objectives()
 	if text == _last:
 		return

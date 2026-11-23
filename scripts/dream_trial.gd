@@ -9,7 +9,7 @@ const PHANTOMS := 12
 const PHANTOM_HP := 6
 const MAX_TICKS := 240           # 24 с при 10 тиках/с
 const LIGHT_R := 2
-const LIGHT_KINDS := ["lumen", "lumen_cold", "lamp", "torch"]
+const LIGHT_KINDS := ["torch"]
 ## Как и кошмары v0.18, фантомы грызут только дрейф и листву — настоящие материалы им не по зубам.
 ## Испытание проверяет щели, высоту стен (≥ 2), слабые места из дрейфа и свет.
 const HP := {"drift": 6, "leaves": 3}

@@ -30,7 +30,7 @@ func _ready() -> void:
 	add_child(body)
 	for x in range(-6, 7):
 		for z in range(-10, 3):
-			_cube(body, "ground", Vector3(x, -1, z))
+			_cube(body, "dirt", Vector3(x, -1, z))
 	for x in range(-3, 4):
 		for y in range(0, 3):
 			_cube(body, "planks" if y > 0 else "stone", Vector3(x, y, -6))

@@ -205,7 +205,7 @@ func mass_place_row(cell: Vector3i, facing: int) -> Array:
 
 
 ## Предметы, которые во сне ставятся как блоки (иначе ставится бесплатный дрейф-блок).
-const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "ground", "hill", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand", "lumen", "lumen_cold", "lamp", "strut"]
+const DREAM_ITEM_BLOCKS := ["workbench", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "dirt", "stone", "deep_stone", "log", "leaves", "planks", "ruin", "mossy_ruin", "sand", "strut"]
 
 
 func _try_remove() -> void:
@@ -260,7 +260,7 @@ func _try_mine_wake() -> void:
 		return
 	if collider.has_meta("terrain_cell"):
 		var tcell: Vector3i = collider.get_meta("terrain_cell")
-		var tkind := str(collider.get_meta("terrain_kind")) if collider.has_meta("terrain_kind") else "hill"
+		var tkind := str(collider.get_meta("terrain_kind")) if collider.has_meta("terrain_kind") else "dirt"
 		_mine_terrain_cell(tcell, tkind)
 		return
 

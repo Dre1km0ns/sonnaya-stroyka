@@ -88,16 +88,7 @@ func _default_corner() -> Vector3:
 func _build_mesh() -> void:
 	var colr: Color = KIND_COLORS[clampi(kind, 0, 3)]
 	_Vis.build_ghost(self, kind, colr)
-	var tag := Label3D.new()
-	tag.name = "Tag"
-	tag.text = kind_name()
-	tag.font_size = 32
-	tag.position = Vector3(0, 1.95, 0)
-	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.modulate = colr.lightened(0.35)
-	tag.pixel_size = 0.004; tag.outline_size = 8 # v0.21 c2: компактнее, видна 2–22 м
-	tag.visibility_range_begin = 2.0; tag.visibility_range_end = 22.0
-	add_child(tag)
+	# v0.22.1: подпись «врагN» над головой убрана.
 	var col := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()
 	shape.radius = 0.4

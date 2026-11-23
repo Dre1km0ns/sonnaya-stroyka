@@ -69,8 +69,11 @@ const LUCID_KILL := 2.0
 const LUCID_MOTHER := 50.0
 const LUCID_ANACONDA := 60.0
 ## Отпечатки: материал, полученный в Яви хоть раз, бесконечен в палитре Сна; копия в Явь стоит 1 такой же материал.
-const IMPRINT_KINDS: Array[String] = ["dirt","ground","hill","sand","stone","deep_stone","log","leaves","planks","ruin","mossy_ruin","torch","lumen","lumen_cold","lamp","strut"]
+const IMPRINT_KINDS: Array[String] = ["dirt","sand","stone","deep_stone","log","leaves","planks","ruin","mossy_ruin","torch","strut"]
+## v0.22.1: удалённые и объединённые блоки → во что превращаются в сейвах, инвентаре, дропе и отпечатках.
+const KIND_ALIASES := {"hill": "dirt", "ground": "dirt", "lumen": "torch", "lumen_cold": "torch", "lamp": "torch"}
 ## Уникальные объекты (станции, мебель, маяк) не копируются, а переносятся — иначе дюп.
+## v0.22.1: «предметные» объекты — копия в Явь стоит 1 такой предмет из инвентаря Яви (раньше перемещались).
 const UNIQUE_KINDS: Array[String] = ["workbench","bed","lathe","sawmill","alchemy","idea_catcher","chest","door","beacon"]
 ## v0.11: усталость от фарма обычных мобов: −12% за каждое убийство за последние 240 с, минимум 20%.
 const KILL_FATIGUE_WINDOW := 240.0
@@ -98,7 +101,7 @@ const ANCHOR3_COST_REAGENTS := 5
 const ANCHOR3_COST_CLARITY := 20.0
 const MUTATION_CHANCE := 0.07
 const NO_MUTATION_KINDS := ["sawmill", "alchemy", "idea_catcher", "chest", "door", "bed_foot", "catcher_top","workbench", "torch", "beacon", "bed", "lathe"]
-const SAVE_FORMAT := 15 # v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
+const SAVE_FORMAT := 16 # v0.22.1: «Земля», без светоблоков; v0.16: постоянный Сон, отпечатки, осознанность; v0.17: относительные чертежи; v0.18: трещины, сады, просьбы; v0.19: испытания; v0.20: обучение во Сне
 const PROGRESSION_REVISION := 11
 const REAGENT_CAP := 100
 const REAGENT_TYPE_COUNT := 3
@@ -461,7 +464,7 @@ func is_dev() -> bool:
 
 
 const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
-	"hill", "ruin", "ground", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock", "sword3"]
+	"ruin", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock", "sword3"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
 
@@ -567,6 +570,7 @@ func is_infinite_slot(index: int) -> bool:
 func add_item_count(id: String, count: int) -> int:
 	## Кладёт count штук: сначала в существующие стаки, потом в пустые (хотбар первым). Возвращает сколько вошло.
 	_ensure_inventory()
+	id = canon_kind(id)
 	if id == "" or count <= 0:
 		return 0
 	if current_world == World.WAKE and not _loading_save and IMPRINT_KINDS.has(id):
@@ -952,22 +956,19 @@ func recipe_defs() -> Array:
 		{"id": "workbench", "name": "Верстак", "where": "dream", "reagent1": 6, "item": "workbench", "item_name": "Верстак", "tier": 0},
 		{"id": "pickaxe", "name": "Кирка", "where": "workbench", "reagent1": 2, "reagent2": 1, "item": "pickaxe", "item_name": "Кирка", "tier": 1},
 		{"id": "torch", "name": "Факел ×4", "count": 4, "where": "workbench", "reagent1": 1, "log": 1, "item": "torch", "item_name": "Факел", "tier": 1},
-		{"id": "sword", "name": "Деревянный меч · 8 урона", "where": "workbench", "reagent1": 3, "reagent2": 1, "item": "sword", "item_name": "Меч", "tier": 1},
+		{"id": "sword", "name": "Деревянный меч", "where": "workbench", "reagent1": 3, "reagent2": 1, "item": "sword", "item_name": "Меч", "tier": 1},
 		{"id": "planks", "name": "Доски ×4", "where": "sawmill", "log": 1, "item": "planks", "item_name": "Доски", "count": 4, "tier": 1},
 		{"id": "bed", "name": "Кровать", "where": "dream", "dust": BED_CRAFT_DUST, "reagent1": BED_CRAFT_R1, "item": "bed", "item_name": "Кровать", "tier": 1},
-		{"id": "heal1", "name": "Хилка1 +20 HP под подушку", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1", "tier": 1},
+		{"id": "heal1", "name": "Хилка1", "where": "dream", "dust": HEAL1_DUST, "pillow": "heal1", "tier": 1},
 		{"id": "lathe", "name": "Станок", "where": "dream", "reagent3": 5, "reagent2": 2, "dust": 20, "item": "lathe", "item_name": "Станок", "tier": 2},
-		{"id":"sword3","name":"Чешуйчатый меч · 24 урона","where":"lathe","items":{"sword2":1,"anaconda_scale":5},"item":"sword3", "tier": 4},
-		{"id": "sword2", "name": "Каменный меч · 14 урона", "where": "lathe", "items": {"sword": 1, "stone": 6}, "reagent2": 2, "item": "sword2", "item_name": "Меч2", "tier": 2},
-		{"id": "pickaxe2", "name": "Каменная кирка2 · ×2 скорость", "where": "lathe", "items": {"pickaxe": 1, "stone": 6}, "reagent2": 1, "item": "pickaxe2", "tier": 2},
+		{"id":"sword3","name":"Чешуйчатый меч","where":"lathe","items":{"sword2":1,"anaconda_scale":5},"item":"sword3", "tier": 4},
+		{"id": "sword2", "name": "Каменный меч", "where": "lathe", "items": {"sword": 1, "stone": 6}, "reagent2": 2, "item": "sword2", "item_name": "Меч2", "tier": 2},
+		{"id": "pickaxe2", "name": "Каменная кирка2", "where": "lathe", "items": {"pickaxe": 1, "stone": 6}, "reagent2": 1, "item": "pickaxe2", "tier": 2},
 		{"id": "sawmill", "name": "Лесопилка", "where": "dream", "reagent1": 4, "reagent2": 3, "reagent3": 2, "item": "sawmill", "tier": 1},
 		{"id": "door", "name": "Дверь", "where": "sawmill", "items": {"planks": 6}, "item": "door", "tier": 1},
-		{"id": "chest", "name": "Сундук · 27 ячеек", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
+		{"id": "chest", "name": "Сундук", "where": "sawmill", "items": {"planks": 6}, "item": "chest", "tier": 1},
 		{"id": "alchemy", "name": "Алхимический стол", "where": "dream", "unlock": "mother", "reagent2": 4, "reagent3": 4, "dust": 40, "item": "alchemy", "tier": 3},
-		{"id": "heal2", "name": "Хилка2 +40 HP", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
-		{"id": "lumen", "name": "Светоблок тёплый ×4", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 10, "item": "lumen", "count": 4, "tier": 4},
-		{"id": "lumen_cold", "name": "Светоблок холодный ×4", "where": "dream", "unlock": "heart_light", "reagent2": 1, "dust": 10, "item": "lumen_cold", "count": 4, "tier": 4},
-		{"id": "lamp", "name": "Светильник ×2", "where": "dream", "unlock": "heart_light", "reagent1": 1, "dust": 16, "item": "lamp", "count": 2, "tier": 4},
+		{"id": "heal2", "name": "Хилка2", "where": "alchemy", "items": {"heal1": 1}, "reagent3": 2, "item": "heal2", "tier": 3},
 		{"id": "strut", "name": "Подпорка ×4", "where": "dream", "unlock": "heart_structure", "reagent3": 1, "dust": 8, "item": "strut", "count": 4, "tier": 4},
 		{"id": "idea_catcher", "name": "Ловец идей", "where": "dream", "unlock": "mother", "reagent1": 6, "dust": 100, "item": "idea_catcher", "tier": 3},
 	]
@@ -1203,7 +1204,7 @@ func remove_terrain_cell(cell: Vector3i, kind: String) -> bool:
 	if kind == "bedrock" or cell.y <= BEDROCK_Y:
 		set_hint("Бедрок не ломается — глубже копать нельзя.", false)
 		return false
-	var k := kind if kind != "" else "hill"
+	var k := kind if kind != "" else "dirt"
 	removed_terrain[cell] = k
 	last_mined_kind = k
 	last_mined_cell = cell
@@ -1343,8 +1344,23 @@ func notify_night_from_time() -> void:
 
 # --- Чат / журнал сообщений (v0.6) ---
 
-func chat(text: String, color: Color = Color(1, 1, 1)) -> void:
+## v0.22.1: в чат попадают только сообщения, которые оставил владелец (keep=true),
+## и подсказки строительства во Сне. Остальное копится в muted_chat — смотреть командой «chatlog».
+var muted_chat: Array[String] = []
+const CHAT_HINT_DENY := ["Слот", "Чувствительность", "Скрафчено", "Полёт", "Сохранен", "Загружено", "Продолжение", "v0.5", "Собран", "Под подушкой нет", "Нет файла", "Сейв"]
+
+func chat(text: String, color: Color = Color(1, 1, 1), keep: bool = false) -> void:
+	if not keep:
+		muted_chat.append(text)
+		if muted_chat.size() > 60: muted_chat.pop_front()
+		return
 	chat_message.emit(text, color)
+
+
+static func dream_hint_allowed(text: String) -> bool:
+	for p in CHAT_HINT_DENY:
+		if text.begins_with(p): return false
+	return true
 
 
 # --- HP игрока (v0.6) ---
@@ -1875,7 +1891,7 @@ func on_anaconda_killed() -> void:
 	heart_light = true
 	unlock_zone("light_garden")
 	if first:
-		var t := "Сердце света: во Сне открыты светоблоки и светильники в крафте Сна, а также чешуйчатое оружие на станке."
+		var t := "Сердце света: факелы бесконечны в палитре Сна, на станке открыто чешуйчатое оружие на станке."
 		chat(t, Color(0.6, 1.0, 0.8))
 		unlock_announced.emit(t)
 
@@ -1886,8 +1902,6 @@ func block_display_name(kind: String) -> String:
 			return "Верстак"
 		"torch":
 			return "Факел"
-		"lamp":
-			return "Светильник"
 		"strut":
 			return "Подпорка"
 		"mouth":
@@ -1896,12 +1910,8 @@ func block_display_name(kind: String) -> String:
 			return "Меч"
 		"pickaxe":
 			return "Кирка"
-		"hill":
-			return "Холм"
 		"ruin":
 			return "Руинный блок"
-		"ground":
-			return "Грунт"
 		"drift":
 			return "Дрейф-блок"
 		"beacon":
@@ -1935,8 +1945,8 @@ func block_display_name(kind: String) -> String:
 
 
 func is_placeable_block(id: String) -> bool:
-	return id in ["bedrock", "drift", "mouth", "workbench", "hill", "ruin", "ground", "log", "leaves", "planks",
-		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "lumen", "lumen_cold", "lamp", "strut"]
+	return id in ["bedrock", "drift", "mouth", "workbench", "ruin", "log", "leaves", "planks",
+		"stone", "deep_stone", "dirt", "sand", "nest", "bed", "lathe", "sawmill", "alchemy", "idea_catcher", "chest", "door", "mossy_ruin", "strut"]
 
 
 func add_mined_block(kind: String, amount: int = 1) -> void:
@@ -1944,6 +1954,7 @@ func add_mined_block(kind: String, amount: int = 1) -> void:
 		return
 	if kind == "egg":
 		kind = "anaconda_egg"
+	kind = canon_kind(kind)
 	if ItemDB.is_special(kind):
 		_add_special(kind, amount)
 		return
@@ -1983,7 +1994,9 @@ func is_dream() -> bool:
 
 
 func set_hint(text: String, to_chat: bool = true) -> void:
-	if to_chat and text != last_hint and not text.begins_with("Слот") and not text.begins_with("Чувствительность"):
+	if to_chat and text != last_hint and is_dream() and dream_hint_allowed(text):
+		chat(text, Color(0.85, 0.8, 1.0), true)
+	elif to_chat and text != last_hint:
 		chat(text)
 	last_hint = text
 	hint_changed.emit(text)
@@ -2058,6 +2071,7 @@ func has_imprint(kind: String) -> bool:
 
 
 func learn_imprint(kind: String, silent: bool = false) -> bool:
+	kind = canon_kind(kind)
 	if not IMPRINT_KINDS.has(kind) or imprints.has(kind):
 		return false
 	imprints[kind] = true
@@ -2098,11 +2112,12 @@ func wake_stock(kind: String) -> int:
 
 
 func materialize_cost(roots: Array) -> Dictionary:
-	## Цена копии: 1 материал Яви за блок из палитры отпечатков. Дрейф и уникальные объекты — бесплатно.
+	## Цена копии: 1 материал Яви за блок из палитры отпечатков; v0.22.1: станции, кровать, сундук, дверь
+	## и маяк тоже копируются за 1 такой предмет из инвентаря Яви. Дрейф — бесплатно.
 	var need := {}
 	for c in roots:
 		var kind := str(dream_blocks.get(c, {}).get("kind", ""))
-		if IMPRINT_KINDS.has(kind): need[kind] = int(need.get(kind, 0)) + 1
+		if IMPRINT_KINDS.has(kind) or (UNIQUE_KINDS.has(kind) and not dream_blocks[c].get("paid", false)): need[kind] = int(need.get(kind, 0)) + 1
 	return need
 
 
@@ -2354,7 +2369,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 		var stock:Dictionary={};var paid_roots:Array=[];var mat_spent:Dictionary={};var unpaid:=0
 		for c in plan.roots:
 			var kind:=str(dream_blocks[c].get("kind",""))
-			if IMPRINT_KINDS.has(kind) and not dev_mode:
+			if (IMPRINT_KINDS.has(kind) or (UNIQUE_KINDS.has(kind) and not dream_blocks[c].get("paid", false))) and not dev_mode:
 				if not stock.has(kind): stock[kind]=_inv_count(inv_wake,kind)
 				if int(stock[kind])<=0: unpaid+=1;continue
 				stock[kind]=int(stock[kind])-1;mat_spent[kind]=int(mat_spent.get(kind,0))+1
@@ -2362,7 +2377,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 		var next_wake:=wake_blocks.duplicate();var changed:Array=[];var dream_changed:Array=[];var moved_roots:Array=[];var torch_copied:=false;var real_copy:=false
 		for c in paid_roots:
 			var src:Dictionary=dream_blocks[c];var kind2:=str(src.get("kind",""))
-			var data:Dictionary=src.duplicate(true);data.erase("anchored")
+			var data:Dictionary=src.duplicate(true);data.erase("anchored");data.erase("paid")
 			data.mutant=c in mutation.cells
 			if data.mutant: data.kind="mouth"
 			next_wake[c]=data;changed.append(c)
@@ -2371,8 +2386,9 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 				if cell!=c:
 					var part:Dictionary=dream_blocks[cell].duplicate(true);part.erase("anchored");next_wake[cell]=part;changed.append(cell)
 			if UNIQUE_KINDS.has(kind2):
-				moved_roots.append(c)
-				for cell in fp: dream_blocks.erase(cell);dream_changed.append(cell)
+				moved_roots.append(c) # v0.22.1: копия за 1 предмет Яви, оригинал остаётся во Сне
+				dream_blocks[c].erase("paid") # поставленный из инвентаря Сна предмет оплачивает первую копию
+				copied+=1
 			else:
 				copied+=1
 				if kind2=="torch": torch_copied=true
@@ -2402,7 +2418,7 @@ func resolve_wake(abort_transfer:bool=false) -> Dictionary:
 	result["trial_bonus"] = reward_tested_regions() # v0.19: первая материализация испытанной постройки
 	pass  # v0.22: без сводки после выхода из Сна
 	if pillow_count("heal1")+pillow_count("heal2")>0 and not abort_transfer:
-		chat("Под подушкой лежат зелья: %d. Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85))
+		chat("Под подушкой лежат зелья: %d. Наведись на кровать и нажми Y."%(pillow_count("heal1")+pillow_count("heal2")),Color(1.0,0.8,0.85),true)
 	return result
 
 
@@ -2411,6 +2427,7 @@ func place_dream_block(cell: Vector3i, kind: String = "drift", facing: int = 0) 
 		return false
 	_dream_session_blocks += 1
 	dream_blocks[cell] = {"kind": kind, "anchored": false, "mutant": false}
+	if UNIQUE_KINDS.has(kind): dream_blocks[cell]["paid"] = true # v0.22.1: предмет из инвентаря Сна оплачивает первую копию в Явь
 	if _dream_session_blocks >= 5: tutorial_event("build")
 	if kind == "workbench": tutorial_event("workbench")
 	if kind=="door":
@@ -2763,6 +2780,7 @@ func apply_save_dict(data: Dictionary) -> void:
 	_load_v018(data)
 	_load_v019(data)
 	_load_v020(data)
+	migrate_v0221()
 	_loading_save = false
 	_objectives_eval(true)
 	var w := str(data.get("world", "wake"))
@@ -4000,15 +4018,15 @@ const NIGHTMARE_RADIUS := 3
 const NIGHTMARE_BITES := 4
 const LIGHT_GUARD_RADIUS := 3
 const BEACON_GUARD_RADIUS := 10
-const DREAM_LIGHT_KINDS := ["lumen", "lumen_cold", "lamp", "torch"]
+const DREAM_LIGHT_KINDS := ["torch"]
 const LUCID_PATCH := 3.0
 const LUCID_REQUEST := 15.0
 const ZONE_LUCID_BONUS := 10.0
 const ZONES := {
 	"stone_garden": {"name": "Каменный сад", "kinds": ["ruin", "mossy_ruin", "deep_stone", "strut"], "sky": [Color(0.30, 0.22, 0.20), Color(0.75, 0.6, 0.5), Color(0.6, 0.45, 0.35)]},
-	"light_garden": {"name": "Сад света", "kinds": ["lumen", "lumen_cold", "lamp", "torch"], "sky": [Color(0.32, 0.20, 0.30), Color(0.85, 0.65, 0.7), Color(0.75, 0.5, 0.55)]},
+	"light_garden": {"name": "Сад света", "kinds": ["torch"], "sky": [Color(0.32, 0.20, 0.30), Color(0.85, 0.65, 0.7), Color(0.75, 0.5, 0.55)]},
 }
-const REQUESTS := [["log", 8], ["planks", 12], ["stone", 12], ["sand", 8], ["torch", 6], ["deep_stone", 8], ["mossy_ruin", 6], ["lumen", 4], ["lamp", 2], ["strut", 6]]
+const REQUESTS := [["log", 8], ["planks", 12], ["stone", 12], ["sand", 8], ["torch", 6], ["deep_stone", 8], ["mossy_ruin", 6], ["strut", 6]]
 signal cracks_changed
 var dream_cracks: Dictionary = {}     # "x,y,z" -> {"kind", "nights"}
 var dream_zones: Array = []
@@ -4391,6 +4409,46 @@ func skip_tutorial() -> void:
 	if not tutorial_active: return
 	tutorial_active = false
 	tutorial_changed.emit()
+
+
+static func canon_kind(kind: String) -> String:
+	return str(KIND_ALIASES.get(kind, kind))
+
+
+func _canon_slots(slots: Array) -> int:
+	var n := 0
+	for sl in slots:
+		if typeof(sl) == TYPE_DICTIONARY and KIND_ALIASES.has(str(sl.get("id", ""))):
+			sl["id"] = canon_kind(str(sl["id"])); sl["name"] = ItemDB.display_name(str(sl["id"]), str(sl["id"])); n += 1
+	return n
+
+
+func migrate_v0221() -> int:
+	## v0.22.1: холм и грунт → «Земля» (dirt); светоблоки и светильник → факел; станции во Сне оплачены.
+	var n := 0
+	for src in [wake_blocks, dream_blocks]:
+		for c in src:
+			var d: Dictionary = src[c]
+			var k := str(d.get("kind", ""))
+			if KIND_ALIASES.has(k):
+				d["kind"] = canon_kind(k); n += 1
+	for c in dream_blocks:
+		if UNIQUE_KINDS.has(str(dream_blocks[c].get("kind", ""))) and not dream_blocks[c].has("root") and not dream_blocks[c].has("paid"):
+			dream_blocks[c]["paid"] = true
+	for dict in [removed_terrain, removed_dream_terrain]:
+		for c in dict:
+			if KIND_ALIASES.has(str(dict[c])): dict[c] = canon_kind(str(dict[c])); n += 1
+	for arr in [inv_wake, inv_dream, pillow, dream_stash]: n += _canon_slots(arr)
+	for k in world_storage: n += _canon_slots(world_storage[k])
+	for k in imprints.keys():
+		if KIND_ALIASES.has(str(k)):
+			imprints.erase(k); imprints[canon_kind(str(k))] = true; n += 1
+	dream_material = canon_kind(dream_material)
+	if not dream_request.is_empty() and KIND_ALIASES.has(str(dream_request.get("kind", ""))): dream_request = {}
+	for k in block_stash.keys():
+		if KIND_ALIASES.has(str(k)):
+			var ck := canon_kind(str(k)); block_stash[ck] = int(block_stash.get(ck, 0)) + int(block_stash[k]); block_stash.erase(k); n += 1
+	return n
 
 
 func _load_v020(data: Dictionary) -> void:

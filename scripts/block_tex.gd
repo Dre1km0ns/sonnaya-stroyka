@@ -31,6 +31,23 @@ static func material() -> ShaderMaterial:
 	return _mat
 
 
+## v0.22.1: во Сне все блоки фиолетовые, как земля Сна.
+const DREAM_TINT := Color(0.74, 0.56, 1.0)
+static var _dream_mat: ShaderMaterial = null
+
+
+static func dream_material() -> ShaderMaterial:
+	if _dream_mat == null:
+		_dream_mat = material().duplicate() as ShaderMaterial
+		_dream_mat.set_shader_parameter("tint", Vector3(DREAM_TINT.r, DREAM_TINT.g, DREAM_TINT.b))
+	return _dream_mat
+
+
+static func dream_tinted(kind: String) -> bool:
+	## Дрейф, рот и земля Сна уже окрашены своими тайлами.
+	return not kind in ["drift", "drift_dream", "drift_anchored", "mouth"]
+
+
 static func water_material(dream: bool) -> ShaderMaterial:
 	if _water.has(dream):
 		return _water[dream]
@@ -47,15 +64,14 @@ static func water_material(dream: bool) -> ShaderMaterial:
 ## Тайлы граней куба: [+X, -X, +Y, -Y, +Z, -Z]
 static func faces_for(kind: String, dream: bool = false, exposed_top: bool = true, variant: int = 0) -> Array:
 	match kind:
-		"hill", "ground":
+		"hill", "ground", "dirt":
+			# v0.22.1: холм, грунт и земля — один блок «Земля»: трава сверху, если над ним пусто.
 			if dream:
 				if exposed_top:
 					return _f(tile("dream_side"), tile("dream_top"), tile("dream_dirt"))
 				return _all(tile("dream_dirt"))
 			if exposed_top:
 				return _f(tile("grass_side"), tile("grass_top"), tile("dirt"))
-			return _all(tile("dirt"))
-		"dirt":
 			return _all(tile("dirt"))
 		"tool_wood", "tool_stone":
 			return _all(tile(kind))
@@ -99,10 +115,8 @@ static func faces_for(kind: String, dream: bool = false, exposed_top: bool = tru
 			return _all(tile("planks"))
 		"workbench":
 			return _f(tile("bench_side"), tile("bench_top"), tile("planks"))
-		"beacon", "lumen_cold":
+		"beacon":
 			return _all(tile("beacon"))
-		"lumen", "lamp":
-			return _all(tile("torch"))
 		"strut":
 			return _all(tile("planks"))
 		"mouth":
