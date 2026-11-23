@@ -48,7 +48,7 @@ func update_from(m: Array) -> void:
 	hit_radius = float(m[9])
 	if _label:
 		_label.text = "%s %d/%d" % [title, hp, max_hp] if title != "" else "%d/%d" % [hp, max_hp]
-		_label.visible = not is_boss
+		_label.visible = false   # таблички над мобами запрещены (полоса босса / HP в бою достаточно)
 
 
 func _process(delta: float) -> void:

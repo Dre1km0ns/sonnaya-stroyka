@@ -61,6 +61,7 @@ func _go() -> void:
 		for y in range(3):
 			gs.place_wake_block(base + Vector3i(x, y, 0), "metal_ore" if (x + y) % 2 == 0 else "stone")
 	_look(at, 0.0, -0.05); await _wait(30)
+	if only == "burger": await _burger(at); return
 	await _sel(0); await _shot("02_pickaxe2_idle_ore.png")
 	Engine.time_scale = 0.2; build._play_tool_swing(); await _wait(5); await _shot("03_pickaxe_swing.png"); Engine.time_scale = 1.0; await _wait(30)
 	await _sel(1); await _shot("04_pickaxe3_idle.png")
@@ -73,7 +74,11 @@ func _go() -> void:
 	Input.action_release("attack_break"); await _wait(20)
 	if only == "bow": quit(); return
 	await _sel(4); await _shot("09_metal_sword.png")
-	# Бургер
+	await _burger(at)
+
+
+func _burger(at: Vector3) -> void:
+	await _sel(4)
 	var B = load("res://scripts/boss_burger.gd")
 	gs.god_mode = true
 	var boss = B.spawn_at(main.wake_world, at + Vector3(0, 0, 12))
@@ -82,16 +87,26 @@ func _go() -> void:
 	boss.global_position = at + Vector3(0, 5.5, 11)
 	_look(at, PI, 0.3); await _wait(20)
 	await _shot("10_burger_phase1.png")
-	boss._start_laser(player.global_position); boss._update_laser_aim(false); await _wait(10); await _shot("11_burger_laser.png")
+	# лазер целим мимо камеры (вбок), чтобы веер лучей шёл поперёк кадра; сначала прицел, потом выстрел
+	boss._start_laser(player.global_position + Vector3(9, -0.9, 2)); boss._update_laser_aim(false); await _wait(6)
+	await _shot("11a_burger_laser_aim.png")
+	boss._update_laser_aim(true); await _wait(2); await _shot("11_burger_laser.png")
 	boss._clear_lasers(); boss._enter(boss.S.HOVER)
 	boss.take_damage(99999); await _wait(5)
-	boss._drop_anton(); boss.global_position = at + Vector3(0, 0, 7)
+	boss._drop_anton(); boss.global_position = at + Vector3(0, 0, 15)
 	for i in 30:
 		boss.global_position.y = boss._ground_y(boss.global_position) + 0.1; await process_frame
 	boss.look_at(Vector3(at.x, boss.global_position.y, at.z), Vector3.UP, true)
-	_look(at, PI, 0.1); await _wait(10)
+	boss.frozen = true
+	_look(at, PI, 0.12); await _wait(10)
 	await _shot("12_anton_phase2.png")
-	boss._spawn_clowns(2); await _wait(30); await _shot("13_anton_clowns.png")
+	boss._spawn_clowns(2); await _wait(20)
+	var k := 0
+	for c in get_nodes_in_group("burger_clown"):
+		c.set_physics_process(false)
+		c.global_position = at + Vector3(-3.0 + 6.0 * k, 0, 9.5); k += 1
+		c.global_position.y = boss._ground_y(c.global_position) + 0.05
+	await _wait(5); await _shot("13_anton_clowns.png")
 	boss.queue_free()
 	for c in get_nodes_in_group("burger_clown"): c.queue_free()
 	await _wait(10)

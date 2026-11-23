@@ -271,9 +271,6 @@ func _build_anton() -> void:
 	var ruff := MeshInstance3D.new(); var rt := TorusMesh.new(); rt.inner_radius = 0.3; rt.outer_radius = 0.62
 	ruff.mesh = rt; ruff.material_override = _mat(Color(1, 1, 1)); ruff.position = Vector3(0, 1.55, 0)
 	_anton.add_child(ruff)
-	var tag := Label3D.new(); tag.text = "Антон t2x2"; tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.font_size = 64; tag.outline_size = 12; tag.modulate = Color(1, 0.85, 0.3); tag.position = Vector3(0, 4.4, 0); tag.no_depth_test = true
-	_anton.add_child(tag)
 	_anton.visible = false
 
 
@@ -611,10 +608,13 @@ func _update_laser_aim(firing: bool) -> void:
 		var mi: MeshInstance3D = _laser_nodes[i]
 		var dir: Vector3 = _aim_dirs[i]
 		var length := 34.0
-		var w := (LASER_W if firing else 0.06)
+		var w := (LASER_W if firing else 0.14)
 		var from := global_position + Vector3(0, -0.6, 0)
-		mi.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.98 else Vector3.RIGHT).scaled(Vector3(w, w, length)), from + dir * length * 0.5)
-		(mi.material_override as StandardMaterial3D).albedo_color = Color(1, 0.25, 0.1, 0.85 if firing else 0.45)
+		# v0.24: масштаб в локальных осях луча (раньше scaled() тянул бокс по мировым осям — луч почти не было видно)
+		mi.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.98 else Vector3.RIGHT) * Basis.from_scale(Vector3(w, w, length)), from + dir * length * 0.5)
+		var lm := mi.material_override as StandardMaterial3D
+		lm.albedo_color = Color(1, 0.25, 0.1, 0.9 if firing else 0.55)
+		lm.emission_energy_multiplier = 6.0 if firing else 2.5
 
 
 func _laser_damage() -> void:
