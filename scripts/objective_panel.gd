@@ -13,6 +13,7 @@ var _threat_bar: ProgressBar
 var _t := 0.0
 var _last_id := "?"
 var _flash := 0.0
+var _keyhint: Label
 
 
 func _ready() -> void:
@@ -50,6 +51,8 @@ func _ready() -> void:
 	_threat_bar.add_theme_stylebox_override("background", bg)
 	_threat_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(_threat_bar)
+	_keyhint = _mk(10, Color(0.7, 0.75, 0.95))   # v0.25: какой клавишей скрыть панель
+	box.add_child(_keyhint)
 	GameState.objective_changed.connect(refresh)
 	GameState.world_changed.connect(func(_d: bool) -> void: refresh())
 	GameState.deep_threat_changed.connect(func(_v: float) -> void: refresh())
@@ -70,13 +73,16 @@ func _mk(sz: int, col: Color) -> Label:
 
 
 func _process(delta: float) -> void:
-	visible = not GameState.ui_blocked() and not GameState.transfer_ui_open and not GameState.tutorial_focus()
+	visible = not GameState.ui_blocked() and not GameState.transfer_ui_open and not GameState.tutorial_focus() and not bool(get_meta("goals_hidden", false))
 	_flash = maxf(0.0, _flash - delta)
 	modulate = Color(1, 1, 1).lerp(Color(1.4, 1.4, 0.9), clampf(_flash, 0.0, 1.0))
 	_t -= delta
 	if _t <= 0.0:
 		_t = 0.5
 		refresh()
+		var gs := get_node_or_null("/root/GameSettings")
+		if _keyhint and gs and gs.has_method("key_label"):
+			_keyhint.text = "%s — скрыть вехи" % str(gs.call("key_label", "goals_panel"))
 
 
 func refresh() -> void:

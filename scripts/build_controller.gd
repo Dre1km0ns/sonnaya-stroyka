@@ -107,10 +107,6 @@ func _process(delta: float) -> void:
 				if bs.use_summoner(self):
 					_arms("use")
 				_place_cooldown = 0.5
-			elif sel == "grill_saucer":
-				load("res://scripts/grill_saucer.gd").throw_from(self)
-				_arms("attack")
-				_place_cooldown = 0.6
 			elif sel == "anaconda_egg":
 				_try_summon_anaconda()
 				_arms("use")
@@ -865,6 +861,8 @@ func _arms(kind: String) -> void:
 	_ensure_hand_tools()
 	if viewmodel and viewmodel.has_method("play_action"):
 		viewmodel.play_action(kind)
+	if kind in ["attack", "break", "place", "use"]:
+		NetSession.local_action(kind)
 
 
 func _play_tool_swing() -> void:

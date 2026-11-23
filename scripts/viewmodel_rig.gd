@@ -20,9 +20,9 @@ const TOOL_CONFIG := {
 	"metal_sword": {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.46, "grip": Vector3(0.0, -0.28, 0.0),
 		"swing_time": 0.25, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.05},
 	# v0.24: лук держится вертикально, тетивой к игроку
-	"bow":      {"pos": Vector3(0.28, -0.30, -0.55), "rot": Vector3(0, 0, 8), "scale": 0.55, "grip": Vector3(0.0, 0.0, 0.0), "hold": Vector3(0, 0, 0), "lift": Vector3(-0.06, 0.10, 0.0),
+	"bow":      {"pos": Vector3(0.30, -0.30, -0.58), "rot": Vector3(0, 0, 8), "scale": 0.8, "grip": Vector3(0.0, 0.0, 0.0), "hold": Vector3(0, 180, 0), "lift": Vector3(-0.06, 0.10, 0.0),
 		"swing_time": 0.2, "wind": Vector3(0, 0, 0), "swing": Vector3(-10, 0, 0), "speed": 1.0},
-	"bow2":     {"pos": Vector3(0.28, -0.30, -0.55), "rot": Vector3(0, 0, 8), "scale": 0.55, "grip": Vector3(0.0, 0.0, 0.0), "hold": Vector3(0, 180, 0), "lift": Vector3(-0.06, 0.10, 0.0),
+	"bow2":     {"pos": Vector3(0.30, -0.30, -0.58), "rot": Vector3(0, 0, 8), "scale": 0.8, "grip": Vector3(0.0, 0.0, 0.0), "hold": Vector3(0, 0, 0), "lift": Vector3(-0.06, 0.10, 0.0),
 		"swing_time": 0.2, "wind": Vector3(0, 0, 0), "swing": Vector3(-10, 0, 0), "speed": 1.0},
 	"sword":    {"pos": Vector3(0.30, -0.31, -0.50), "rot": Vector3(-34, -8, 22), "scale": 0.44, "grip": Vector3(0.0, -0.28, 0.0),
 		"swing_time": 0.26, "wind": Vector3(18, -18, -14), "swing": Vector3(-62, 34, 30), "speed": 1.0},

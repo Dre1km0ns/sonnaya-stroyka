@@ -62,19 +62,13 @@ func _part(kind: String, size: Vector3, pos: Vector3, tint: Color = Color(1, 1, 
 
 
 func _build() -> void:
-	_part("scale", Vector3(0.36, 0.22, 0.6), Vector3(0, 0.22, 0))
-	_part("scale_head", Vector3(0.3, 0.22, 0.28), Vector3(0, 0.27, -0.42))
-	_part("scale", Vector3(0.14, 0.12, 0.5), Vector3(0, 0.2, 0.52), Color(0.85, 0.95, 0.8))
-	for i in range(4):
-		var lg := _part("scale", Vector3(0.1, 0.16, 0.1), Vector3(-0.2 if i % 2 == 0 else 0.2, 0.08, -0.2 if i < 2 else 0.2), Color(0.8, 0.85, 0.75))
-		_legs.append(lg)
-	for side in [-1.0, 1.0]:
-		var eye := MeshInstance3D.new(); var em := BoxMesh.new(); em.size = Vector3(0.06, 0.05, 0.02)
-		eye.mesh = em
-		var m := StandardMaterial3D.new(); m.albedo_color = Color(1, 0.6, 0.15); m.emission_enabled = true; m.emission = Color(1, 0.45, 0.1)
-		eye.material_override = m
-		eye.position = Vector3(side * 0.09, 0.33, -0.57)
-		add_child(eye)
+	## v0.25: ящерка в «толстом» стиле Антона (chunky_body); поворачивает её enemy_navigation.face_dir.
+	var m: Node3D = load("res://scripts/chunky_body.gd").make("lizard")
+	add_child(m)
+	_model_v25 = m
+
+
+var _model_v25: Node3D
 
 
 func hit_center() -> Vector3:
@@ -136,6 +130,7 @@ func _physics_process(delta: float) -> void:
 		(_legs[i] as Node3D).position.y = 0.08 + sin(_anim_t * 18.0 + float(i) * PI) * 0.04
 	if to.length() < 1.0 and _cd <= 0.0:
 		_cd = BITE_CD
+		if _model_v25: _model_v25.call("play_state", "attack", true)
 		CU.hurt(p, _Nav.combat_damage(self, BITE), "Ящерка-детёныш", global_position)
 
 

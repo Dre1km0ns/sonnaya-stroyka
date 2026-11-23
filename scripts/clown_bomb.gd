@@ -48,27 +48,19 @@ func _ready() -> void:
 
 
 func _build() -> void:
+	## v0.25 (t143u): свой клоун-камикадзе с динамитом (chunky_body «clown»), а не модель игрока.
 	_body = Node3D.new(); add_child(_body)
-	var packed: PackedScene = load("res://assets/models/kenney_blocky/character-a.glb")
-	var m: Node3D = packed.instantiate()
-	m.scale = Vector3.ONE * (0.75 if not shard else 0.6)
-	m.rotation.y = PI
+	var pr := "clown_shard" if shard else ("clown_friend" if friendly else "clown")
+	var m: Node3D = load("res://scripts/chunky_body.gd").make(pr)
 	_body.add_child(m)
-	var ap := m.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	if ap and ap.has_animation("walk"): ap.play("walk")
-	var nose := MeshInstance3D.new(); var ns := SphereMesh.new(); ns.radius = 0.09; ns.height = 0.18
-	nose.mesh = ns
-	_nose_mat = StandardMaterial3D.new(); _nose_mat.albedo_color = Color(1, 0.1, 0.1); _nose_mat.emission_enabled = true; _nose_mat.emission = Color(1, 0.1, 0.1)
-	nose.material_override = _nose_mat
-	nose.position = Vector3(0, 0.62 if not shard else 0.5, -0.2)
-	_body.add_child(nose)
-	var hat := MeshInstance3D.new(); var hc := CylinderMesh.new(); hc.top_radius = 0.0; hc.bottom_radius = 0.17; hc.height = 0.4
-	hat.mesh = hc
-	var hm := StandardMaterial3D.new(); hm.albedo_color = Color(1, 0.85, 0.1) if not friendly else Color(0.3, 1, 0.4)
-	if shard: hm.albedo_color = Color(0.8, 0.3, 1.0)
-	hat.material_override = hm
-	hat.position = Vector3(0, 1.1 if not shard else 0.88, 0)
-	_body.add_child(hat)
+	_model_v25 = m
+	var nose := m.find_child("ClownNose", true, false) as MeshInstance3D
+	if nose:
+		_nose_mat = nose.material_override as StandardMaterial3D
+		_nose_mat.emission_enabled = true; _nose_mat.emission = Color(1, 0.1, 0.1)
+
+
+var _model_v25: Node3D
 
 
 func hit_center() -> Vector3:

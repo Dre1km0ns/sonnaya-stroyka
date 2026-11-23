@@ -319,6 +319,10 @@ func _enter(s: int) -> void:
 		state_log.remove_at(0)
 
 
+func phase_speed() -> float:
+	return pow(1.15, float(phase - 1))
+
+
 func _player() -> CharacterBody3D:
 	return get_tree().get_first_node_in_group("player") as CharacterBody3D if is_inside_tree() else null
 
@@ -373,6 +377,7 @@ func tick(delta: float) -> void:
 		apply_light_damage(dps * delta)
 		if state == S.DEAD:
 			return
+	delta *= phase_speed()   # v0.25: каждая фаза +15 % к частоте и скорости атак
 	_tick_rocks(delta, player)
 	match state:
 		S.SPAWN:
@@ -394,7 +399,9 @@ func tick(delta: float) -> void:
 			if _t >= BURST_TIME:
 				_after_burst()
 		S.REST, S.STUNNED:
+			# v0.25 (t143u): Анаконда никогда не замирает — даже в передышке и оглушении ползёт кольцами.
 			var lie := _emerge + Vector3(0, HEAD_SIZE * 0.45, 0) + _rest_dir() * 1.6
+			lie += Vector3(cos(_t * 2.4), 0, sin(_t * 2.4)) * 2.6
 			_move_head(lie, delta, 6.0)
 			_contact(player)
 			var len := _stun_len if state == S.STUNNED else float(REST_TIME[phase - 1])
@@ -726,7 +733,7 @@ func _die() -> void:
 	_cleanup_fx()
 	roar(false)
 	GameState.reward_kill(true, "Анаконда")
-	GameState.drop_boss_token("anaconda", hit_center())  # v0.24: Чешуйчатый клык 35 %
+	GameState.drop_boss_token("anaconda", hit_center())  # v0.25: Гриль-тарелка 35 %
 	if GameState.has_method("on_anaconda_killed"): GameState.on_anaconda_killed()
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)

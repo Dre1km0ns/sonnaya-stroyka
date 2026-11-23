@@ -514,13 +514,13 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	_a(boss.is_in_group("block_mother"), 507)
-	_a(boss.hp == 560, 508) # v0.11: Мать 560 HP
-	_a(boss.max_hp == 560, 509)
+	_a(boss.hp == 900, 508) # v0.11: Мать 900 HP
+	_a(boss.max_hp == 900, 509)
 	boss.take_damage(10)           # SPAWN — неуязвима
-	_a(boss.hp == 560, 511)
+	_a(boss.hp == 900, 511)
 	boss._enter(boss.S.IDLE)
 	boss.take_damage(10)
-	_a(boss.hp == 550, 514)
+	_a(boss.hp == 890, 514)
 	_a(boss.get_tree() != null, 515)
 	var td_script: GDScript = load("res://scripts/threat_director.gd")
 	var td: Node = td_script.new()
@@ -979,7 +979,7 @@ func _v06_checks(gs_script: GDScript, cm_script: GDScript) -> void:
 	var boss: CharacterBody3D = bs.new()
 	host.add_child(boss)
 	await process_frame
-	_a(boss.hp == 560 and boss.phase == 1, 929)
+	_a(boss.hp == 900 and boss.phase == 1, 929)
 	boss._enter(boss.S.IDLE)
 	boss.take_damage(450)                 # не проваливается сквозь порог фазы
 	_a(boss.hp == boss.P2_AT, 932)
@@ -1899,11 +1899,11 @@ func _v09_checks() -> void:
 	# Persistent crafting flag and live HP rebalance; new spawns use same base values.
 	console.execute("sword2 on")
 	# v0.11: крафт оружия больше НЕ раздувает HP врагов.
-	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==560,9035)
+	_a(G.sword2_crafted and console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==900,9035)
 	var flag_save: Dictionary = G.to_save_dict()
 	_a(flag_save.sword2_crafted,9036)
 	console.execute("sword2 off")
-	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==560,9037)
+	_a(console._mobs("seam")[0].max_hp==111 and console._mobs("mother")[0].max_hp==900,9037)
 	# Anaconda deterministic probability boundaries and real scale reward.
 	for mm in console._mobs("mother"):
 		mm.free()
@@ -2522,7 +2522,7 @@ func _v011_checks() -> void:
 	_a(gs.mother_defeated and gs.deep_threat == 0.0 and not gs.mother_can_come(), 11056)  # кулдаун после победы
 	gs._objectives_eval(true)
 	_a(gs.milestones.has("mother") and gs.recipe_available(_rec(gs, "alchemy"), {"is_dream": true}) and gs.recipe_available(_rec(gs, "idea_catcher"), {"is_dream": true}), 11057)
-	_a(load("res://scripts/block_mother.gd").MAX_HP == 560, 11058)
+	_a(load("res://scripts/block_mother.gd").MAX_HP == 900, 11058)
 	# --- 16.8 Анаконда: гнёзда спят до Матери, только свет ---
 	var AN: GDScript = load("res://scripts/boss_anaconda.gd")
 	_a(AN.MAX_HP == 2100, 11060)
@@ -2790,7 +2790,7 @@ func _v0111_scene_checks(scene: Node) -> void:
 	mom._enter(mom.S.IDLE)
 	var hp_m0: int = mom.hp
 	mom.take_damage(10)
-	_a(not ("PLATE_COUNT" in mom) and mom.hp == hp_m0 - 10 and mom.MAX_HP == 560, 12070)
+	_a(not ("PLATE_COUNT" in mom) and mom.hp == hp_m0 - 10 and mom.MAX_HP == 900, 12070)
 	mom.free()
 	await process_frame
 	# Анаконда: кеш факелов.
@@ -2839,7 +2839,7 @@ func _v012_checks(scene: Node, hud: Node) -> void:
 	var mom: Node = load("res://scripts/block_mother.gd").new()
 	host.add_child(mom)
 	await process_frame
-	_a(mom.MAX_HP == 560 and "RAIN" in mom.STATE_NAMES and not ("CORE" in mom.STATE_NAMES), 13030)
+	_a(mom.MAX_HP == 900 and "RAIN" in mom.STATE_NAMES and not ("CORE" in mom.STATE_NAMES), 13030)
 	# HUD: след, лечение, смерть, возрождение, смена максимума.
 	var bat: Node = hud.find_child("HealthBattery", true, false)
 	G.heal_player_full()

@@ -471,7 +471,7 @@ func is_dev() -> bool:
 const DEV_WAKE_ITEMS := ["pickaxe2", "sawmill", "alchemy", "idea_catcher", "chest", "door", "heal2", "deep_stone", "mossy_ruin","pickaxe", "sword", "sword2", "torch", "heal1", "anaconda_egg", "workbench", "lathe", "bed",
 	"ruin", "stone", "sand", "log", "planks", "leaves", "nest", "drift", "mouth", "anaconda_scale", "bedrock", "sword3"]
 ## v0.24: в дев-сиде материалы новых рецептов считаются бесконечными (инвентарь дев-сида уже полон; набор — консоль «kit»).
-const DEV_V024_MATS := ["metal_ore", "metal_ingot", "milk_tooth", "stone_heart", "scale_fang", "arrow", "arrow2", "bow", "pickaxe2", "sword2", "heal1", "leaves", "stone", "log"]
+const DEV_V024_MATS := ["metal_ore", "metal_ingot", "milk_tooth", "burger_core", "grill_saucer", "arrow", "arrow2", "bow", "pickaxe2", "sword2", "heal1", "leaves", "stone", "log"]
 const DEV_DREAM_ITEMS := ["bed", "workbench", "drift"]
 
 
@@ -1448,6 +1448,10 @@ func apply_fall(height: float) -> int:
 	return dmg
 
 
+const DAMAGE_TICK := 1.0
+var _src_hit: Dictionary = {}
+
+
 func damage_player(amount: int, source: String = "", ignore_iframes: bool = false) -> int:
 	var origin := _hit_origin
 	_hit_origin = Vector3.INF
@@ -1466,6 +1470,10 @@ func _damage_player_core(amount: int, source: String = "", ignore_iframes: bool 
 		return 0
 	if _iframes > 0.0 and not ignore_iframes:
 		return 0
+	# v0.25 (t143u): касание моба, снаряд или зона одного источника бьют не чаще раза в секунду,
+	# пока игрок в них стоит — урон «за каждую секунду соприкосновения».
+	if source != "" and not ignore_iframes and DAMAGE_TICK > 0.0 and _src_hit.has(source) and _clock - float(_src_hit[source]) < DAMAGE_TICK:
+		return 0
 	var filtered: Array = []
 	for e in _combo_log:
 		if _clock - float(e[0]) <= COMBO_WINDOW:
@@ -1476,6 +1484,7 @@ func _damage_player_core(amount: int, source: String = "", ignore_iframes: bool 
 	if dmg <= 0:
 		return 0
 	wear_armor(amount)
+	if source != "": _src_hit[source] = _clock
 	_combo_log.append([_clock, dmg])
 	player_hp = maxi(0, player_hp - dmg)
 	_hp_regen_cd = PLAYER_REGEN_DELAY
@@ -4682,7 +4691,7 @@ const EXPERT_AGGRO := 1.35          # раньше замечают
 const EXPERT_LEASH := 1.5           # реже отстают
 const SPEED_POTION_SECONDS := 60.0
 const SPEED_POTION_BOOST := 1.12
-const BURGER_CORE_DAMAGE := 1.1     # Ядро бургера в инвентаре: +10% урона оружием
+const BURGER_CORE_DAMAGE := 1.0     # v0.25: бонуса к урону больше нет
 const MP_BOSS_HP_PER_PLAYER := 0.6  # каждый игрок сверх первого: +60% HP босса
 
 
@@ -4725,9 +4734,7 @@ func diff_leash() -> float:
 
 
 func player_damage_mult(dmg: int) -> int:
-	if count_item("burger_core") > 0:
-		return int(ceil(float(dmg) * BURGER_CORE_DAMAGE))
-	return dmg
+	return dmg   # v0.25: Ядро бургера — только часть призывалки, без бонуса к урону
 
 
 func drink_speed_potion() -> bool:
@@ -4796,7 +4803,7 @@ func v024_recipes() -> Array:
 		{"id": "bow2", "name": "Металлический лук", "where": "lathe", "items": {"bow": 1, "metal_ingot": 2}, "item": "bow2", "tier": 3},
 		{"id": "arrow2", "name": "Стрелы из детёнышей анаконды ×8", "where": "lathe", "items": {"arrow": 8, "milk_tooth": 2}, "item": "arrow2", "count": 8, "tier": 4},
 		{"id": "speed_potion", "name": "Зелье скорости", "where": "alchemy", "items": {"heal1": 1, "leaves": 4}, "reagent2": 1, "item": "speed_potion", "tier": 3},
-		{"id": "burger_summoner", "name": "Призывалка бургера", "where": "alchemy", "items": {"stone_heart": 1, "scale_fang": 1}, "dust": 60, "item": "burger_summoner", "tier": 5},
+		{"id": "burger_summoner", "name": "Призывалка бургера", "where": "alchemy", "items": {"burger_core": 1, "grill_saucer": 1}, "dust": 60, "item": "burger_summoner", "tier": 5},
 	]
 
 
@@ -4805,12 +4812,44 @@ const BOSS_TOKEN_CHANCE := 0.35
 var boss_token_rolls := {}
 
 
+const V025_RENAMED := {"stone_heart": "burger_core", "scale_fang": "grill_saucer"}
+const V025_REMOVED := ["burger_trophy"]
+
+
+func migrate_v025_items() -> int:
+	## v0.25: старые сейвы — Каменное сердце → Ядро бургера, Чешуйчатый клык → Гриль-тарелка, трофей Бургера убран.
+	var n := 0
+	var lists: Array = [inv_wake, inv_dream, armor]
+	for k in world_storage:
+		if world_storage[k] is Array: lists.append(world_storage[k])
+	for arr in lists:
+		for i in range((arr as Array).size()):
+			var it: Variant = arr[i]
+			if typeof(it) != TYPE_DICTIONARY or not (it as Dictionary).has("id"):
+				continue
+			var id := str(it.id)
+			if V025_RENAMED.has(id):
+				it["id"] = V025_RENAMED[id]; it["name"] = ItemDB.display_name(str(it.id)); n += 1
+			elif id in V025_REMOVED:
+				arr[i] = {}; n += 1
+	for i in range(dropped_items.size() - 1, -1, -1):
+		var r: Dictionary = dropped_items[i]
+		var rid := str(r.get("id", ""))
+		if V025_RENAMED.has(rid):
+			r["id"] = V025_RENAMED[rid]; r["name"] = ItemDB.display_name(str(r.id)); n += 1
+		elif rid in V025_REMOVED:
+			dropped_items.remove_at(i); n += 1
+	if n > 0:
+		inventory_changed.emit()
+	return n
+
+
 func roll_boss_token(boss_id: String, roll: float = -1.0) -> String:
 	var r := randf() if roll < 0.0 else roll
 	boss_token_rolls[boss_id] = int(boss_token_rolls.get(boss_id, 0)) + 1
 	if r >= BOSS_TOKEN_CHANCE:
 		return ""
-	return "stone_heart" if boss_id == "mother" else "scale_fang"
+	return "burger_core" if boss_id == "mother" else "grill_saucer"   # v0.25 (t143u): части призывалки
 
 
 func drop_boss_token(boss_id: String, at: Vector3, roll: float = -1.0) -> String:

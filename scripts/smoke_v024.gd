@@ -36,9 +36,9 @@ func run(tree: SceneTree) -> Array:
 	_a(ores > 200 and ores < 12000 and not Ore.is_ore(Vector3i(0, -3, 0), 1), 24005)
 	print("SMOKE v024 ores in 80x80x20: %d" % ores)
 	_a(G.find_recipe("metal_ingot").where == "lathe" and G.find_recipe("pickaxe3").items.has("metal_ingot") and G.find_recipe("bow").where == "workbench" and G.find_recipe("bow2").items.has("metal_ingot") and G.find_recipe("arrow2").items.has("milk_tooth"), 24006)
-	_a(G.find_recipe("speed_potion").where == "alchemy" and G.find_recipe("burger_summoner").where == "alchemy" and G.find_recipe("burger_summoner").items.has("stone_heart") and G.find_recipe("burger_summoner").items.has("scale_fang"), 24007)
+	_a(G.find_recipe("speed_potion").where == "alchemy" and G.find_recipe("burger_summoner").where == "alchemy" and G.find_recipe("burger_summoner").items.has("burger_core") and G.find_recipe("burger_summoner").items.has("grill_saucer"), 24007)
 	_a(G.tool_max("pickaxe") < G.tool_max("pickaxe2") and G.tool_max("pickaxe2") < G.tool_max("pickaxe3") and G.ArmorRules.points("metal_chest") > G.ArmorRules.points("wood_chest") and G.ArmorRules.points("metal_chest") < G.ArmorRules.points("scale_chest"), 24008)
-	for id in ["metal_ore", "metal_ingot", "pickaxe3", "metal_sword", "bow", "bow2", "arrow", "arrow2", "milk_tooth", "stone_heart", "scale_fang", "burger_summoner", "burger_core", "clown_nose", "grill_saucer", "burger_trophy", "speed_potion", "metal_helmet"]:
+	for id in ["metal_ore", "metal_ingot", "pickaxe3", "metal_sword", "bow", "bow2", "arrow", "arrow2", "milk_tooth", "burger_summoner", "burger_core", "clown_nose", "grill_saucer", "speed_potion", "metal_helmet"]:
 		_a(ResourceLoader.exists("res://assets/icons/%s.png" % id), 24009)
 	# --- D: сложность
 	G.reset_state()
@@ -54,7 +54,7 @@ func run(tree: SceneTree) -> Array:
 	var got := 0
 	for i in range(2000):
 		if G.roll_boss_token("mother") != "": got += 1
-	_a(got > 560 and got < 840 and G.roll_boss_token("anaconda", 0.1) == "scale_fang" and G.roll_boss_token("mother", 0.5) == "", 24014)
+	_a(got > 560 and got < 840 and G.roll_boss_token("anaconda", 0.1) == "grill_saucer" and G.roll_boss_token("mother", 0.5) == "", 24014)
 	print("SMOKE: v0.24 rules OK")
 	await _scene()
 	done = true
@@ -193,7 +193,7 @@ func _burger(scene: Node, ppos: Vector3) -> void:
 	_a(G.burger_defeated and vic[0], 24039)
 	var core := false
 	for r in G.dropped_items:
-		if str(r.get("id", "")) == "burger_core": core = true
+		if str(r.get("id", "")) == "clown_nose": core = true
 	_a(core, 24040)
 	var rng := RandomNumberGenerator.new(); rng.seed = 7
 	var nose := 0; var grill := 0; var trophy := 0
@@ -203,7 +203,7 @@ func _burger(scene: Node, ppos: Vector3) -> void:
 		if "clown_nose" in dr: nose += 1
 		if "grill_saucer" in dr: grill += 1
 		if "burger_trophy" in dr: trophy += 1
-	_a(absf(nose / 2000.0 - 0.25) < 0.04 and absf(grill / 2000.0 - 0.2) < 0.04 and absf(trophy / 2000.0 - 0.1) < 0.03, 24041)
+	_a(nose == 2000 and grill == 0 and trophy == 0, 24041)   # v0.25: только Нос клоуна
 	G.set_difficulty("expert")
 	var b2: Node = B.spawn_at(scene.wake_world, ppos)
 	await _wait(2)
@@ -373,6 +373,10 @@ func _stage2(scene: Node) -> void:
 		_a(ns != null and not ns.is_client() and ns.player_count() == 1 and G.boss_player_scale() == 1.0, 24127)
 		var vs := str(con.execute("variety status"))
 		_a(vs.contains("в радиусе"), 24128)
+		# v0.25: новые команды
+		var c25 := [str(con.execute("map status")), str(con.execute("chunky list")), str(con.execute("chunky spawn archer")), str(con.execute("chunky attack")), str(con.execute("chunky clear")), str(con.execute("bowinfo")), str(con.execute("dmgtick")), str(con.execute("chase")), str(con.execute("mpsync")), str(con.execute("help chunky"))]
+		print("SMOKE25 console ", " / ".join(PackedStringArray(c25)).replace("\n", " ; "))
+		_a(c25[0].contains("Карта") and c25[1].contains("thief") and c25[2].contains("рост") and c25[4].contains("1") and c25[5].contains("перезарядка") and c25[6].contains("1.0 с") and c25[8].contains("|") and c25[9].contains("Антона"), 25001)
 		var cmv: Node = null
 		for c in scene.get_tree().get_nodes_in_group("chunk_manager"):
 			if not bool(c.get("is_dream_layer")) and not bool(c.get("panorama_mode")): cmv = c

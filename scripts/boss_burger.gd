@@ -15,7 +15,11 @@ enum S { SPAWN, HOVER, LASER_AIM, LASER_FIRE, SLAM_AIM, SLAM_FALL, SLAM_RECOVER,
 const MAX_HP := 4000            # обе фазы, нормал (Мать 560, Анаконда 2100)
 const P2_FRAC := 0.66
 const P3_FRAC := 0.33
-const HOVER_H := 6.5
+const HOVER_H := 13.5   # v0.25 (t143u): на 7 блоков выше
+const SAUCER_SCALE := 2.0   # v0.25: тарелка вдвое больше (Антон прежний)
+const CHASE_FAR := 14.0     # v0.25: дальше — Бургер разгоняется, пока не догонит
+const CHASE_NEAR := 9.0
+const CHASE_MAX := 5.0
 const LOW_H := 2.2
 const ARENA_R := 18.0
 const LEASH_DIST := 46.0
@@ -88,6 +92,7 @@ var leave_reason := ""
 var _t := 0.0
 var _cd := {"laser": 2.0, "slam": 4.0, "rain": 6.0, "clowns": 1.0, "recompose": 8.0, "fist": 0.0, "call": 6.0, "eat": 4.0, "jump": 3.0, "rain2": 4.0}
 var _leash_t := 0.0
+var chase_mult := 1.0
 var _target: Node3D = null
 var _aim_dirs: Array = []
 var _laser_nodes: Array = []
@@ -142,10 +147,12 @@ func _ready() -> void:
 	if GameState.is_expert():
 		eats_left = 2
 	_build_saucer()
+	_saucer.scale = Vector3.ONE * SAUCER_SCALE
+	hit_radius = 2.0 * SAUCER_SCALE
 	_build_anton()
 	_build_arena_ring()
 	var col := CollisionShape3D.new()
-	var sh := CylinderShape3D.new(); sh.radius = 2.2; sh.height = 1.6
+	var sh := CylinderShape3D.new(); sh.radius = 2.2 * SAUCER_SCALE; sh.height = 1.6 * SAUCER_SCALE
 	col.shape = sh
 	col.name = "Col"
 	add_child(col)
@@ -484,7 +491,7 @@ func _cdm() -> float:
 
 
 func _speed() -> float:
-	return ANTON_SPEED * GameState.diff_speed() * (RAGE_SPEED if phase == 3 else 1.0)
+	return ANTON_SPEED * GameState.diff_speed() * (RAGE_SPEED if phase == 3 else 1.0) * chase_mult
 
 
 func _ground_y(p: Vector3) -> float:
@@ -521,6 +528,19 @@ func _physics_process(delta: float) -> void:
 
 
 func _check_leash(delta: float) -> bool:
+	## v0.25 (t144u): убежать нельзя — Бургер (и Антон) разгоняются, пока не догонят ближайшего игрока,
+	## потом скорость возвращается к обычной. Улетает он только если игроков в Яви не осталось.
+	var near := INF
+	for p in CU.players(get_tree()):
+		var d := Vector2((p as Node3D).global_position.x - global_position.x, (p as Node3D).global_position.z - global_position.z).length()
+		near = minf(near, d)
+	if near > CHASE_FAR:
+		chase_mult = minf(CHASE_MAX, chase_mult + delta * 1.2)
+	elif near < CHASE_NEAR:
+		chase_mult = 1.0
+	if near < INF:
+		arena_center = arena_center.lerp(Vector3(global_position.x, arena_center.y, global_position.z), clampf(delta * 0.2, 0.0, 1.0)) if near > CHASE_FAR else arena_center
+		return false
 	var far := true
 	for p in CU.players(get_tree()):
 		if Vector2((p as Node3D).global_position.x - arena_center.x, (p as Node3D).global_position.z - arena_center.z).length() < LEASH_DIST * GameState.diff_leash():
@@ -539,7 +559,7 @@ func _tp() -> Vector3:
 func _hover_to(goal: Vector3, delta: float, speed: float = 6.0) -> void:
 	var d := goal - global_position
 	if d.length() > 0.05:
-		global_position += d.normalized() * minf(d.length(), speed * GameState.diff_speed() * delta)
+		global_position += d.normalized() * minf(d.length(), speed * GameState.diff_speed() * chase_mult * delta)
 	_saucer.rotation.y += delta * 1.4
 
 
@@ -593,15 +613,15 @@ func _phase1(delta: float) -> void:
 				_spawn_clowns(2)
 				_enter(S.HOVER)
 		S.RECOMPOSE_OUT:
-			_saucer.scale = Vector3.ONE * maxf(0.05, 1.0 - _t / 0.5)
+			_saucer.scale = Vector3.ONE * SAUCER_SCALE * maxf(0.05, 1.0 - _t / 0.5)
 			if _t > 0.5:
 				global_position = Vector3(p.x, gy + LOW_H + 1.0, p.z) + Vector3(_rng.randf_range(-2, 2), 0, _rng.randf_range(-2, 2))
 				_enter(S.RECOMPOSE_IN)
 				_vuln_t = RECOMPOSE_VULN
 		S.RECOMPOSE_IN:
-			_saucer.scale = Vector3.ONE * minf(1.0, 0.05 + _t / 0.3)
+			_saucer.scale = Vector3.ONE * SAUCER_SCALE * minf(1.0, 0.05 + _t / 0.3)
 			if _t > RECOMPOSE_VULN:
-				_saucer.scale = Vector3.ONE
+				_saucer.scale = Vector3.ONE * SAUCER_SCALE
 				_enter(S.HOVER)
 		S.STUNNED:
 			_hover_to(Vector3(global_position.x, gy + LOW_H, global_position.z), delta, 8.0)
@@ -1174,9 +1194,6 @@ func _die() -> void:
 	GameState.reward_kill(true, "Бургер Смерти")
 	var drops := roll_drops(_rng)
 	_spawn_drops(drops)
-	if not GameState.dev_mode:
-		GameState.add_item_count("reagent3", 5)
-		GameState.add_item_count("reagent2", 4)
 	GameState.set_boss_alive(false)
 	GameState.on_burger_killed(drops)
 	Sfx.play("victory", get_tree().root, -4.0)
@@ -1185,11 +1202,8 @@ func _die() -> void:
 
 
 static func roll_drops(rng: RandomNumberGenerator) -> Array:
-	var out: Array = ["burger_core"]
-	if rng.randf() < 0.25: out.append("clown_nose")
-	if rng.randf() < 0.20: out.append("grill_saucer")
-	if rng.randf() < 0.10: out.append("burger_trophy")
-	return out
+	## v0.25 (t143u): с финального босса падает только Нос клоуна.
+	return ["clown_nose"]
 
 
 func _spawn_drops(ids: Array) -> void:
