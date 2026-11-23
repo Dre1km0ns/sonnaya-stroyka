@@ -28,7 +28,7 @@ func _ready() -> void:
 		GameState.begin_world("Скриншоты v0.6", "", "6767676767", GameState.DEV_SEED, false)
 	elif _want_shots05():
 		GameState.begin_world("Скриншоты", "", "6767676767", GameState.DEV_SEED, true)
-	elif GameState.world_folder == "" and not _want_shots() and not _want_perf() and not has_meta("smoke"):
+	elif GameState.world_folder == "" and not NetSession.is_client() and not _want_shots() and not _want_perf() and not has_meta("smoke"):
 		# Сцену запустили напрямую (F6 в редакторе) — временный мир без сохранения.
 		GameState.begin_world("", "", "1337", 1337, false)
 	elif _want_perf() and GameState.world_folder == "":

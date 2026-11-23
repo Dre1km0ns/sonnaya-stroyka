@@ -76,10 +76,11 @@ func _ready() -> void:
 	GameState.apply_enemy_scaling(self, int(HP_BY[kind]))
 	_build()
 	var col := CollisionShape3D.new()
-	var sh := BoxShape3D.new(); sh.size = Vector3(0.6, 0.9, 0.6)
-	col.shape = sh; col.position = Vector3(0, 0.45, 0)
+	var hh2: float = _model.call("height")
+	var sh := BoxShape3D.new(); sh.size = Vector3(0.7, hh2 * 0.9, 0.7)
+	col.shape = sh; col.position = Vector3(0, hh2 * 0.45, 0)
 	add_child(col)
-	_Vis.attach_hp_bar(self, 1.35)
+	_Vis.attach_hp_bar(self, float(_model.call("height")) + 0.35)
 	_Vis.update_hp_bar(self, hp, max_hp)
 	GameState.world_changed.connect(func(d: bool) -> void: frozen = d; visible = not d)
 	frozen = GameState.is_dream(); visible = not frozen
@@ -95,34 +96,23 @@ func _box(tile: String, size: Vector3, pos: Vector3, tint: Color = Color(1, 1, 1
 
 
 func _build() -> void:
-	_model = Node3D.new(); _model.name = "Model"; add_child(_model)
-	match kind:
-		"jumper":
-			_box("mossy_ruin", Vector3(0.7, 0.6, 0.7), Vector3(0, 0.35, 0), Color(0.75, 1.0, 0.7))
-			_box("leaves", Vector3(0.22, 0.3, 0.22), Vector3(-0.22, 0.12, 0), Color(0.8, 1, 0.8))
-			_box("leaves", Vector3(0.22, 0.3, 0.22), Vector3(0.22, 0.12, 0), Color(0.8, 1, 0.8))
-		"archer":
-			_box("ruin", Vector3(0.45, 0.75, 0.32), Vector3(0, 0.55, 0), Color(0.85, 0.85, 1.0))
-			_box("stone", Vector3(0.34, 0.32, 0.32), Vector3(0, 1.1, 0), Color(0.8, 0.8, 0.95))
-			var bow := MeshInstance3D.new(); bow.mesh = BlockTex.bow_mesh(false); bow.material_override = BlockTex.material()
-			bow.position = Vector3(0.32, 0.65, -0.2); bow.scale = Vector3.ONE * 0.9
-			_model.add_child(bow)
-		"thief":
-			_box("planks", Vector3(0.42, 0.5, 0.3), Vector3(0, 0.4, 0), Color(0.5, 0.4, 0.55))
-			_box("dirt", Vector3(0.32, 0.3, 0.3), Vector3(0, 0.82, 0), Color(0.55, 0.45, 0.6))
-			_box("chest", Vector3(0.26, 0.26, 0.18), Vector3(0, 0.45, 0.24), Color(0.9, 0.8, 0.6))
+	## v0.25: «толстый» стиль Антона (chunky_body), рост как у старых мобов; воришка ниже.
+	_model = load("res://scripts/chunky_body.gd").make(kind)
+	add_child(_model)
+	set_meta("chunky", kind)
 	_glow = MeshInstance3D.new()
 	var gm := BoxMesh.new(); gm.size = Vector3(0.24, 0.06, 0.02)
 	_glow.mesh = gm
 	var m := StandardMaterial3D.new(); m.albedo_color = Color(1, 0.4, 0.2); m.emission_enabled = true; m.emission = Color(1, 0.35, 0.1); m.emission_energy_multiplier = 2.0
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_glow.material_override = m
-	_glow.position = Vector3(0, 1.12 if kind == "archer" else (0.85 if kind == "thief" else 0.5), -0.17 if kind != "jumper" else -0.36)
+	var hh: float = _model.call("height")
+	_glow.position = Vector3(0, hh * 1.02, hh * 0.12)
 	_model.add_child(_glow)
 
 
 func hit_center() -> Vector3:
-	return global_position + Vector3(0, 0.5, 0)
+	return global_position + Vector3(0, float(_model.call("height")) * 0.5 if _model else 0.5, 0)
 
 
 func is_dead_v024() -> bool:
@@ -171,6 +161,18 @@ func _physics_process(delta: float) -> void:
 		"jumper": _tick_jumper(delta, p, flat, dist, aggro)
 		"archer": _tick_archer(delta, p, flat, dist, aggro)
 		"thief": _tick_thief(delta, p, flat, dist, aggro)
+	_sync_pose()
+
+
+func _sync_pose() -> void:
+	if _model == null or not _model.has_method("play_state"):
+		return
+	match state:
+		"crouch": _model.call("play_state", "crouch")
+		"air": _model.call("play_state", "jump")
+		"draw": _model.call("play_state", "draw")
+		_:
+			for st in ["crouch", "jump", "draw"]: _model.call("release", st)
 
 
 func _wander_step(delta: float) -> void:
@@ -211,6 +213,7 @@ func _tick_jumper(delta: float, p: Node3D, flat: Vector3, dist: float, aggro: fl
 			if _t > 0.15 and is_on_floor():
 				state = "idle"; _t = 0.0; _cd = JUMP_CD
 				velocity = Vector3.ZERO
+				_model.call("release", "jump"); _model.call("play_state", "attack", true)
 				GameState.shake(0.15)
 				for pl in CU.players(get_tree()):
 					if (pl as Node3D).global_position.distance_to(global_position) < 1.8:
@@ -240,6 +243,7 @@ func _tick_archer(delta: float, p: Node3D, flat: Vector3, dist: float, aggro: fl
 		if _t >= DRAW_TIME:
 			_shoot(p)
 			state = "idle"; _cd = SHOT_CD; _set_glow(0.0)
+			_model.call("release", "draw"); _model.call("play_state", "attack", true)
 		return
 	if dist < ARCHER_MIN:
 		var away := global_position - flat.normalized() * 4.0
@@ -285,6 +289,7 @@ func _tick_thief(delta: float, p: Node3D, flat: Vector3, dist: float, aggro: flo
 	_Nav.follow_target(self, p.global_position, float(SPEED_BY.thief), delta, _path_cache)
 	if dist < 1.3 and _cd <= 0.0:
 		_cd = 1.0
+		_model.call("play_state", "attack", true)
 		if CU.is_local(p) and steal():
 			state = "flee"; _t = 0.0
 			Sfx.play3d(self, "res://assets/audio/sfx_mob_steal.ogg", 0.0, 30.0)

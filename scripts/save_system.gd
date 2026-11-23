@@ -116,6 +116,7 @@ func load_game() -> bool:
 				var seed_v := GameState.world_seed_wake if not bool(cm.get("is_dream_layer")) else GameState.world_seed_dream
 				cm.setup(_player, seed_v)
 	GameState.set_hint("Загружено. F5 — сохранить.")
+	GameState.migrate_v025_items()
 	load_completed.emit(true)
 	print("LOAD OK path=", SAVE_PATH)
 	return true

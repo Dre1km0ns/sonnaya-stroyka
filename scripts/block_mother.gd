@@ -18,9 +18,10 @@ enum S { SPAWN, IDLE, WINDUP, AIR, STAGGER, TRANSITION, SCATTER, MARKER, RAIN_WI
 const STATE_NAMES := ["SPAWN", "IDLE", "WINDUP", "AIR", "STAGGER", "TRANSITION", "SCATTER", "MARKER", "RAIN_WINDUP", "RAIN", "DEAD", "LEAVING"]
 
 # --- числовая база (см. дизайн-док, раздел 3) ---
-const MAX_HP := 560 # v0.11: без глобального ×3; ≈ 40 ударов Меча2 / 24 удара Меча3
-const P2_AT := 370           # 66%
-const P3_AT := 185           # 33%
+const MAX_HP := 900 # v0.25 (t143u): 900 на Нормальном, на Эксперте ×1,75
+const PHASE_SPEEDUP := 1.15   # v0.25: каждая фаза +15 % к частоте и скорости атак
+const P2_AT := 594           # 66 % от 900 (v0.25)
+const P3_AT := 297           # 33 %
 const MODEL_PATH := "res://assets/models/greenblob.glb"
 const MODEL_HEIGHT := 3.0
 const HIT_RADIUS := 1.3
@@ -274,6 +275,14 @@ func _enter(s: int) -> void:
 		state_log.remove_at(0)
 
 
+func boss_title() -> String:
+	return "Мать блоков"
+
+
+func phase_speed() -> float:
+	return pow(PHASE_SPEEDUP, float(phase - 1))
+
+
 func _player() -> CharacterBody3D:
 	return get_tree().get_first_node_in_group("player") as CharacterBody3D
 
@@ -301,6 +310,7 @@ func _physics_process(delta: float) -> void:
 			return
 	else:
 		_leash_t = 0.0
+	delta *= phase_speed()   # v0.25: таймеры атак и замахов идут быстрее с каждой фазой
 	match state:
 		S.SPAWN:
 			_ground_move(delta)
@@ -823,7 +833,7 @@ func _die() -> void:
 	if GameState.has_method("on_mother_killed"):
 		GameState.on_mother_killed()
 	GameState.reward_kill(true, "Мать блоков")
-	GameState.drop_boss_token("mother", global_position)  # v0.24: Каменное сердце 35 %
+	GameState.drop_boss_token("mother", global_position)  # v0.25: Ядро бургера 35 %
 	if not GameState.dev_mode:
 		GameState.add_item_count("reagent3", REWARD_R3)
 		GameState.add_item_count("reagent2", REWARD_R2)

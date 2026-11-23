@@ -13,7 +13,7 @@ var _visual: Node3D
 var _sync_t := 0.0
 ## v0.24: выброшенное и выпавшее пропадает через 5 минут (последние 10 с мигает). Трофеи боссов не пропадают.
 const DESPAWN_SEC := 300.0
-const KEEP := ["burger_core", "burger_trophy", "stone_heart", "scale_fang", "clown_nose", "grill_saucer", "burger_summoner"]
+const KEEP := ["burger_core", "clown_nose", "grill_saucer", "burger_summoner"]
 static var _pick_sfx_ms := 0
 
 

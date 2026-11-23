@@ -1,6 +1,6 @@
 extends Node
-## v0.24: лук. ЛКМ удерживать — натяжение (рука с луком отходит назад), отпустить — выстрел.
-## Стрелы тратятся из инвентаря, сначала лучшие (Gear.ARROWS). Сила и урон растут с натяжением.
+## v0.24/v0.25: лук. ЛКМ — выстрел сразу, между выстрелами перезарядка Gear.BOWS.cd (как в Террарии), натяжения нет.
+## Стрелы тратятся из инвентаря, сначала лучшие (Gear.ARROWS). Дальность и спад урона — в arrow.gd.
 const Gear := preload("res://scripts/gear.gd")
 const MIN_CHARGE := 0.15
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
@@ -11,30 +11,24 @@ var shots := 0
 var last_arrow: Node3D = null
 var last_damage := 0
 var _no_arrow_t := 0.0
+var cooldown := 0.0
 
 
 func tick(delta: float, sel: String) -> bool:
 	_no_arrow_t = maxf(0.0, _no_arrow_t - delta)
+	cooldown = maxf(0.0, cooldown - delta)
 	if not Gear.is_bow(sel):
-		if drawing: _release_visual()
 		drawing = false
 		charge = 0.0
 		return false
-	var cfg: Dictionary = Gear.BOWS[sel]
-	if Input.is_action_pressed("attack_break"):
-		if not drawing:
-			if arrow_kind() == "":
-				if _no_arrow_t <= 0.0:
-					GameState.set_hint("Нет стрел: скрафти их на верстаке.", false)
-					_no_arrow_t = 1.5
-				return true
-			drawing = true
-			charge = 0.0
-			Sfx.play("bow_draw", build.get_tree().root if build else null)
-		charge = minf(1.0, charge + delta / float(cfg.draw))
-		_pull_visual()
-	elif drawing:
-		fire(sel, charge)
+	charge = 1.0 - (cooldown / maxf(0.01, float(Gear.BOWS[sel].cd)))   # для консоли: готовность выстрела
+	if Input.is_action_pressed("attack_break") and cooldown <= 0.0:
+		if arrow_kind() == "":
+			if _no_arrow_t <= 0.0:
+				GameState.set_hint("Нет стрел: скрафти их на верстаке.", false)
+				_no_arrow_t = 1.5
+			return true
+		fire(sel, 1.0)
 	return true
 
 
@@ -45,11 +39,9 @@ func arrow_kind() -> String:
 	return ""
 
 
-func fire(sel: String, ch: float) -> Node3D:
+func fire(sel: String, _ch: float = 1.0) -> Node3D:
 	drawing = false
-	_release_visual()
-	if ch < MIN_CHARGE:
-		charge = 0.0
+	if cooldown > 0.0:
 		return null
 	var kind := arrow_kind()
 	if kind == "" or not GameState.consume_item(kind, 1):
@@ -65,10 +57,13 @@ func fire(sel: String, ch: float) -> Node3D:
 	if cam:
 		fwd = -cam.global_transform.basis.z
 		origin = cam.global_position
-	var dmg := int(round(float(Gear.ARROW_DAMAGE[kind]) * float(cfg.mult) * (0.3 + 0.7 * ch)))
+	var dmg := int(round(float(Gear.ARROW_DAMAGE[kind]) * float(cfg.mult)))
 	dmg = GameState.player_damage_mult(dmg)
 	last_damage = dmg
-	var a := spawn_arrow(origin + fwd * 0.6, fwd * float(cfg.speed) * (0.35 + 0.65 * ch), dmg, kind, player)
+	var a := spawn_arrow(origin + fwd * 0.6, fwd * float(cfg.speed), dmg, kind, player)
+	if a: a.set("range_m", float(cfg.range))
+	cooldown = float(cfg.cd)
+	NetSession.local_action("shoot")
 	shots += 1
 	charge = 0.0
 	GameState.wear_tool(1)

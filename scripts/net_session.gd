@@ -28,6 +28,16 @@ var pending_world: Dictionary = {}
 var in_world := false
 var stats := {"sent": 0, "recv": 0, "blocks_in": 0, "blocks_out": 0, "hits_sent": 0, "hits_recv": 0, "hurt_sent": 0, "hurt_recv": 0, "chat": 0}
 var last_chat := ""
+var last_action := ""   # v0.25: последнее действие рук (attack/break/place/use/shoot) — видно у других игроков
+var action_n := 0
+
+
+func local_action(kind: String) -> void:
+	if not active():
+		return
+	last_action = kind
+	action_n += 1
+	_pos_t = 0.0   # отправить сразу
 var _shadow_b: Dictionary = {}
 var _shadow_r: Dictionary = {}
 var _shadow_s: Dictionary = {}
@@ -397,7 +407,7 @@ func _sync_world() -> void:
 
 # ------------------------------------------------------------------ игроки
 @rpc("any_peer", "unreliable_ordered")
-func _p_state(pos: Vector3, yaw: float, item: String, dream: bool, hp: int) -> void:
+func _p_state(pos: Vector3, yaw: float, item: String, dream: bool, hp: int, armor: Array = [], act: String = "", act_n: int = 0) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	var av := _avatar(id)
 	if av == null:
@@ -408,6 +418,9 @@ func _p_state(pos: Vector3, yaw: float, item: String, dream: bool, hp: int) -> v
 	av.set("dead", hp <= 0)
 	av.visible = not dream and not GameState.is_dream()
 	av.set_meta("item", item)
+	av.set_meta("armor", armor)
+	av.set_meta("act", act)
+	av.set_meta("act_n", act_n)
 
 
 func _avatar(id: int) -> Node3D:
@@ -422,6 +435,7 @@ func _avatar(id: int) -> Node3D:
 	var info: Dictionary = peers.get(id, {"name": "Игрок", "idx": 1})
 	av.display_name = str(info.get("name", "Игрок"))
 	av.model_name = AVATARS[int(info.get("idx", 1)) % AVATARS.size()]
+	av.idx = int(info.get("idx", 1))
 	host_node.add_child(av)
 	avatars[id] = av
 	return av
@@ -459,8 +473,29 @@ func _mob_list() -> Array:
 			var boss := n.is_in_group("boss")
 			var title := str(n.call("boss_title")) if n.has_method("boss_title") else (str(n.call("display_name")) if n.has_method("display_name") else "")
 			var hc: Vector3 = n.call("hit_center") if n.has_method("hit_center") else nd.global_position + Vector3(0, 0.8, 0)
-			out.append([n.get_instance_id(), path, nd.global_position, nd.rotation.y, int(n.get("hp")) if "hp" in n else 1,
-				int(n.get("max_hp")) if "max_hp" in n else 1, boss, title, hc, float(n.get("hit_radius")) if "hit_radius" in n else 0.5])
+			var mdl := n.get_node_or_null("Model")
+			var yaw := nd.rotation.y + ((mdl as Node3D).rotation.y if mdl is Node3D else 0.0)
+			var atk := int(mdl.get("net_state")) if mdl and "net_state" in mdl else 0
+			var ex: Variant = 0
+			match path:
+				"boss_anaconda":
+					var pts: Array = []
+					if n.get("_head"): pts.append((n.get("_head") as Node3D).global_position)
+					for sg in n.get("_segs"): pts.append((sg as Node3D).global_position)
+					ex = pts
+					atk = int(n.get("phase")) * 1000 + int(n.get("state"))
+				"boss_burger":
+					ex = int(n.get("phase"))
+					var an: Node = n.get("_anton")
+					atk = int(n.get("_fist_hits")) + int(n.get("state")) * 100
+					if an: yaw = nd.rotation.y
+				"block_mother":
+					var mm := n.get_node_or_null("Model") as Node3D
+					ex = mm.scale.x if mm else 1.0
+					atk = int(n.get("state"))
+			out.append([n.get_instance_id(), path, nd.global_position, yaw, int(n.get("hp")) if "hp" in n else 1,
+				int(n.get("max_hp")) if "max_hp" in n else 1, boss, title, hc, float(n.get("hit_radius")) if "hit_radius" in n else 0.5,
+				str(n.get_meta("chunky", "")), atk, ex])
 	return out
 
 
@@ -480,6 +515,7 @@ func _mobs(list: Array) -> void:
 			pr.remote_id = id
 			pr.kind = str(m[1])
 			pr.is_boss = bool(m[6])
+			pr.preset = str(m[10]) if m.size() > 10 else ""
 			host_node.add_child(pr)
 			pr.global_position = m[2]
 			proxies[id] = pr
@@ -660,7 +696,9 @@ func _process(delta: float) -> void:
 		_pos_t = POS_SEC
 		var p := get_tree().get_first_node_in_group("player") as Node3D
 		if p:
-			_p_state.rpc(p.global_position, p.rotation.y, str(GameState.get_selected_item().get("id", "")), GameState.is_dream(), GameState.player_hp)
+			var arm: Array = []
+			for a in GameState.armor: arm.append(str(a.get("id", "")) if a is Dictionary else "")
+			_p_state.rpc(p.global_position, p.rotation.y, str(GameState.get_selected_item().get("id", "")), GameState.is_dream(), GameState.player_hp, arm, last_action, action_n)
 	if is_host():
 		_mob_t -= delta
 		if _mob_t <= 0.0:

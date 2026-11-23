@@ -9,7 +9,7 @@ const HELP := {
 	"bow": "Луки v0.24: ЛКМ удерживать — натянуть, отпустить — выстрел. give wood / give metal — дать лук и 32 стрелы; shoot [0..1] — выстрел с натяжением; status. Пример: bow give metal; bow shoot 1",
 	"arrows": "Стрелы v0.24: give [n] — обычные; best [n] — стрелы из детёнышей анаконды; status. Пример: arrows give 64; arrows best 16",
 	"burger": "Бургер Смерти v0.24 — финальный босс. summon — призывалка с отсчётом 60 с; now — прилёт сразу; phase 2 / phase 3 — перейти к Антону / ярости; shards — смерть и осколки; weak — сбить слабую точку; hp <n>; kill; leave; status. Пример: burger now; burger phase 2; burger status",
-	"summoner": "Призывалка бургера v0.24: give — дать призывалку; tokens — дать Каменное сердце и Чешуйчатый клык; roll mother|anaconda — проверить шанс 35 %. Пример: summoner give; summoner roll mother",
+	"summoner": "Призывалка бургера v0.24: give — дать призывалку; tokens — дать Ядро бургера и Гриль-тарелку; roll mother|anaconda — проверить шанс 35 %. Пример: summoner give; summoner roll mother",
 	"speedpotion": "Зелье скорости v0.24 (алхимический стол): 60 с бег не тратит стамину и чуть быстрее. give [n]; drink; status. Пример: speedpotion give 3; speedpotion drink",
 	"lizards": "Ящерки-детёныши Анаконды v0.24: после её смерти появляются в пещерах, роняют молочные зубки. spawn [n] — рядом; status. Пример: lizards spawn 3; lizards status",
 	"weather": "Погода Яви v0.24: ясно / дождь / туман, меняется сама каждые 4–9 минут. clear / rain / fog — включить сразу; status — текущая и сколько до смены. Пример: weather rain; weather status",
@@ -164,7 +164,7 @@ static func run(con: Node, a: PackedStringArray) -> String:
 			return "%s %d/%d · фаза %d · состояние %d · слабых точек %d · клоунов %d · атаки %s" % [boss.boss_title(), boss.hp, boss.max_hp, boss.phase, boss.state, boss.weak_points_alive(), boss._alive_clowns(), str(boss.attacks_used)]
 		"summoner":
 			if sub == "give": _give("burger_summoner", 1); return "Выдана призывалка бургера."
-			if sub == "tokens": _give("stone_heart", 1); _give("scale_fang", 1); return "Выданы Каменное сердце и Чешуйчатый клык."
+			if sub == "tokens": _give("burger_core", 1); _give("grill_saucer", 1); return "Выданы Ядро бургера и Гриль-тарелка."
 			if sub == "roll":
 				var who := a[2] if a.size() > 2 else "mother"
 				var got := 0

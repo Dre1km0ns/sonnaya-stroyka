@@ -45,6 +45,7 @@ var _time := 0.0
 var _hp_text: Label
 var _heal_text: Label
 var objective_panel: Control
+var world_map: Control
 var _bed_prompt: PanelContainer
 var _bed_prompt_label: Label
 var pillow_ui: Control
@@ -86,6 +87,8 @@ func _ready() -> void:
 	$Root.add_child(context)
 	objective_panel = load("res://scripts/objective_panel.gd").new()
 	$Root.add_child(objective_panel)
+	world_map = load("res://scripts/world_map.gd").new()   # v0.25: карта мира над панелью вех
+	$Root.add_child(world_map)
 	GameState.unlock_announced.connect(func(t: String) -> void: show_toast(t, 5.0))
 	var death_script: GDScript = load("res://scripts/death_menu.gd")
 	death_menu = death_script.new()

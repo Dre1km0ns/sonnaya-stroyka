@@ -62,13 +62,10 @@ const ITEMS := {
 	"arrow": {"name": "Стрела", "stack": 100},
 	"arrow2": {"name": "Стрела из детёнышей анаконды", "stack": 100},
 	"milk_tooth": {"name": "Молочный зубок", "stack": 100},
-	"stone_heart": {"name": "Каменное сердце", "stack": 100},
-	"scale_fang": {"name": "Чешуйчатый клык", "stack": 100},
 	"burger_summoner": {"name": "Призывалка бургера", "stack": 100},
 	"burger_core": {"name": "Ядро бургера", "stack": 100},
 	"clown_nose": {"name": "Нос клоуна", "stack": 100},
-	"grill_saucer": {"name": "Гриль-тарелка", "stack": 1},
-	"burger_trophy": {"name": "Трофей Бургера Смерти", "stack": 100},
+	"grill_saucer": {"name": "Гриль-тарелка", "stack": 100},
 	"speed_potion": {"name": "Зелье скорости", "stack": 100},
 }
 

@@ -12,6 +12,9 @@ var kind := "arrow"
 var shooter: Node3D = null
 var stuck := false
 var hit_target: Node = null
+var range_m := 0.0     # v0.25: дальность лука игрока (0 — старая баллистика, у стрелка)
+var base_damage := -1
+var travelled := 0.0
 var hostile := false   # v0.24: стрела моба-стрелка — бьёт игроков, не мобов, не подбирается
 var _t := 0.0
 var _mesh: MeshInstance3D
@@ -56,7 +59,15 @@ func _physics_process(delta: float) -> void:
 	if _t > MAX_FLIGHT:
 		queue_free()
 		return
-	vel.y -= GRAVITY * delta
+	if range_m > 0.0:
+		if base_damage < 0: base_damage = damage
+		var straight := range_m * 0.75
+		if travelled > straight:
+			vel.y -= GRAVITY * 1.6 * delta   # после 75 % дальности — на спад
+			damage = maxi(1, int(round(float(base_damage) * lerpf(1.0, 0.8, clampf((travelled - straight) / (range_m - straight), 0.0, 1.0)))))
+		travelled += vel.length() * delta
+	else:
+		vel.y -= GRAVITY * delta
 	var from := global_position
 	var to := from + vel * delta
 	if _check_targets(from, to):
