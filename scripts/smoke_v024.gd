@@ -373,6 +373,10 @@ func _stage2(scene: Node) -> void:
 		_a(ns != null and not ns.is_client() and ns.player_count() == 1 and G.boss_player_scale() == 1.0, 24127)
 		var vs := str(con.execute("variety status"))
 		_a(vs.contains("в радиусе"), 24128)
+		# v0.25: новые команды
+		var c25 := [str(con.execute("map status")), str(con.execute("chunky list")), str(con.execute("chunky spawn archer")), str(con.execute("chunky attack")), str(con.execute("chunky clear")), str(con.execute("bowinfo")), str(con.execute("dmgtick")), str(con.execute("chase")), str(con.execute("mpsync")), str(con.execute("help chunky"))]
+		print("SMOKE25 console ", " / ".join(PackedStringArray(c25)).replace("\n", " ; "))
+		_a(c25[0].contains("Карта") and c25[1].contains("thief") and c25[2].contains("рост") and c25[4].contains("1") and c25[5].contains("перезарядка") and c25[6].contains("1.0 с") and c25[8].contains("|") and c25[9].contains("Антона"), 25001)
 		var cmv: Node = null
 		for c in scene.get_tree().get_nodes_in_group("chunk_manager"):
 			if not bool(c.get("is_dream_layer")) and not bool(c.get("panorama_mode")): cmv = c

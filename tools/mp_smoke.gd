@@ -30,6 +30,23 @@ func _until(cond: Callable, sec: float) -> bool:
 		await create_timer(0.016).timeout
 	return bool(cond.call())
 func _has(nm: String) -> bool: return FileAccess.file_exists(DIR + nm)
+func _put(nm: String, txt: String) -> void:
+	var f := FileAccess.open(DIR + nm, FileAccess.WRITE); f.store_string(txt); f.close()
+func _fget(nm: String) -> String:
+	return FileAccess.get_file_as_string(DIR + nm) if _has(nm) else ""
+const DROP_POS := Vector3(48.5, 1.2, -44.5)   # далеко от спавна — клиент не подберёт сам
+const DIG := Vector3i(-20, -1, 17)
+func _world_sig() -> String:
+	## v0.25: подпись мира — сид и рельеф Яви на сетке 60×60 вокруг спавна (должны совпасть у хоста и клиента).
+	var cm: Node = null
+	for c in get_nodes_in_group("chunk_manager"):
+		if not bool(c.get("is_dream_layer")): cm = c
+	var h := 0
+	if cm:
+		for x in range(-60, 60, 2):
+			for z in range(-60, 60, 2):
+				h = (h * 31 + int(cm.height_at(x, z)) + (7 if cm.is_world_in_lake(Vector3(x, 0, z)) else 0)) % 1000000007
+	return "%d|%d" % [int(gs.world_seed), h]
 
 func _go() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -55,6 +72,7 @@ func _host() -> void:
 		main.switcher.wake_up(true); await _wait(30)
 	_a(ns.host(port) == "", "host_open")
 	_a(ns.is_host() and ns.in_world, "host_in_world")
+	_put("host_sig", _world_sig())
 	_flag("host_ready")
 	_a(await _until(func() -> bool: return ns.peers.size() == 1, 40.0), "peer_joined")
 	_a(gs.net_players == 2, "net_players")
@@ -74,8 +92,13 @@ func _host() -> void:
 		await RenderingServer.frame_post_draw
 		root.get_viewport().get_texture().get_image().save_png(shot)
 		print("MP SHOT ", shot)
-	# блок хоста → клиенту
+	# блок хоста → клиенту, вскопанная земля и выброшенный предмет
 	gs.wake_blocks[CELL_H] = {"kind": "plank", "mutant": false}
+	gs.remove_terrain_cell_silent(DIG, "dirt")
+	gs.register_drop({"id": "stone", "name": "Камень", "count": 3}, DROP_POS)
+	# броня и действие рук хоста — клиент должен их увидеть на модели
+	gs.armor[0] = {"id": "metal_helmet", "name": "Металлический шлем", "count": 1, "durability": 100}
+	ns.local_action("attack")
 	_flag("host_block")
 	# блок клиента → хосту
 	_a(await _until(func() -> bool: return gs.wake_blocks.has(CELL_C), 20.0), "client_block_arrived")
@@ -88,6 +111,13 @@ func _host() -> void:
 	var hp0 := int(mob.hp)
 	_flag("mob_spawned")
 	_a(await _until(func() -> bool: return not is_instance_valid(mob) or int(mob.hp) < hp0, 25.0), "mob_hit_from_client")
+	# босс: у клиента настоящая модель и имя на полосе
+	var B: GDScript = load("res://scripts/boss_burger.gd")
+	var boss: Node = B.spawn_at(main.build._wake_world(), pl.global_position + Vector3(-40, 0, -40))
+	if boss: boss.set_physics_process(false); boss.set("frozen", true)
+	_flag("boss_spawned")
+	# действие рук клиента видно у хоста на аватаре
+	_a(await _until(func() -> bool: return int(avn.get("actions_seen")) > 0, 20.0), "client_swing_seen")
 	_a(ns.stats.hits_recv > 0, "hits_recv")
 	# урон по аватару уходит клиенту
 	var av: Node = get_nodes_in_group("remote_player")[0]
@@ -114,20 +144,46 @@ func _client() -> void:
 	_a(not gs.is_dream(), "client_in_wake")
 	_a(ns.in_world, "client_in_world")
 	_a(gs.net_players == 2, "client_net_players")
+	_a(await _until(func() -> bool: return _fget("host_sig") != "", 5.0) and _world_sig() == _fget("host_sig"), "same_world_seed_and_terrain")
+	print("MP sig host=%s client=%s" % [_fget("host_sig"), _world_sig()])
 	_a(await _until(func() -> bool: return ns.avatars.size() == 1, 20.0), "client_sees_host")
 	_a(await _until(func() -> bool: return _has("host_block") and gs.wake_blocks.has(CELL_H), 20.0), "host_block_arrived")
+	_a(await _until(func() -> bool: return gs.removed_terrain.has(DIG), 10.0), "host_dig_arrived")
+	_a(await _until(func() -> bool:
+		for r in gs.dropped_items:
+			if str(r.get("id", "")) == "stone" and (r.get("pos", Vector3.ZERO) as Vector3).distance_to(DROP_POS) < 0.5: return true
+		return false, 10.0), "host_drop_arrived")
+	var hav: Node = ns.avatars.values()[0] if not ns.avatars.is_empty() else null
+	_a(hav != null and hav.get_node_or_null("Model") != null and hav.get_node("Model").has_method("play_state") and absf(float(hav.get_node("Model").call("height")) - 1.75) < 0.01, "avatar_chunky_175")
+	_a(await _until(func() -> bool: return hav != null and "metal_helmet" in (hav.get_node("Model").get("armor_ids") as Array), 10.0), "avatar_armor")
+	_a(await _until(func() -> bool: return hav != null and int(hav.get("actions_seen")) > 0, 10.0), "avatar_swing")
+	ns.local_action("place")
 	gs.wake_blocks[CELL_C] = {"kind": "plank", "mutant": false}
 	_a(await _until(func() -> bool: return _has("mob_spawned") and ns.proxies.size() > 0, 25.0), "proxy_seen")
 	var target: Node = null
 	for p in ns.proxies.values():
 		if is_instance_valid(p) and p.kind == "wake_mob": target = p
 	_a(target != null, "proxy_kind")
+	_a(target != null and str(target.preset) == "jumper" and target.get_node_or_null("Model") != null and target.get_node("Model").has_method("play_state"), "proxy_real_model")
 	if target: target.take_damage(6)
 	_a(ns.stats.hits_sent > 0, "hit_sent")
 	var hp0 := int(gs.player_hp)
 	_a(await _until(func() -> bool: return ns.stats.hurt_recv > 0, 20.0), "hurt_recv")
 	_a(int(gs.player_hp) < hp0 or gs.god_mode, "hurt_applied")
 	ns.send_chat("привет хосту")
+	_a(await _until(func() -> bool:
+		for p in ns.proxies.values():
+			if is_instance_valid(p) and p.kind == "boss_burger": return true
+		return false, 25.0), "boss_proxy_seen")
+	var bp: Node = null
+	for p in ns.proxies.values():
+		if is_instance_valid(p) and p.kind == "boss_burger": bp = p
+	_a(bp != null and bp.boss_title() == "Бургер Смерти" and bp.get("_saucer") != null, "boss_proxy_model_and_name")
+	if shot != "":
+		await create_timer(1.0).timeout
+		await RenderingServer.frame_post_draw
+		root.get_viewport().get_texture().get_image().save_png(shot.replace(".png", "_client.png"))
+		print("MP SHOT ", shot.replace(".png", "_client.png"))
 	_a(await _until(func() -> bool: return _has("time_set") and absf(gs.day_time - 700.0) < 6.0, 20.0), "time_sync")
 	_a(main.get_tree().get_first_node_in_group("threat_director") == null or true, "threat")
 	_flag("client_done")

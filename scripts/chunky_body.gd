@@ -97,7 +97,8 @@ func height() -> float:
 func _build() -> void:
 	var suit: Color = spec.suit; var suit2: Color = spec.suit2; var skin: Color = spec.skin
 	var eye: Color = spec.get("eye", Color(0.05, 0.05, 0.08))
-	var bk := float(spec.get("belly", 1.0))
+	var bk := float(spec.get("belly", 1.0)) * (1.0 if preset == "anton" else 0.8)   # мобы стройнее Антона
+	spec["bk"] = bk
 	var floaty := bool(spec.get("float", false))
 	_root = _part(self, "Scaled", Vector3.ZERO)
 	_root.scale = Vector3.ONE * (height() / H0)
@@ -105,8 +106,9 @@ func _build() -> void:
 	rig["body"] = body
 	rig["belly"] = _ball(body, "Belly", 1.55, Vector3(0, 2.0, 0.05), suit, Vector3(1.2 * bk, 1.0, 1.08 * bk))
 	_ball(body, "Band", 1.58, Vector3(0, 1.55, 0.05), suit2, Vector3(1.22 * bk, 0.32, 1.1 * bk))
-	_ball(body, "Shoulders", 1.0, Vector3(0, 3.0, -0.05), suit, Vector3(2.0, 0.75, 1.1))
+	_ball(body, "Shoulders", 1.0, Vector3(0, 3.0, -0.05), suit, Vector3(1.45 + 0.55 * bk, 0.75, 1.1))
 	var head := _part(body, "Head", Vector3(0, 3.25, 0.6))
+	head.scale = Vector3.ONE * float(spec.get("head_k", 1.0 if preset == "anton" else 1.4))
 	rig["head"] = head
 	var hk: String = str(spec.get("head", "none"))
 	var face_r := 0.62 if hk in ["frog", "lizard"] else 0.55
@@ -152,7 +154,7 @@ func _build() -> void:
 	for sd in [1.0, -1.0]:
 		var right: bool = sd > 0.0
 		var k: float = ark if right else 1.0
-		var sh := _part(body, "ShoulderR" if right else "ShoulderL", Vector3(-sd * 2.1, 2.95, 0.15))
+		var sh := _part(body, "ShoulderR" if right else "ShoulderL", Vector3(-sd * (1.45 + 0.65 * bk), 2.95, 0.15))
 		_ball(sh, "Upper", 0.52 * k, Vector3(0, -0.52 * k, 0), suit, Vector3(1, 1.5, 1))
 		var el := _part(sh, "Elbow", Vector3(0, -1.1 * k, 0))
 		_ball(el, "Fore", 0.47 * k, Vector3(0, -0.42 * k, 0.1), skin, Vector3(1, 1.4, 1))
@@ -239,7 +241,7 @@ func set_armor(ids: Array) -> void:
 			h.material_override = m
 			_box(rig.head, "ArmorVisor", Vector3(1.0, 0.1, 0.1), Vector3(0, 0.12, 0.58), col.darkened(0.3))
 		elif id.ends_with("_chest"):
-			var c2 := _ball(rig.body, "ArmorChest", 1.6, Vector3(0, 2.15, 0.05), col, Vector3(1.24 * float(spec.get("belly", 1.0)), 0.85, 1.12 * float(spec.get("belly", 1.0))))
+			var c2 := _ball(rig.body, "ArmorChest", 1.6, Vector3(0, 2.15, 0.05), col, Vector3(1.24 * float(spec.get("bk", 1.0)), 0.85, 1.12 * float(spec.get("bk", 1.0))))
 			c2.material_override = m
 			var sp := _ball(rig.body, "ArmorPads", 1.03, Vector3(0, 3.02, -0.05), col, Vector3(2.08, 0.72, 1.14))
 			sp.material_override = m
@@ -311,7 +313,7 @@ func _pose(delta: float) -> void:
 	var elr: Node3D = rig.el_r; var ell: Node3D = rig.el_l
 	var t := _t
 	var breathe := 1.0 + 0.03 * sin(t * 2.4)
-	var bk := float(spec.get("belly", 1.0))
+	var bk := float(spec.get("bk", 1.0))
 	(rig.belly as Node3D).scale = Vector3(1.2 * bk * (2.0 - breathe), breathe, 1.08 * bk)
 	var g := {"bx": 0.15, "bz": 0.0, "by": 0.0, "rx": 0.08 * sin(t * 1.3), "rz": -0.2, "lx": -0.08 * sin(t * 1.3), "lz": 0.2, "er": -0.35, "el": -0.35, "hr": 0.0, "hl": 0.0, "brx": 0.0}
 	if bool(spec.get("float", false)):

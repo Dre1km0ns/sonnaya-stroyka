@@ -91,6 +91,7 @@ var panel: PanelContainer
 var entry: LineEdit
 var output: RichTextLabel
 func _ready() -> void:
+	preload("res://scripts/console_v025.gd").register()
 	layer = 40
 	add_to_group("dev_console")
 	panel = PanelContainer.new()

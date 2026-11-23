@@ -6,7 +6,7 @@ const DB := preload("res://scripts/item_db.gd")
 const HELP := {
 	"difficulty": "Сложность мира v0.24: «Нормальный» или «Эксперт» (+75 % HP всем мобам и боссам, больнее, быстрее, раньше замечают, реже отстают). status — текущая; normal / expert — переключить в этом мире. Пример: difficulty; difficulty expert",
 	"ore": "Металлическая руда v0.24: гнёзда в камне на глубине −7…−26, добывается только каменной киркой или лучше. find — ближайшая руда у игрока; here — поставить руду под прицел; rules — время добычи по киркам. Пример: ore find; ore here; ore rules",
-	"bow": "Луки v0.24: ЛКМ удерживать — натянуть, отпустить — выстрел. give wood / give metal — дать лук и 32 стрелы; shoot [0..1] — выстрел с натяжением; status. Пример: bow give metal; bow shoot 1",
+	"bow": "Луки (v0.25): ЛКМ — выстрел, между выстрелами перезарядка. give wood / give metal — дать лук и 32 стрелы; shoot [0..1] — выстрел с натяжением; status. Пример: bow give metal; bow shoot 1",
 	"arrows": "Стрелы v0.24: give [n] — обычные; best [n] — стрелы из детёнышей анаконды; status. Пример: arrows give 64; arrows best 16",
 	"burger": "Бургер Смерти v0.24 — финальный босс. summon — призывалка с отсчётом 60 с; now — прилёт сразу; phase 2 / phase 3 — перейти к Антону / ярости; shards — смерть и осколки; weak — сбить слабую точку; hp <n>; kill; leave; status. Пример: burger now; burger phase 2; burger status",
 	"summoner": "Призывалка бургера v0.24: give — дать призывалку; tokens — дать Ядро бургера и Гриль-тарелку; roll mother|anaconda — проверить шанс 35 %. Пример: summoner give; summoner roll mother",

@@ -114,7 +114,7 @@ func _ready() -> void:
 			start_in_dream()
 	GameState.inventory_changed.emit()
 	# v0.22: летающая надпись над стартовым лагерем убрана совсем
-	print("Сонная стройка v0.24 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
+	print("Сонная стройка v0.25 ready. world=%s seed=%d dev=%s" % [GameState.world_folder, GameState.world_seed, GameState.dev_mode])
 
 
 func start_in_dream() -> void:

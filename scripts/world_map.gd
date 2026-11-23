@@ -182,7 +182,8 @@ func _draw() -> void:
 		var fwd := -p.global_transform.basis.z
 		var ang := atan2(fwd.z, fwd.x)
 		var pts := PackedVector2Array([mp3 + Vector2(cos(ang), sin(ang)) * 7.0, mp3 + Vector2(cos(ang + 2.5), sin(ang + 2.5)) * 5.0, mp3 + Vector2(cos(ang - 2.5), sin(ang - 2.5)) * 5.0])
-		draw_colored_polygon(pts, Color(1, 1, 1))
+		if not (mp3.is_finite() and is_finite(ang)): return
+		draw_primitive(pts, PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE]), PackedVector2Array())   # треугольник без триангуляции
 		draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0, 0, 0), 1.2)
 
 
