@@ -12,13 +12,22 @@ const HELP := {
 	"summoner": "Призывалка бургера v0.24: give — дать призывалку; tokens — дать Каменное сердце и Чешуйчатый клык; roll mother|anaconda — проверить шанс 35 %. Пример: summoner give; summoner roll mother",
 	"speedpotion": "Зелье скорости v0.24 (алхимический стол): 60 с бег не тратит стамину и чуть быстрее. give [n]; drink; status. Пример: speedpotion give 3; speedpotion drink",
 	"lizards": "Ящерки-детёныши Анаконды v0.24: после её смерти появляются в пещерах, роняют молочные зубки. spawn [n] — рядом; status. Пример: lizards spawn 3; lizards status",
+	"weather": "Погода Яви v0.24: ясно / дождь / туман, меняется сама каждые 4–9 минут. clear / rain / fog — включить сразу; status — текущая и сколько до смены. Пример: weather rain; weather status",
+	"mobs": "Новые мобы Яви v0.24: jumper — Прыгун (приседает и прыгает), archer — Стрелок (держит дистанцию, стреляет), thief — Воришка (крадёт до 4 штук материала и убегает, при смерти роняет). spawn <вид> [n]; status. Пример: mobs spawn archer; mobs spawn thief 2",
+	"bossatk": "Новые атаки боссов v0.24: pillars — «Каменный вал» Матери (полоса 1 с, затем столбы); venom — «Ядовитый плевок» Анаконды (круги 0.8 с, лужи яда 3 с). Ставит атаку прямо на игрока для проверки. Пример: bossatk pillars; bossatk venom",
+	"drops": "Выброшенные предметы v0.24: пропадают через 5 минут (последние 10 с мигают), трофеи боссов — нет. age <сек> — состарить все дропы; status. Пример: drops status; drops age 295",
+	"camfx": "Камера v0.24: покачивание при ходьбе и тряска от ударов (выключаются в настройках). shake [0..1] — встряхнуть; status. Пример: camfx shake 0.8",
+	"errlog": "Журнал ошибок v0.24: путь к файлу user://logs/errors.log и число ошибок с запуска. Пример: errlog",
+	"explain": "Пояснения v0.24 при первом нажатии M (испытание) и J (просьба Сна). reset — показать снова; status. Пример: explain reset",
 	"kit": "Набор v0.24 для проверки: металлическая кирка, металлический меч, металлический лук, стрелы, призывалка, зелья скорости, руда. Пример: kit",
 }
 const COMPLETIONS := ["difficulty", "difficulty status", "difficulty normal", "difficulty expert", "ore find", "ore here", "ore rules",
 	"bow give wood", "bow give metal", "bow shoot ", "bow status", "arrows give ", "arrows best ", "arrows status",
 	"burger summon", "burger now", "burger phase 2", "burger phase 3", "burger shards", "burger weak", "burger hp ", "burger kill", "burger leave", "burger status",
 	"summoner give", "summoner tokens", "summoner roll mother", "summoner roll anaconda", "speedpotion give ", "speedpotion drink", "speedpotion status",
-	"lizards spawn ", "lizards status", "kit"]
+	"lizards spawn ", "lizards status", "kit", "weather clear", "weather rain", "weather fog", "weather status",
+	"mobs spawn jumper", "mobs spawn archer", "mobs spawn thief", "mobs status", "bossatk pillars", "bossatk venom",
+	"drops status", "drops age ", "camfx shake ", "camfx status", "errlog", "explain reset", "explain status"]
 static var extra_help: Dictionary = {}
 static var extra_completions: Array = []
 static var handlers: Dictionary = {}   # имя → Callable(console, a) -> String (регистрируют следующие этапы)
@@ -174,4 +183,53 @@ static func run(con: Node, a: PackedStringArray) -> String:
 			for id in ["pickaxe3", "metal_sword", "bow2", "burger_summoner"]: _give(id, 1)
 			_give("arrow", 64); _give("arrow2", 16); _give("speed_potion", 2); _give("metal_ore", 8); _give("metal_ingot", 6)
 			return "Набор v0.24 выдан."
+		"weather":
+			var w: Node = con.get_tree().get_first_node_in_group("weather")
+			if sub in ["clear", "rain", "fog"] and w:
+				w.set_weather(sub, true)
+				return "Погода: %s." % w.NAMES[sub]
+			return "Погода: %s · до смены %d с · дождь %.2f · туман %.2f" % [str({"clear": "ясно", "rain": "дождь", "fog": "туман"}.get(GameState.weather, "?")), int(GameState.weather_left), GameState.weather_rain_k, GameState.weather_fog_k]
+		"mobs":
+			var WM: GDScript = load("res://scripts/wake_mob.gd")
+			if sub == "spawn":
+				var k := a[2] if a.size() > 2 else "jumper"
+				if not k in WM.KINDS: return "Ошибка: вид jumper, archer или thief."
+				var n4 := clampi(int(a[3]) if a.size() > 3 and a[3].is_valid_int() else 1, 1, 6)
+				var fwd := -p.global_transform.basis.z
+				for i in range(n4): WM.spawn(b._wake_world(), p.global_position + fwd * (6.0 + i * 1.5) + Vector3(0, 0.5, 0), k)
+				return "Вызвано: %s ×%d" % [WM.NAMES[k], n4]
+			var cnt := {}
+			for m in con.get_tree().get_nodes_in_group("wake_mob"): cnt[m.kind] = int(cnt.get(m.kind, 0)) + 1
+			return "Новые мобы рядом: прыгунов %d, стрелков %d, воришек %d" % [int(cnt.get("jumper", 0)), int(cnt.get("archer", 0)), int(cnt.get("thief", 0))]
+		"bossatk":
+			var BA: GDScript = load("res://scripts/boss_extra_attacks.gd")
+			var gy := func(q: Vector3) -> float: return p.global_position.y
+			if sub == "pillars":
+				BA.pillars(b._wake_world(), p.global_position - (-p.global_transform.basis.z) * 8.0, p.global_position, gy)
+				return "Каменный вал: полоса к тебе, столбы через 1 с — отойди вбок."
+			if sub == "venom":
+				var hd := Node3D.new(); b._wake_world().add_child(hd); hd.global_position = p.global_position + Vector3(0, 4, -8)
+				BA.venom(b._wake_world(), hd, p.global_position, gy)
+				con.get_tree().create_timer(3.0).timeout.connect(hd.queue_free)
+				return "Ядовитый плевок: круги на земле, сгустки через 0.8 с."
+			return "Ошибка: bossatk pillars или bossatk venom."
+		"drops":
+			if sub == "age" and a.size() > 2 and a[2].is_valid_float():
+				for r in GameState.dropped_items: r["age"] = float(a[2])
+				return "Возраст дропов: %s с (пропадут на 300 с)." % a[2]
+			return "Дропов в мире: %d · пропадают через 300 с" % GameState.dropped_items.size()
+		"camfx":
+			if sub == "shake":
+				GameState.shake(float(a[2]) if a.size() > 2 and a[2].is_valid_float() else 0.8)
+				return "Тряска."
+			var gs2 := con.get_node_or_null("/root/GameSettings")
+			return "Покачивание: %s · тряска: %s · обзор %d°" % ["вкл" if gs2.head_bob else "выкл", "вкл" if gs2.camera_shake else "выкл", int(gs2.fov)]
+		"errlog":
+			var gs3 := con.get_node_or_null("/root/GameSettings")
+			return "Журнал ошибок: %s · ошибок с запуска: %d" % [gs3.error_log_path(), int(gs3.error_logger.errors) if gs3.error_logger else 0]
+		"explain":
+			if sub == "reset":
+				GameState.explained = {}
+				return "Пояснения M и J покажутся снова."
+			return "Показаны пояснения: %s" % (", ".join(GameState.explained.keys()) if not GameState.explained.is_empty() else "ещё нет")
 	return "Ошибка: неизвестная команда v0.24."

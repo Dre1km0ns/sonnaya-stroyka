@@ -237,3 +237,129 @@ func _v024_more(scene: Node) -> void:
 	mm.queue_free()
 	await _wait(1)
 	print("SMOKE: v0.24 burger music phases / victory screen + credits / difficulty menu OK")
+	await _stage2(scene)
+
+
+func _stage2(scene: Node) -> void:
+	var GSet: Node = T.root.get_node("GameSettings")
+	var player: Node3D = scene.player
+	var build: Node = scene.build
+	G.dev_mode = false
+	G.god_mode = false
+	# 4: мёртвый код удалён
+	_a(not FileAccess.file_exists("res://scripts/boss_combat_sm.gd") and not load("res://scripts/blockling.gd").new().has_method("carrier_target"), 24100)
+	# 5: журнал ошибок
+	var e0: int = GSet.error_logger.errors if GSet.error_logger else -1
+	push_warning("smoke v0.24: проверка журнала ошибок")
+	_a(GSet.error_logger != null and GSet.error_logger.errors > e0 and FileAccess.file_exists("user://logs/errors.log") and str(GSet.error_log_path()).ends_with("errors.log"), 24101)
+	# 8, 26: тряска, FOV
+	G.shake(0.7)
+	_a(player._shake > 0.5, 24102)
+	await _wait(2)
+	_a(absf(player.camera.fov - GSet.fov) < 6.0, 24099)
+	GSet.set_value("fov", 90)
+	await _wait(2)
+	_a(absf(player.camera.fov - 90.0) < 6.0, 24103)
+	GSet.set_value("fov", 75)
+	# 7: шаги по материалу
+	_a(str(player._step_sound()).begins_with("step"), 24104)
+	# 10: исчезновение дропа и Q над слотом
+	var rec: Dictionary = G.register_drop({"id": "stone", "name": "Камень", "count": 3}, player.global_position + Vector3(4, 1, 0))
+	var dn: Node = build.spawn_drop(rec, Vector3.ZERO, 5.0)
+	rec["age"] = 299.95
+	await _wait(6)
+	_a(not G.dropped_items.has(rec) and (not is_instance_valid(dn) or dn.is_queued_for_deletion()), 24105)
+	var inv: Node = T.get_first_node_in_group("inventory_ui")
+	if inv == null:
+		for n in scene.find_children("*", "Control", true, false):
+			if n.has_method("drop_hovered"): inv = n; break
+	_a(inv != null, 24106)
+	if inv:
+		G.set_slot(10, {"id": "planks", "name": "Доски", "count": 5})
+		var nd: int = G.dropped_items.size()
+		_a(inv.drop_hovered(false, 10) and int(G.get_slot(10).get("count", 0)) == 4 and G.dropped_items.size() == nd + 1, 24107)
+		_a(inv.drop_hovered(true, 10) and str(G.get_slot(10).get("id", "")) == "", 24108)
+	# 11: фиолетовые иконки
+	var sv: Panel = load("res://scripts/slot_view.gd").new()
+	T.root.add_child(sv)
+	sv.dream_tint = true; sv.set_item("stone", 3)
+	_a(sv._icon.modulate.r < 0.9 and sv._icon.modulate.b > 0.95, 24109)
+	sv.queue_free()
+	# 12: пояснение один раз
+	G.explained = {}
+	_a(G.explain_once("trial", "x") and not G.explain_once("trial", "x"), 24110)
+	# 15, 16: новые мобы
+	var WM: GDScript = load("res://scripts/wake_mob.gd")
+	var ww: Node = scene.wake_world
+	var ar: Node3D = WM.spawn(ww, player.global_position + Vector3(0, 30, 10), "archer")
+	var th: Node3D = WM.spawn(ww, player.global_position + Vector3(2, 30, 0), "thief")
+	var jp: Node3D = WM.spawn(ww, player.global_position + Vector3(-2, 30, 0), "jumper")
+	await _wait(2)
+	ar.set_physics_process(false); th.set_physics_process(false); jp.set_physics_process(false)
+	var shot: Node3D = ar._shoot(player)
+	_a(shot != null and shot.hostile and ar.shots == 1, 24111)
+	shot.queue_free()
+	G.set_slot(11, {"id": "log", "name": "Бревно", "count": 9})
+	_a(th.steal() and int(th.stolen.get("count", 0)) >= 1 and int(th.stolen.get("count", 0)) <= 4, 24112)
+	var deaths0: int = load("res://scripts/mob_fx.gd").deaths
+	var nd2: int = G.dropped_items.size()
+	th.take_damage(999)
+	await _wait(2)
+	_a(load("res://scripts/mob_fx.gd").deaths == deaths0 + 1 and G.dropped_items.size() >= nd2 + 2, 24113)
+	_a(WM.roll_kind(0.05, 0) == "jumper" and WM.roll_kind(0.15, 0) != "archer" and WM.roll_kind(0.15, 999) == "archer" and WM.roll_kind(0.9, 999) == "", 24114)
+	for m in [ar, jp]:
+		if is_instance_valid(m): m.queue_free()
+	# 21: новые атаки боссов
+	var BA: GDScript = load("res://scripts/boss_extra_attacks.gd")
+	G.heal_player_full()
+	var hp0: int = G.player_hp
+	var gy := func(q: Vector3) -> float: return player.global_position.y
+	var pl: Node3D = BA.pillars(ww, player.global_position - Vector3(0, 0, 6), player.global_position + Vector3(0, 0, 2), gy)
+	_a(pl.points.size() >= 10 and G.player_hp == hp0, 24115)
+	var py0: Vector3 = player.global_position
+	await T.create_timer(1.6).timeout
+	_a(pl._hit.size() > 0 or G.player_hp < hp0, 24116)
+	G.heal_player_full()
+	await T.create_timer(0.6).timeout
+	var hd := Node3D.new(); ww.add_child(hd); hd.global_position = player.global_position + Vector3(0, 4, -6)
+	var vn: Node3D = BA.venom(ww, hd, player.global_position, gy)
+	_a(vn.points.size() == 3, 24117)
+	var hp1: int = G.player_hp
+	await T.create_timer(2.0).timeout
+	_a(G.player_hp < hp1, 24118)
+	hd.queue_free()
+	G.heal_player_full()
+	var mo: Node = load("res://scripts/block_mother.gd").new()
+	_a(mo.has_method("start_pillars") and load("res://scripts/boss_anaconda.gd").new().has_method("start_spit"), 24119)
+	mo.free()
+	# 17: погода
+	var w: Node = scene.get_node_or_null("Weather")
+	_a(w != null, 24120)
+	if w:
+		var env: Environment = scene.get_node("WorldEnvironment").environment
+		w.set_weather("clear", true); GSet.apply_distance_fog(env)
+		var clear_end: float = env.fog_depth_end
+		w.set_weather("fog", true); GSet.apply_distance_fog(env)
+		_a(env.fog_depth_end < clear_end * 0.5, 24121)
+		w.set_weather("rain", true)
+		await _wait(2)
+		_a(G.weather_rain_k > 0.9 and w._rain.visible and G.weather_dim() > 0.3, 24122)
+		var sv2: Dictionary = G.v024_to_dict()
+		_a(str(sv2.weather) == "rain", 24123)
+		w.set_weather("clear", true)
+	# 13: жизнь Сна
+	var dl: Node = scene.get_node_or_null("DreamLife")
+	_a(dl != null and dl.islands >= 10 and not dl.visible, 24124)
+	# консоль
+	var con: Node = T.get_first_node_in_group("dev_console")
+	if con:
+		G.dev_mode = true
+		var ws: int = G.world_seed
+		G.world_seed = G.DEV_SEED
+		_a(str(con.execute("weather fog")).contains("туман") and str(con.execute("mobs spawn jumper")).contains("Прыгун") and str(con.execute("errlog")).contains("errors.log") and str(con.execute("help mobs")).contains("Воришка"), 24125)
+		con.execute("weather clear")
+		G.world_seed = ws
+		G.dev_mode = false
+	for m in T.get_nodes_in_group("wake_mob"): m.queue_free()
+	await _wait(2)
+	print("SMOKE: v0.24 stage 2: no dead code / error log / shake+fov / steps / drop despawn + Q / purple icons / explain / jumper archer thief / death fx + dust / pillars + venom / weather / dream life / console OK")

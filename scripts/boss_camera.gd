@@ -30,6 +30,8 @@ func _process(delta: float) -> void:
 		if _cam: base_fov = _cam.fov
 	if _cam == null:
 		return
+	var gsets := get_node_or_null("/root/GameSettings")
+	if gsets: base_fov = float(gsets.fov)   # v0.24: угол обзора из настроек
 	var want_fov := 0.0
 	var want_fade := 0.0
 	var mother: Node3D = null
