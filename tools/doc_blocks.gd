@@ -12,7 +12,7 @@ func _go() -> void:
 	w.add_child(env)
 	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(-50, 35, 0); sun.light_energy = 1.1; w.add_child(sun)
 	var cam := Camera3D.new(); w.add_child(cam); cam.fov = 40
-	var kinds := ["dirt","ground","hill","sand","stone","deep_stone","bedrock","ruin","mossy_ruin","log","leaves","planks","drift","mouth","nest","egg","beacon","strut","lamp","lumen","lumen_cold","torch","bed","workbench","sawmill","lathe","alchemy","idea_catcher","chest","door"]
+	var kinds := ["dirt","sand","stone","deep_stone","bedrock","ruin","mossy_ruin","log","leaves","planks","drift","mouth","nest","egg","beacon","strut","torch","bed","workbench","sawmill","lathe","alchemy","idea_catcher","chest","door"]
 	var dream_variants := {"drift_dream": "drift_dream", "drift_anchored": "drift_anchored", "ground_dream": "ground", "hill_dream": "hill", "stone_dream": "stone"}
 	var jobs := []
 	for k in kinds: jobs.append([k, k, false])

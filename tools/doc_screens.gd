@@ -42,6 +42,8 @@ func _go() -> void:
 	var p0: Vector3 = player.global_position
 	_look(p0 + Vector3(0, 1, 0), 0.4, -0.2); await _wait(20)
 	await _shot("dream_hud")
+	_look(p0 + Vector3(0, 1.2, 3.0), 0.0, -0.75); await _wait(20)
+	await _shot("dream_block_hint")
 	var inv = get_first_node_in_group("inventory_ui")
 	if inv: inv.open(); await _wait(8); await _shot("dream_inventory"); inv.toggle(); await _wait(5)
 	var craft = get_first_node_in_group("craft_menu")
@@ -57,6 +59,31 @@ func _go() -> void:
 	await _shot("wake_hud")
 	if inv: inv.open(); await _wait(8); await _shot("wake_inventory"); inv.toggle(); await _wait(5)
 	if craft: craft.open_workbench(); await _wait(8); await _shot("wake_workbench"); craft.toggle(); await _wait(5)
+	gs.dev_mode = true
+	if craft:
+		craft.open_lathe(); await _wait(8); await _shot("wake_lathe"); craft.close(); await _wait(5)
+		craft.open_station("sawmill"); await _wait(8); await _shot("wake_sawmill"); craft.close(); await _wait(5)
+		craft.open_station("alchemy"); await _wait(8); await _shot("wake_alchemy"); craft.close(); await _wait(5)
+	var stg = get_first_node_in_group("storage_ui")
+	var chc := Vector3i(int(gs.spawn_point.x) + 3, 0, int(gs.spawn_point.z) + 3)
+	if stg and gs.place_wake_block(chc, "chest"):
+		main.wake_voxels.sync_cells([chc])
+		stg.open(chc, false); await _wait(8); await _shot("wake_chest"); stg.close(); await _wait(5)
+	var icc := chc + Vector3i(2, 0, 0)
+	if stg and gs.place_wake_block(icc, "idea_catcher"):
+		main.wake_voxels.sync_cells([icc])
+		stg.open(icc, true); await _wait(8); await _shot("wake_idea_catcher"); stg.close(); await _wait(5)
+	var pil = get_first_node_in_group("pillow_ui")
+	if pil:
+		gs.add_item_count("heal1", 0)
+		pil.open(); await _wait(8); await _shot("wake_pillow"); pil.close(); await _wait(5)
+	var op = get_first_node_in_group("objective_panel")
+	if op: _look(gs.spawn_point + Vector3(0, 0.2, 0), 0.6, -0.1); await _wait(10); await _shot("wake_objectives")
+	gs.stamina = 0.4; gs.stamina_changed.emit(0.4, false); await _wait(5); await _shot("wake_stamina")
+	gs.stamina = 1.0; gs.stamina_changed.emit(1.0, false)
+	var dm = get_first_node_in_group("death_menu")
+	if dm: dm.open("Тебя убил Шовник"); await _wait(8); await _shot("death"); dm.close(); await _wait(5)
+	gs.dev_mode = false
 	var pm = main.get_node_or_null("PauseMenu")
 	if pm:
 		pm.open(); await _wait(5); await _shot("pause")
